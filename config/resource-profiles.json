@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "low": {
+      "asr_concurrency": 1,
+      "translation_concurrency": 1,
+      "max_audio_backlog_ms": 2000
+    },
+    "balanced": {
+      "asr_concurrency": 1,
+      "translation_concurrency": 1,
+      "max_audio_backlog_ms": 3000
+    },
+    "quality": {
+      "asr_concurrency": 1,
+      "translation_concurrency": 1,
+      "max_audio_backlog_ms": 3000,
+      "requires_explicit_selection": true
+    }
+  }
+}

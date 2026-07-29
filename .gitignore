@@ -1,0 +1,28 @@
+# JavaScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Rust
+target/
+apps/desktop/src-tauri/gen/
+
+# Python
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+# Local application data and sensitive diagnostics
+models/artifacts/
+diagnostics/
+*.wav
+*.flac
+*.pcm

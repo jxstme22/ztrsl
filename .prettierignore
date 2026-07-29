@@ -1,0 +1,11 @@
+node_modules
+dist
+target
+apps/desktop/src-tauri/gen
+.venv
+pnpm-lock.yaml
+uv.lock
+docs
+AGENTS.md
+README.md
+MANIFEST.md

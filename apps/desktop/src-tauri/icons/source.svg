@@ -1,0 +1,20 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 512 512"
+  role="img"
+  aria-label="Local Squad Translator icon"
+>
+  <rect width="512" height="512" rx="112" fill="#081016" />
+  <path
+    d="M112 132h288c31 0 56 25 56 56v128c0 31-25 56-56 56H269l-86 72v-72h-71c-31 0-56-25-56-56V188c0-31 25-56 56-56Z"
+    fill="#65e0d1"
+  />
+  <path
+    d="M150 236h212M150 292h148"
+    fill="none"
+    stroke="#081016"
+    stroke-linecap="round"
+    stroke-width="28"
+  />
+</svg>
+

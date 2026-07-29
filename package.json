@@ -1,0 +1,22 @@
+{
+  "name": "local-squad-translator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local Windows accessibility companion for translated voice-chat captions.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --filter @local-squad-translator/desktop build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "pnpm --filter @local-squad-translator/desktop lint",
+    "test": "pnpm --filter @local-squad-translator/desktop test",
+    "typecheck": "pnpm --filter @local-squad-translator/desktop typecheck"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}
