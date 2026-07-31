@@ -4,6 +4,9 @@ import react from "@vitejs/plugin-react";
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
+  // Keep production assets relative to index.html so they load under Tauri's
+  // custom protocol as well as the Vite development server.
+  base: "./",
   plugins: [react()],
   clearScreen: false,
   server: {

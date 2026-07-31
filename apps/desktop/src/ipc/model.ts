@@ -33,4 +33,5 @@ export const captionEnvelopeSchema = z.object({
 });
 
 export type CaptionEnvelope = z.infer<typeof captionEnvelopeSchema>;
+export type CaptionPayload = z.infer<typeof captionPayloadSchema>;
 export type SidecarStatus = z.infer<typeof sidecarStatusSchema>;

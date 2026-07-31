@@ -26,9 +26,10 @@ Keep source transcript available and translation independently replaceable.
 
 Fast previews are visually distinguished from stable final captions.
 
-### D-007 Small Default ASR
+### D-007 Tagalog Quality Default
 
-300M int8 is default until benchmark evidence supports larger models.
+ADR-012 supersedes the planned 300M default. Tagalog V1 uses forced-Filipino Faster-Whisper
+large-v3 CUDA FP16; Cebuano remains benchmark-gated.
 
 ### D-008 Game Gets Resource Priority
 

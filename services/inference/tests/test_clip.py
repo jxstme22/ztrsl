@@ -3,6 +3,7 @@ from pathlib import Path
 
 from local_squad_inference.clip import process_clip
 from local_squad_inference.media import MediaMetadata
+from local_squad_inference.providers import FileAsrSegment
 from local_squad_inference.vad import SAMPLE_RATE
 
 
@@ -14,6 +15,20 @@ class FakeDecoder:
         yield (0.0,) * (SAMPLE_RATE * 200 // 1_000)
         yield (0.1,) * (SAMPLE_RATE * 300 // 1_000)
         yield (0.0,) * (SAMPLE_RATE * 500 // 1_000)
+
+
+class FakeFileAsr:
+    def transcribe_file(self, _source: Path, _source_mode: str) -> tuple[FileAsrSegment, ...]:
+        return (
+            FileAsrSegment(
+                start_ms=750,
+                end_ms=2_100,
+                text="Hindi ako nakatingin sa name.",
+                inference_ms=12.0,
+                model_id="contextual-test-asr",
+                confidence=0.8,
+            ),
+        )
 
 
 def test_clip_pipeline_segments_without_persisting_audio(tmp_path: Path) -> None:
@@ -36,3 +51,18 @@ def test_clip_pipeline_rejects_unknown_source_mode(tmp_path: Path) -> None:
     else:
         raise AssertionError("unsupported source mode should fail")
 
+
+def test_contextual_file_asr_preserves_provider_timestamps(tmp_path: Path) -> None:
+    source = tmp_path / "friends.mp4"
+    result = process_clip(
+        source,
+        "mixed",
+        decoder=FakeDecoder(),
+        file_asr=FakeFileAsr(),
+    )
+
+    assert len(result.captions) == 1
+    assert result.captions[0].start_ms == 750
+    assert result.captions[0].end_ms == 2_100
+    assert result.captions[0].source_text == "Hindi ako nakatingin sa name."
+    assert result.captions[0].provider.startswith("contextual-test-asr+")

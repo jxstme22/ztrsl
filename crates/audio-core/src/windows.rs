@@ -1,7 +1,11 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::{PROPERTYKEY, RPC_E_CHANGED_MODE};
 use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
@@ -17,7 +21,9 @@ use windows::Win32::System::Com::{
 };
 use windows::core::PCWSTR;
 
-use crate::{AudioEndpoint, AudioError, AudioFormat, DefaultRoles, EndpointKind, EndpointState};
+use crate::{
+    AudioEndpoint, AudioError, AudioFormat, AudioFrame, DefaultRoles, EndpointKind, EndpointState,
+};
 
 const ALL_DEVICE_STATES: DEVICE_STATE = DEVICE_STATE(
     DEVICE_STATE_ACTIVE.0
@@ -105,6 +111,273 @@ pub fn windows_endpoint_peak(endpoint_id: &str) -> Result<f32, AudioError> {
     unsafe { meter.GetPeakValue() }
         .map(|peak| peak.clamp(0.0, 1.0))
         .map_err(platform_error)
+}
+
+pub struct WindowsAudioCapture {
+    _stream: Stream,
+    frames: Receiver<AudioFrame>,
+    dropped_frames: Arc<AtomicU64>,
+    format: AudioFormat,
+}
+
+pub struct WindowsAudioPlayback {
+    _stream: Stream,
+    frames: SyncSender<Vec<f32>>,
+    dropped_frames: Arc<AtomicU64>,
+    underrun_samples: Arc<AtomicU64>,
+    format: AudioFormat,
+}
+
+impl WindowsAudioPlayback {
+    pub fn start(friendly_name: &str, queue_capacity: usize) -> Result<Self, AudioError> {
+        if queue_capacity == 0 {
+            return Err(AudioError::InvalidQueueCapacity);
+        }
+        let host = cpal::default_host();
+        let mut devices = host
+            .output_devices()
+            .map_err(|error| AudioError::Platform(error.to_string()))?;
+        let device = devices
+            .find(|device| device.name().is_ok_and(|name| name == friendly_name))
+            .ok_or(AudioError::EndpointNotFound)?;
+        let supported = device
+            .default_output_config()
+            .map_err(|error| AudioError::Platform(error.to_string()))?;
+        let sample_format = supported.sample_format();
+        let config: StreamConfig = supported.into();
+        let channels = config.channels;
+        let sample_rate = config.sample_rate.0;
+        if channels == 0 || sample_rate == 0 {
+            return Err(AudioError::InvalidFormat);
+        }
+        let (sender, frames) = mpsc::sync_channel(queue_capacity);
+        let dropped_frames = Arc::new(AtomicU64::new(0));
+        let underrun_samples = Arc::new(AtomicU64::new(0));
+        let callback_underruns = Arc::clone(&underrun_samples);
+        let stream = match sample_format {
+            SampleFormat::F32 => {
+                build_playback_stream::<f32>(&device, &config, frames, callback_underruns)
+            }
+            SampleFormat::I16 => {
+                build_playback_stream::<i16>(&device, &config, frames, callback_underruns)
+            }
+            SampleFormat::U16 => {
+                build_playback_stream::<u16>(&device, &config, frames, callback_underruns)
+            }
+            other => Err(AudioError::Platform(format!(
+                "unsupported Windows playback sample format: {other:?}"
+            ))),
+        }?;
+        stream
+            .play()
+            .map_err(|error| AudioError::Platform(error.to_string()))?;
+        Ok(Self {
+            _stream: stream,
+            frames: sender,
+            dropped_frames,
+            underrun_samples,
+            format: AudioFormat {
+                sample_rate,
+                channels,
+            },
+        })
+    }
+
+    pub fn try_write(&self, samples: Vec<f32>) {
+        if self.frames.try_send(samples).is_err() {
+            self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[must_use]
+    pub fn dropped_frames(&self) -> u64 {
+        self.dropped_frames.load(Ordering::Relaxed)
+    }
+
+    #[must_use]
+    pub fn underrun_samples(&self) -> u64 {
+        self.underrun_samples.load(Ordering::Relaxed)
+    }
+
+    #[must_use]
+    pub fn format(&self) -> AudioFormat {
+        self.format
+    }
+}
+
+impl WindowsAudioCapture {
+    pub fn start(friendly_name: &str, queue_capacity: usize) -> Result<Self, AudioError> {
+        if queue_capacity == 0 {
+            return Err(AudioError::InvalidQueueCapacity);
+        }
+        let host = cpal::default_host();
+        let mut devices = host
+            .input_devices()
+            .map_err(|error| AudioError::Platform(error.to_string()))?;
+        let device = devices
+            .find(|device| device.name().is_ok_and(|name| name == friendly_name))
+            .ok_or(AudioError::EndpointNotFound)?;
+        let supported = device
+            .default_input_config()
+            .map_err(|error| AudioError::Platform(error.to_string()))?;
+        let sample_format = supported.sample_format();
+        let config: StreamConfig = supported.into();
+        let channels = config.channels;
+        let sample_rate = config.sample_rate.0;
+        if channels == 0 || sample_rate == 0 {
+            return Err(AudioError::InvalidFormat);
+        }
+        let (sender, frames) = mpsc::sync_channel(queue_capacity);
+        let dropped_frames = Arc::new(AtomicU64::new(0));
+        let callback_drops = Arc::clone(&dropped_frames);
+        let stream = match sample_format {
+            SampleFormat::F32 => {
+                build_capture_stream::<f32>(&device, &config, sender, callback_drops)
+            }
+            SampleFormat::I16 => {
+                build_capture_stream::<i16>(&device, &config, sender, callback_drops)
+            }
+            SampleFormat::U16 => {
+                build_capture_stream::<u16>(&device, &config, sender, callback_drops)
+            }
+            other => Err(AudioError::Platform(format!(
+                "unsupported Windows capture sample format: {other:?}"
+            ))),
+        }?;
+        stream
+            .play()
+            .map_err(|error| AudioError::Platform(error.to_string()))?;
+        Ok(Self {
+            _stream: stream,
+            frames,
+            dropped_frames,
+            format: AudioFormat {
+                sample_rate,
+                channels: 1,
+            },
+        })
+    }
+
+    pub fn try_next(&self) -> Result<Option<AudioFrame>, AudioError> {
+        match self.frames.try_recv() {
+            Ok(frame) => Ok(Some(frame)),
+            Err(TryRecvError::Empty) => Ok(None),
+            Err(TryRecvError::Disconnected) => Err(AudioError::EndpointInvalidated),
+        }
+    }
+
+    #[must_use]
+    pub fn dropped_frames(&self) -> u64 {
+        self.dropped_frames.load(Ordering::Relaxed)
+    }
+
+    #[must_use]
+    pub fn format(&self) -> AudioFormat {
+        self.format
+    }
+}
+
+fn build_capture_stream<T>(
+    device: &cpal::Device,
+    config: &StreamConfig,
+    sender: SyncSender<AudioFrame>,
+    dropped_frames: Arc<AtomicU64>,
+) -> Result<Stream, AudioError>
+where
+    T: Sample + SizedSample,
+    f32: FromSample<T>,
+{
+    let channels = usize::from(config.channels);
+    let sample_rate = config.sample_rate.0;
+    let mut sequence = 0_u64;
+    let mut captured_samples = 0_u64;
+    device
+        .build_input_stream(
+            config,
+            move |data: &[T], _info| {
+                let mono_sample_count = data.len() / channels;
+                let mut mono = Vec::with_capacity(mono_sample_count);
+                for channel_frame in data.chunks_exact(channels) {
+                    let sum = channel_frame
+                        .iter()
+                        .copied()
+                        .map(Sample::to_sample::<f32>)
+                        .sum::<f32>();
+                    mono.push(sum / channels as f32);
+                }
+                let timestamp_ns =
+                    captured_samples.saturating_mul(1_000_000_000) / u64::from(sample_rate);
+                captured_samples =
+                    captured_samples.saturating_add(u64::try_from(mono.len()).unwrap_or(u64::MAX));
+                let frame = AudioFrame {
+                    sequence,
+                    capture_monotonic_ns: timestamp_ns,
+                    sample_rate,
+                    channels: 1,
+                    samples: mono,
+                };
+                sequence = sequence.saturating_add(1);
+                if sender.try_send(frame).is_err() {
+                    dropped_frames.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+            move |error| {
+                let _ = error;
+            },
+            None,
+        )
+        .map_err(|error| AudioError::Platform(error.to_string()))
+}
+
+fn build_playback_stream<T>(
+    device: &cpal::Device,
+    config: &StreamConfig,
+    frames: Receiver<Vec<f32>>,
+    underrun_samples: Arc<AtomicU64>,
+) -> Result<Stream, AudioError>
+where
+    T: Sample + SizedSample + FromSample<f32>,
+{
+    let channels = usize::from(config.channels);
+    let mut current = Vec::new();
+    let mut cursor = 0_usize;
+    let mut started = false;
+    device
+        .build_output_stream(
+            config,
+            move |output: &mut [T], _info| {
+                for channel_frame in output.chunks_exact_mut(channels) {
+                    while cursor >= current.len() {
+                        match frames.try_recv() {
+                            Ok(next) if !next.is_empty() => {
+                                current = next;
+                                cursor = 0;
+                                started = true;
+                            }
+                            Ok(_) => continue,
+                            Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+                        }
+                    }
+                    let value = if cursor < current.len() {
+                        let value = current[cursor].clamp(-1.0, 1.0);
+                        cursor += 1;
+                        value
+                    } else {
+                        if started {
+                            underrun_samples.fetch_add(1, Ordering::Relaxed);
+                        }
+                        0.0
+                    };
+                    let converted = T::from_sample(value);
+                    channel_frame.fill(converted);
+                }
+            },
+            move |error| {
+                let _ = error;
+            },
+            None,
+        )
+        .map_err(|error| AudioError::Platform(error.to_string()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

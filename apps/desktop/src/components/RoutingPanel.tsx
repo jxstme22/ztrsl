@@ -4,6 +4,7 @@ import { useRoutingTest } from "../routing/useRoutingTest";
 
 export function RoutingPanel() {
   const routing = useRoutingTest();
+  const isSimulator = routing.platform === "development";
 
   return (
     <section
@@ -13,11 +14,16 @@ export function RoutingPanel() {
     >
       <div className="section-heading">
         <div>
-          <p className="section-kicker">Phase 3 · Routing worker</p>
-          <h2 id="routing-title">Monitoring and inference branch</h2>
+          <p className="section-kicker">
+            {isSimulator ? "macOS bench routing" : "Windows live routing"}
+          </p>
+          <h2 id="routing-title">
+            {isSimulator ? "Silent pipeline simulator" : "Monitoring and inference branch"}
+          </h2>
           <p className="section-description">
-            Monitoring keeps native channels while a separate bounded branch
-            downmixes and resamples to 16 kHz mono.
+            {isSimulator
+              ? "A generated signal flows through the real bounded queues and resampler into a silent memory sink. You will not hear audio."
+              : "Monitoring keeps native channels while a separate bounded branch downmixes and resamples to 16 kHz mono."}
           </p>
         </div>
         <span className="mode-badge">
@@ -37,7 +43,9 @@ export function RoutingPanel() {
 
       <div className="routing-grid">
         <div className="field">
-          <label htmlFor="routing-capture">Capture source</label>
+          <label htmlFor="routing-capture">
+            {isSimulator ? "Generated input" : "Capture source"}
+          </label>
           <select
             id="routing-capture"
             value={routing.captureId}
@@ -57,7 +65,9 @@ export function RoutingPanel() {
           →
         </div>
         <div className="field">
-          <label htmlFor="routing-playback">Monitoring output</label>
+          <label htmlFor="routing-playback">
+            {isSimulator ? "Silent output sink" : "Monitoring output"}
+          </label>
           <select
             id="routing-playback"
             value={routing.playbackId}
@@ -80,7 +90,7 @@ export function RoutingPanel() {
           <div className="meter-label">
             <span>
               <Headphones aria-hidden="true" size={16} />
-              Monitor branch
+              {isSimulator ? "Simulated monitor branch" : "Monitor branch"}
             </span>
             <output>{Math.round(routing.snapshot.monitorPeak * 100)}%</output>
           </div>
@@ -113,7 +123,9 @@ export function RoutingPanel() {
 
       <div className="range-field monitor-volume">
         <div className="range-label">
-          <label htmlFor="monitor-volume">Monitor volume</label>
+          <label htmlFor="monitor-volume">
+            {isSimulator ? "Simulated monitor gain" : "Monitor volume"}
+          </label>
           <output htmlFor="monitor-volume">
             {Math.round(routing.volume * 100)}%
           </output>
@@ -149,11 +161,13 @@ export function RoutingPanel() {
             onClick={() => void routing.start()}
           >
             <AudioLines aria-hidden="true" size={17} />
-            Start routing test
+            {isSimulator ? "Run pipeline simulator" : "Start routing"}
           </button>
         )}
         <span className="capture-safety">
-          Synthetic on macOS · Windows WASAPI hardware gate pending
+          {isSimulator
+            ? "Generated input · silent sink · no audible playback"
+            : "Ordinary Windows audio endpoints only"}
         </span>
       </div>
     </section>

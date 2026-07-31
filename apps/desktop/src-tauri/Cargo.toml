@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 audio-core = { path = "../../../crates/audio-core" }
 ipc-protocol = { path = "../../../crates/ipc-protocol" }
 serde.workspace = true
+serde_json.workspace = true
 sidecar-supervisor = { path = "../../../crates/sidecar-supervisor" }
 tauri = { version = "2", features = [] }
 tauri-plugin-global-shortcut = "2"

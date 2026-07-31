@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use ipc_protocol::{
     AudioPacket, CaptionPayload, ClipProcessPayload, ClipResultPayload, Envelope,
-    HelloAcceptedPayload, HelloPayload, PROTOCOL_VERSION,
+    HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_VERSION,
 };
 use thiserror::Error;
 use tungstenite::{Message, WebSocket};
@@ -18,12 +18,15 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const CLIP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const LIVE_START_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
 #[derive(Debug, Clone)]
 pub struct SidecarConfig {
     pub python_executable: PathBuf,
     pub python_source_root: PathBuf,
     pub model_root: PathBuf,
+    pub runtime_library_dir: Option<PathBuf>,
+    pub translation_runner: PathBuf,
 }
 
 impl SidecarConfig {
@@ -36,6 +39,7 @@ impl SidecarConfig {
         } else {
             workspace_root.join(".venv").join("bin").join("python")
         };
+        let runtime_library_dir = find_onnxruntime_library_dir(&virtualenv_python);
         Self {
             python_executable: if virtualenv_python.is_file() {
                 virtualenv_python
@@ -47,6 +51,14 @@ impl SidecarConfig {
                 .join("inference")
                 .join("src"),
             model_root: workspace_root.join("models"),
+            runtime_library_dir,
+            translation_runner: workspace_root.join("target").join("release").join(
+                if cfg!(windows) {
+                    "translation-runner.exe"
+                } else {
+                    "translation-runner"
+                },
+            ),
         }
     }
 
@@ -75,7 +87,8 @@ impl SidecarSupervisor {
         let session_bytes = random_bytes::<16>()?;
         let session_id = to_hex(&session_bytes);
 
-        let mut child = Command::new(&config.python_executable)
+        let mut command = Command::new(&config.python_executable);
+        command
             .arg("-m")
             .arg("local_squad_inference.sidecar")
             .env("PYTHONPATH", &config.python_source_root)
@@ -83,11 +96,15 @@ impl SidecarSupervisor {
             .env("LST_IPC_TOKEN", &token)
             .env("LST_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
             .env("LST_MODEL_DIR", &config.model_root)
+            .env("LST_TRANSLATION_RUNNER", &config.translation_runner)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(SupervisorError::Spawn)?;
+            .stderr(Stdio::null());
+        #[cfg(target_os = "macos")]
+        if let Some(runtime_library_dir) = &config.runtime_library_dir {
+            command.env("DYLD_LIBRARY_PATH", runtime_library_dir);
+        }
+        let mut child = command.spawn().map_err(SupervisorError::Spawn)?;
 
         let stream = match connect_with_retry(port, &mut child) {
             Ok(stream) => stream,
@@ -176,6 +193,152 @@ impl SidecarSupervisor {
             return Err(SupervisorError::InvalidCaptionLifecycle);
         }
         Ok(vec![provisional, final_caption])
+    }
+
+    pub fn start_live(
+        &mut self,
+        source_mode: &str,
+        provider: &str,
+        resource_profile: &str,
+    ) -> Result<serde_json::Value, SupervisorError> {
+        self.ensure_running()?;
+        let request = Envelope {
+            protocol_version: PROTOCOL_VERSION,
+            message_id: format!("live-start-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "live.start".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: LiveStartPayload {
+                source_mode: source_mode.to_owned(),
+                provider: provider.to_owned(),
+                resource_profile: resource_profile.to_owned(),
+            },
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(LIVE_START_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        response
+            .validate_version()
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        if response.message_type == "live.error" {
+            return Err(SupervisorError::LiveInference(error_message(
+                &response.payload,
+                "live inference could not start",
+            )));
+        }
+        if response.message_type != "live.started" {
+            return Err(SupervisorError::Protocol(
+                "unexpected live start response".to_owned(),
+            ));
+        }
+        Ok(response.payload)
+    }
+
+    pub fn send_live_audio(
+        &mut self,
+        capture_monotonic_ns: u64,
+        samples: Vec<f32>,
+    ) -> Result<(), SupervisorError> {
+        self.ensure_running()?;
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        let packet = AudioPacket {
+            session_id: self.session_bytes,
+            sequence,
+            capture_monotonic_ns,
+            sample_rate: 16_000,
+            channels: 1,
+            flags: 0,
+            samples,
+        };
+        self.socket
+            .send(Message::Binary(
+                packet
+                    .encode()
+                    .map_err(|error| SupervisorError::Protocol(error.to_string()))?
+                    .into(),
+            ))
+            .map_err(SupervisorError::WebSocket)
+    }
+
+    pub fn read_live_caption(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Option<Envelope<CaptionPayload>>, SupervisorError> {
+        self.ensure_running()?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(timeout))
+            .map_err(SupervisorError::Io)?;
+        let response = read_json::<Envelope<serde_json::Value>>(&mut self.socket);
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        let response = match response {
+            Ok(response) => response,
+            Err(error) if is_timeout_error(&error) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        response
+            .validate_version()
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        if response.message_type == "live.error" {
+            return Err(SupervisorError::LiveInference(error_message(
+                &response.payload,
+                "live inference failed",
+            )));
+        }
+        if !matches!(
+            response.message_type.as_str(),
+            "caption.provisional" | "caption.final"
+        ) {
+            return Ok(None);
+        }
+        let payload = serde_json::from_value(response.payload)
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        Ok(Some(Envelope {
+            protocol_version: response.protocol_version,
+            message_id: response.message_id,
+            session_id: response.session_id,
+            message_type: response.message_type,
+            sent_monotonic_ns: response.sent_monotonic_ns,
+            payload,
+        }))
+    }
+
+    pub fn stop_live(&mut self) -> Result<serde_json::Value, SupervisorError> {
+        self.ensure_running()?;
+        let request = Envelope {
+            protocol_version: PROTOCOL_VERSION,
+            message_id: format!("live-stop-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "live.stop".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: serde_json::json!({}),
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        loop {
+            let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+            if response.message_type == "live.stopped" {
+                return Ok(response.payload);
+            }
+            if response.message_type == "live.error" {
+                return Err(SupervisorError::LiveInference(error_message(
+                    &response.payload,
+                    "live inference failed while stopping",
+                )));
+            }
+        }
     }
 
     pub fn process_clip(
@@ -273,6 +436,20 @@ impl SidecarSupervisor {
     }
 }
 
+impl SupervisorError {
+    #[must_use]
+    pub fn is_transport_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::Io(_)
+                | Self::WebSocket(_)
+                | Self::ConnectionClosed(_)
+                | Self::SidecarExited(_)
+                | Self::StartupTimeout
+        )
+    }
+}
+
 impl Drop for SidecarSupervisor {
     fn drop(&mut self) {
         self.stop();
@@ -289,6 +466,8 @@ pub enum SupervisorError {
     Io(std::io::Error),
     #[error("sidecar WebSocket failed: {0}")]
     WebSocket(tungstenite::Error),
+    #[error("sidecar connection closed{0}")]
+    ConnectionClosed(String),
     #[error("sidecar WebSocket handshake failed: {0}")]
     Handshake(String),
     #[error("sidecar protocol failed: {0}")]
@@ -307,6 +486,27 @@ pub enum SupervisorError {
     InvalidClipPath,
     #[error("clip analysis failed: {0}")]
     ClipProcessing(String),
+    #[error("live translation failed: {0}")]
+    LiveInference(String),
+}
+
+fn error_message(payload: &serde_json::Value, fallback: &str) -> String {
+    payload
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(fallback)
+        .to_owned()
+}
+
+fn is_timeout_error(error: &SupervisorError) -> bool {
+    matches!(
+        error,
+        SupervisorError::WebSocket(tungstenite::Error::Io(io_error))
+            if matches!(
+                io_error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            )
+    )
 }
 
 fn reserve_loopback_port() -> Result<u16, SupervisorError> {
@@ -345,9 +545,28 @@ fn write_json<T: serde::Serialize>(
 fn read_json<T: serde::de::DeserializeOwned>(
     socket: &mut WebSocket<TcpStream>,
 ) -> Result<T, SupervisorError> {
-    let message = socket.read().map_err(SupervisorError::WebSocket)?;
-    let text = message.into_text().map_err(SupervisorError::WebSocket)?;
-    serde_json::from_str(&text).map_err(|error| SupervisorError::Protocol(error.to_string()))
+    loop {
+        match socket.read().map_err(SupervisorError::WebSocket)? {
+            Message::Text(text) => {
+                return serde_json::from_str(&text)
+                    .map_err(|error| SupervisorError::Protocol(error.to_string()));
+            }
+            Message::Binary(bytes) => {
+                return serde_json::from_slice(&bytes)
+                    .map_err(|error| SupervisorError::Protocol(error.to_string()));
+            }
+            Message::Ping(payload) => socket
+                .send(Message::Pong(payload))
+                .map_err(SupervisorError::WebSocket)?,
+            Message::Pong(_) | Message::Frame(_) => {}
+            Message::Close(frame) => {
+                let detail = frame.map_or_else(String::new, |frame| {
+                    format!(": {} {}", u16::from(frame.code), frame.reason)
+                });
+                return Err(SupervisorError::ConnectionClosed(detail));
+            }
+        }
+    }
 }
 
 fn random_bytes<const N: usize>() -> Result<[u8; N], SupervisorError> {
@@ -400,9 +619,35 @@ pub fn packaged_sidecar_available(config: &SidecarConfig) -> bool {
         .unwrap_or(false)
 }
 
+fn find_onnxruntime_library_dir(python_executable: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let virtualenv = python_executable.parent()?.parent()?;
+        let python_libraries = fs::read_dir(virtualenv.join("lib")).ok()?;
+        for entry in python_libraries.flatten() {
+            let candidate = entry
+                .path()
+                .join("site-packages")
+                .join("onnxruntime")
+                .join("capi");
+            if candidate.join("libonnxruntime.1.27.0.dylib").is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = python_executable;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SidecarConfig, packaged_sidecar_available, to_hex, workspace_root_from_manifest};
+    use super::{
+        SidecarConfig, SupervisorError, packaged_sidecar_available, to_hex,
+        workspace_root_from_manifest,
+    };
 
     #[test]
     fn token_hex_encoding_never_exposes_binary_data() {
@@ -413,5 +658,30 @@ mod tests {
     fn workspace_sidecar_source_is_discoverable_for_development() {
         let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
         assert!(packaged_sidecar_available(&config));
+    }
+
+    #[test]
+    fn closed_and_broken_connections_are_restartable_transport_failures() {
+        assert!(
+            SupervisorError::ConnectionClosed(": 1008 invalid message".to_owned())
+                .is_transport_failure()
+        );
+        assert!(
+            SupervisorError::Io(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "closed sidecar socket",
+            ))
+            .is_transport_failure()
+        );
+        assert!(
+            !SupervisorError::ClipProcessing("unsupported media".to_owned()).is_transport_failure()
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn development_onnxruntime_library_is_discoverable() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        assert!(config.runtime_library_dir.is_some());
     }
 }

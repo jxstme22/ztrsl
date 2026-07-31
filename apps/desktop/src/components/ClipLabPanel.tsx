@@ -21,6 +21,7 @@ const ACCEPTED_EXTENSIONS = /\.(aac|flac|m4a|mkv|mov|mp3|mp4|ogg|wav|webm)$/i;
 export function ClipLabPanel() {
   const [path, setPath] = useState<string | null>(null);
   const [sourceMode, setSourceMode] = useState<SourceMode>("mixed");
+  const [provider, setProvider] = useState<"demo" | "local">("demo");
   const [state, setState] = useState<"idle" | "running" | "complete">("idle");
   const [result, setResult] = useState<ClipResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +70,7 @@ export function ClipLabPanel() {
     setError(null);
     setResult(null);
     try {
-      setResult(await analyzeMediaClip(path, sourceMode, "demo"));
+      setResult(await analyzeMediaClip(path, sourceMode, provider));
       setState("complete");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -88,7 +89,9 @@ export function ClipLabPanel() {
             discarded. Raw audio and transcripts are not saved.
           </p>
         </div>
-        <span className="mode-badge edit">Demo providers</span>
+        <span className={`mode-badge ${provider === "demo" ? "edit" : ""}`}>
+          {provider === "demo" ? "Demo providers" : "Local models"}
+        </span>
       </div>
 
       <div className="clip-controls">
@@ -120,9 +123,22 @@ export function ClipLabPanel() {
               setSourceMode(event.currentTarget.value as SourceMode);
             }}
           >
-            <option value="mixed">Auto mixed / code-switched</option>
+            <option value="mixed">Tagalog-first mixed / code-switched</option>
             <option value="filipino">Filipino / Taglish</option>
             <option value="cebuano">Cebuano / Bislish</option>
+          </select>
+        </label>
+        <label className="field" htmlFor="clip-provider">
+          Inference
+          <select
+            id="clip-provider"
+            value={provider}
+            onChange={(event) => {
+              setProvider(event.currentTarget.value as "demo" | "local");
+            }}
+          >
+            <option value="demo">Demo plumbing</option>
+            <option value="local">Verified local models</option>
           </select>
         </label>
       </div>
@@ -130,10 +146,17 @@ export function ClipLabPanel() {
       <div className="inline-alert info phase-note" role="status">
         <FlaskConical aria-hidden="true" size={18} />
         <div>
-          <strong>Media and VAD are real; captions are clearly marked demo</strong>
+          <strong>
+            {provider === "demo"
+              ? "Media and VAD are real; captions are clearly marked demo"
+              : "Contextual Whisper ASR + reset-safe MADLAD translation"}
+          </strong>
           <p>
-            Verified Omnilingual ASR and MADLAD model artifacts are not installed
-            yet, so this build will not pretend it understood the speech.
+            {provider === "demo"
+              ? "This mode checks the pipeline without pretending it understood the speech."
+              : sourceMode === "cebuano"
+                ? "Cebuano is experimental: Whisper uses a Filipino decoder constraint to prevent script drift."
+                : "Tagalog-first decoding preserves full-clip context and rejects unconstrained language guessing."}
           </p>
         </div>
       </div>
@@ -196,7 +219,13 @@ export function ClipLabPanel() {
                     <span>{caption.source_text}</span>
                     <strong>{caption.english_text}</strong>
                   </div>
-                  <small>Demo · {caption.provider}</small>
+                  <small>
+                    {result.mode === "demo" ? "Demo" : "Local"} ·{" "}
+                    {caption.provider}
+                    {caption.warnings.includes("LOW_CONFIDENCE")
+                      ? " · Low confidence"
+                      : ""}
+                  </small>
                 </li>
               ))}
             </ol>

@@ -217,15 +217,17 @@ license:
   spdx: Apache-2.0
 artifacts:
   - path: model.int8.onnx
-    sha256: PLACEHOLDER_TO_BE_FILLED_FROM_RELEASE
+    sha256: e7c4e54ee4c4c47829cc6667d5d00ed8ea7bef1dcfeef0fce766f77752a2726c
   - path: tokens.txt
-    sha256: PLACEHOLDER_TO_BE_FILLED_FROM_RELEASE
+    sha256: a7a044c52cb29cbe8b0dc1953e92cefd4ca16b0ed968177b6beab21f9a7d0b31
 compatibility:
   windows_x64: true
   minimum_app_version: 0.1.0
 ```
 
-Do not ship placeholder checksums. The model download implementation is incomplete until real pinned checksums are committed.
+Do not ship placeholder checksums. The pinned development manifests are committed under
+`models/manifests/`; release packaging must copy those exact values or produce a reviewed ADR for a
+new artifact revision.
 
 ## 10. Error Taxonomy
 

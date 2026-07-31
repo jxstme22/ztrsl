@@ -16,7 +16,7 @@ const BROWSER_CATALOG: EndpointCatalog = {
   endpoints: [
     {
       id: SYNTHETIC_ENDPOINT_ID,
-      friendlyName: "Synthetic voice meter (development)",
+      friendlyName: "Generated voice signal (macOS simulator)",
       kind: "capture",
       state: "active",
       defaultRoles: {
@@ -29,7 +29,7 @@ const BROWSER_CATALOG: EndpointCatalog = {
     },
     {
       id: "synthetic://phase-3-headphones",
-      friendlyName: "Synthetic headphones (development)",
+      friendlyName: "Silent test sink (macOS simulator)",
       kind: "render",
       state: "active",
       defaultRoles: {

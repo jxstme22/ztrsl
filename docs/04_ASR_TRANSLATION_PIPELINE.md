@@ -4,9 +4,9 @@
 
 ```mermaid
 flowchart LR
-  A[16 kHz mono frames] --> B[Silero VAD]
+  A[16 kHz mono frames] --> B[Stateful Silero VAD]
   B --> C[Utterance manager]
-  C --> D[Omnilingual ASR CTC]
+  C --> D[Faster-Whisper large-v3]
   D --> E[Text normalizer]
   E --> F[Stable-prefix tracker]
   F --> G[Protected-term masker]
@@ -39,21 +39,21 @@ These are starting values, not fixed truths.
 
 ### ASR
 
-Default:
+V1 default (ADR-012):
 
 ```text
-Omnilingual ASR CTC 300M int8
+Faster-Whisper large-v3, language=tl, CUDA FP16, beam size 5
 ```
 
-Candidate:
+Fallback candidate:
 
 ```text
-Omnilingual ASR CTC 1B int8
+Faster-Whisper large-v3-turbo
 ```
 
-Use the candidate only if it produces a meaningful quality gain under the resource and latency budgets.
-
-Important runtime note: the sherpa-onnx Omnilingual integration is an **offline CTC recognizer**. “Real-time” behavior is achieved by VAD segmentation and controlled rolling re-decodes, not by pretending the model is a native streaming transducer.
+The model is segment-based, not a native streaming transducer. Live behavior comes from stateful
+VAD segmentation, bounded utterances, and one inference job at a time. Omnilingual checkpoints
+remain research candidates for Cebuano and comparison benchmarks.
 
 ### Translation
 
@@ -82,11 +82,8 @@ type SourceMode =
   | "auto";
 ```
 
-V1 UI exposes:
-
-- Filipino / Taglish;
-- Cebuano / Bislish;
-- Auto mixed.
+V1 live UI exposes Filipino / Tagalog and Taglish. Cebuano/Bislish and automatic multilingual mode
+remain disabled until a native-speaker benchmark passes.
 
 Internal English mode is useful for tests and untranslated captions.
 

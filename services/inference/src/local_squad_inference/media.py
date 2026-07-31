@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from array import array
@@ -24,10 +25,38 @@ ALLOWED_EXTENSIONS = {
     ".wav",
     ".webm",
 }
+COMMON_MEDIA_TOOL_DIRS = (
+    Path("/opt/homebrew/bin"),
+    Path("/usr/local/bin"),
+    Path("/usr/bin"),
+)
 
 
 class MediaError(RuntimeError):
     pass
+
+
+def _resolve_media_tool(
+    name: str,
+    environment_key: str,
+    *,
+    common_directories: tuple[Path, ...] = COMMON_MEDIA_TOOL_DIRS,
+) -> str | None:
+    configured = os.environ.get(environment_key)
+    if configured:
+        candidate = Path(configured).expanduser()
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+
+    discovered = shutil.which(name)
+    if discovered is not None:
+        return discovered
+
+    for directory in common_directories:
+        candidate = directory / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
 
 
 @dataclass(frozen=True)
@@ -42,10 +71,15 @@ class FfmpegDecoder:
     """Read a user-selected media file as bounded 16 kHz mono f32 chunks."""
 
     def __init__(self, ffmpeg: str | None = None, ffprobe: str | None = None) -> None:
-        self._ffmpeg = ffmpeg or shutil.which("ffmpeg")
-        self._ffprobe = ffprobe or shutil.which("ffprobe")
-        if self._ffmpeg is None or self._ffprobe is None:
-            raise MediaError("FFmpeg and ffprobe are required to analyze media clips")
+        ffmpeg_path = ffmpeg or _resolve_media_tool("ffmpeg", "LOCAL_SQUAD_FFMPEG")
+        ffprobe_path = ffprobe or _resolve_media_tool("ffprobe", "LOCAL_SQUAD_FFPROBE")
+        if ffmpeg_path is None or ffprobe_path is None:
+            raise MediaError(
+                "Media decoder unavailable. Install FFmpeg, or set "
+                "LOCAL_SQUAD_FFMPEG and LOCAL_SQUAD_FFPROBE."
+            )
+        self._ffmpeg = ffmpeg_path
+        self._ffprobe = ffprobe_path
 
     def inspect(self, source: Path) -> MediaMetadata:
         resolved = source.expanduser().resolve(strict=True)

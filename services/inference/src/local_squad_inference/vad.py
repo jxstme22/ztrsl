@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Protocol
 
 SAMPLE_RATE = 16_000
 
@@ -28,18 +30,80 @@ class AudioUtterance:
     forced_end: bool
 
 
-class EnergyUtteranceManager:
-    """Deterministic CI fallback; Silero can replace the speech predicate."""
+class SpeechDetector(Protocol):
+    def is_speech(self, frame: tuple[float, ...]) -> bool: ...
 
-    def __init__(self, config: VadConfig | None = None) -> None:
+
+class EnergySpeechDetector:
+    def __init__(self, threshold: float) -> None:
+        self._threshold = threshold
+
+    def is_speech(self, frame: tuple[float, ...]) -> bool:
+        rms = math.sqrt(sum(sample * sample for sample in frame) / len(frame))
+        return rms >= self._threshold
+
+
+class SileroSpeechDetector:
+    """Stateful 16 kHz Silero VAD using the model shipped with faster-whisper."""
+
+    frame_samples = 512
+    context_samples = 64
+
+    def __init__(self, *, threshold: float = 0.5, model_path: Path | None = None) -> None:
+        import numpy
+        import onnxruntime  # type: ignore[import-untyped]
+        from faster_whisper.utils import get_assets_path  # type: ignore[import-untyped]
+
+        path = model_path or Path(get_assets_path()) / "silero_vad_v6.onnx"
+        options = onnxruntime.SessionOptions()
+        options.inter_op_num_threads = 1
+        options.intra_op_num_threads = 1
+        options.enable_cpu_mem_arena = False
+        options.log_severity_level = 4
+        self._session: Any = onnxruntime.InferenceSession(
+            str(path),
+            providers=["CPUExecutionProvider"],
+            sess_options=options,
+        )
+        self._numpy: Any = numpy
+        self._threshold = threshold
+        self._hidden = numpy.zeros((1, 1, 128), dtype=numpy.float32)
+        self._cell = numpy.zeros((1, 1, 128), dtype=numpy.float32)
+        self._context = numpy.zeros((1, self.context_samples), dtype=numpy.float32)
+
+    def is_speech(self, frame: tuple[float, ...]) -> bool:
+        if len(frame) != self.frame_samples:
+            raise ValueError("Silero VAD requires 512-sample frames at 16 kHz")
+        audio = self._numpy.asarray(frame, dtype=self._numpy.float32).reshape(1, self.frame_samples)
+        model_input = self._numpy.concatenate((self._context, audio), axis=1)
+        probabilities, self._hidden, self._cell = self._session.run(
+            None,
+            {
+                "input": model_input,
+                "h": self._hidden,
+                "c": self._cell,
+            },
+        )
+        self._context = audio[:, -self.context_samples :]
+        return float(probabilities.reshape(-1)[0]) >= self._threshold
+
+
+class EnergyUtteranceManager:
+    """Bounded utterance manager with a replaceable speech predicate."""
+
+    def __init__(
+        self,
+        config: VadConfig | None = None,
+        speech_detector: SpeechDetector | None = None,
+    ) -> None:
         self.config = config or VadConfig()
         self.frame_samples = SAMPLE_RATE * self.config.frame_ms // 1_000
+        self._speech_detector = speech_detector or EnergySpeechDetector(self.config.speech_rms)
         self._pending: list[float] = []
         self._pre_roll: deque[tuple[float, ...]] = deque(
             maxlen=max(
                 1,
-                (self.config.pre_roll_ms + self.config.min_speech_ms)
-                // self.config.frame_ms,
+                (self.config.pre_roll_ms + self.config.min_speech_ms) // self.config.frame_ms,
             )
         )
         self._active: list[float] | None = None
@@ -74,8 +138,7 @@ class EnergyUtteranceManager:
     def _feed_frame(self, frame: tuple[float, ...]) -> AudioUtterance | None:
         frame_start = self._total_samples
         self._total_samples += len(frame)
-        rms = math.sqrt(sum(sample * sample for sample in frame) / len(frame))
-        is_speech = rms >= self.config.speech_rms
+        is_speech = self._speech_detector.is_speech(frame)
 
         if self._active is None:
             self._pre_roll.append(frame)
@@ -87,9 +150,7 @@ class EnergyUtteranceManager:
             if self._speech_frames >= required:
                 prefix = list(self._pre_roll)
                 self._active = [sample for buffered in prefix for sample in buffered]
-                self._active_started_sample = max(
-                    0, frame_start + len(frame) - len(self._active)
-                )
+                self._active_started_sample = max(0, frame_start + len(frame) - len(self._active))
                 self._silence_frames = 0
                 self._pre_roll.clear()
             return None
@@ -125,9 +186,7 @@ class EnergyUtteranceManager:
         self._pre_roll.clear()
         if forced:
             self._pre_roll.extend(overlap_frames)
-            self._speech_frames = max(
-                0, self.config.min_speech_ms // self.config.frame_ms - 1
-            )
+            self._speech_frames = max(0, self.config.min_speech_ms // self.config.frame_ms - 1)
         return AudioUtterance(
             utterance_id=f"clip-utterance-{self._utterance_sequence}",
             pcm_f32=samples,

@@ -65,6 +65,12 @@ class ClipProcessPayload(StrictModel):
     provider: Literal["demo", "local"] = "demo"
 
 
+class LiveStartPayload(StrictModel):
+    source_mode: Literal["filipino"] = "filipino"
+    provider: Literal["demo", "local"] = "local"
+    resource_profile: Literal["balanced", "quality"] = "quality"
+
+
 def parse_audio_packet(data: bytes) -> AudioPacket:
     if len(data) > MAX_AUDIO_MESSAGE_BYTES:
         raise ValueError("audio message too large")

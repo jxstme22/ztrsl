@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "omni-ctc-300m-int8",
+  "kind": "asr",
+  "runtime": "sherpa-onnx",
+  "source": {
+    "organization": "k2-fsa",
+    "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
+    "revision": "2025-11-12"
+  },
+  "license": {
+    "spdx": "Apache-2.0"
+  },
+  "archive": {
+    "path": "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
+    "size_bytes": 292571207,
+    "sha256": "cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed"
+  },
+  "compatibility": {
+    "macos_arm64": true,
+    "windows_x64": true,
+    "minimum_app_version": "0.1.0"
+  }
+}

@@ -3,6 +3,11 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import math
+import os
+import platform
+import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,12 +41,26 @@ class TranslationResult:
     model_id: str
 
 
+@dataclass(frozen=True)
+class FileAsrSegment:
+    start_ms: int
+    end_ms: int
+    text: str
+    inference_ms: float
+    model_id: str
+    confidence: float | None
+
+
 class AsrProvider(Protocol):
     def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult: ...
 
 
 class TranslationProvider(Protocol):
     def translate(self, result: AsrResult) -> TranslationResult: ...
+
+
+class FileAsrProvider(Protocol):
+    def transcribe_file(self, source: Path, source_mode: str) -> tuple[FileAsrSegment, ...]: ...
 
 
 class DemoAsrProvider:
@@ -97,7 +116,7 @@ def verify_manifest(model_dir: Path, manifest_path: Path) -> dict[str, object]:
             raise ModelUnavailableError("model artifact is missing") from error
         if digest != expected:
             raise ModelUnavailableError("model artifact checksum failed")
-    return manifest
+    return cast(dict[str, object], manifest)
 
 
 class SherpaOmnilingualProvider:
@@ -117,23 +136,14 @@ class SherpaOmnilingualProvider:
             ) from error
         self._numpy: Any = numpy
         try:
-            feature_config = sherpa.FeatureConfig(sample_rate=16_000, feature_dim=80)
-            omnilingual = sherpa.OfflineOmnilingualModelConfig(
-                model=str(paths["model"])
-            )
-            model_config = sherpa.OfflineModelConfig(
-                omnilingual=omnilingual,
+            self._recognizer: Any = sherpa.OfflineRecognizer.from_omnilingual_asr_ctc(
+                model=str(paths["model"]),
                 tokens=str(paths["tokens"]),
                 num_threads=num_threads,
+                decoding_method="greedy_search",
                 provider="cpu",
                 debug=False,
             )
-            config = sherpa.OfflineRecognizerConfig(
-                feat_config=feature_config,
-                model_config=model_config,
-                decoding_method="greedy_search",
-            )
-            self._recognizer: Any = sherpa.OfflineRecognizer(config)
         except (KeyError, RuntimeError, TypeError) as error:
             raise ModelUnavailableError("Omnilingual ASR model could not load") from error
 
@@ -156,85 +166,221 @@ class SherpaOmnilingualProvider:
         )
 
 
+class FasterWhisperProvider:
+    """Tagalog-first Whisper provider for both live utterances and offline clips."""
+
+    def __init__(self, model_dir: Path, *, model_id: str | None = None) -> None:
+        manifest = verify_manifest(model_dir, model_dir / "manifest.json")
+        try:
+            faster_whisper = importlib.import_module("faster_whisper")
+            ctranslate2 = importlib.import_module("ctranslate2")
+        except ImportError as error:
+            raise ModelUnavailableError(
+                "faster-whisper and CTranslate2 are required for quality local ASR"
+            ) from error
+
+        configured_device = os.environ.get("LST_WHISPER_DEVICE")
+        if configured_device:
+            device = configured_device
+        elif platform.system() == "Windows" and ctranslate2.get_cuda_device_count() > 0:
+            device = "cuda"
+        else:
+            device = "cpu"
+        compute_type = os.environ.get(
+            "LST_WHISPER_COMPUTE_TYPE",
+            "float16" if device == "cuda" else "int8",
+        )
+        try:
+            self._model: Any = faster_whisper.WhisperModel(
+                str(model_dir.resolve()),
+                device=device,
+                compute_type=compute_type,
+                cpu_threads=max(1, int(os.environ.get("LST_WHISPER_CPU_THREADS", "4"))),
+                num_workers=1,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ModelUnavailableError("Whisper ASR model could not load") from error
+        manifest_id = manifest.get("id")
+        self._model_id = (
+            model_id or (manifest_id if isinstance(manifest_id, str) else None) or model_dir.name
+        )
+        self._device = device
+        self._compute_type = compute_type
+
+    @property
+    def model_id(self) -> str:
+        return self._model_id
+
+    @property
+    def runtime_detail(self) -> str:
+        return f"{self._device}/{self._compute_type}"
+
+    def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
+        try:
+            numpy = importlib.import_module("numpy")
+        except ImportError as error:
+            raise ModelUnavailableError("numpy is required for live Whisper ASR") from error
+        samples = numpy.asarray(utterance.pcm_f32, dtype=numpy.float32)
+        started = time.perf_counter()
+        segments, _info = self._model.transcribe(
+            samples,
+            language="tl",
+            task="transcribe",
+            beam_size=5,
+            vad_filter=False,
+            condition_on_previous_text=False,
+            word_timestamps=False,
+            temperature=0.0,
+        )
+        materialized = [segment for segment in segments if segment.text.strip()]
+        elapsed_ms = (time.perf_counter() - started) * 1_000
+        text = " ".join(str(segment.text).strip() for segment in materialized).strip()
+        confidences = [
+            max(0.0, min(1.0, math.exp(float(segment.avg_logprob)))) for segment in materialized
+        ]
+        confidence = sum(confidences) / len(confidences) if confidences else None
+        return AsrResult(
+            utterance_id=utterance.utterance_id,
+            text=text,
+            source_mode=source_mode,
+            is_final=utterance.is_final,
+            inference_ms=elapsed_ms,
+            model_id=self._model_id,
+            confidence=confidence,
+        )
+
+    def transcribe_file(self, source: Path, source_mode: str) -> tuple[FileAsrSegment, ...]:
+        # Whisper doesn't expose a Cebuano language token. Filipino is the safest
+        # Latin-script decoder constraint for the app's Tagalog/Cebuano comms scope;
+        # unconstrained detection misclassifies noisy game captures as English.
+        language = "tl"
+        started = time.perf_counter()
+        segments, _info = self._model.transcribe(
+            str(source.resolve()),
+            language=language,
+            task="transcribe",
+            beam_size=5,
+            vad_filter=True,
+            condition_on_previous_text=False,
+            word_timestamps=False,
+        )
+        materialized = [segment for segment in segments if segment.text.strip()]
+        elapsed_ms = (time.perf_counter() - started) * 1_000
+        per_segment_ms = elapsed_ms / max(len(materialized), 1)
+        return tuple(
+            FileAsrSegment(
+                start_ms=max(0, round(segment.start * 1_000)),
+                end_ms=max(0, round(segment.end * 1_000)),
+                text=str(segment.text).strip(),
+                inference_ms=per_segment_ms,
+                model_id=self._model_id,
+                confidence=max(0.0, min(1.0, math.exp(float(segment.avg_logprob)))),
+            )
+            for segment in materialized
+        )
+
+
 class MadladTranslationProvider:
     def __init__(self, model_dir: Path) -> None:
         verify_manifest(model_dir, model_dir / "manifest.json")
+        runner = Path(os.environ.get("LST_TRANSLATION_RUNNER", "translation-runner"))
         try:
-            transformers = importlib.import_module("transformers")
-            torch = importlib.import_module("torch")
-        except ImportError as error:
-            raise ModelUnavailableError(
-                "transformers and torch are required for local translation"
-            ) from error
-        self._torch: Any = torch
-        try:
-            self._tokenizer: Any = transformers.AutoTokenizer.from_pretrained(
-                model_dir,
-                local_files_only=True,
-                trust_remote_code=False,
+            self._process = subprocess.Popen(
+                [str(runner), str(model_dir.resolve())],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,
             )
-            self._model: Any = transformers.AutoModelForSeq2SeqLM.from_pretrained(
-                model_dir,
-                local_files_only=True,
-                trust_remote_code=False,
-                torch_dtype="auto",
-            )
-        except (OSError, RuntimeError, TypeError) as error:
-            raise ModelUnavailableError("MADLAD translation model could not load") from error
-        if torch.backends.mps.is_available():
-            self._device = "mps"
-        elif torch.cuda.is_available():
-            self._device = "cuda"
-        else:
-            self._device = "cpu"
-        self._model.to(self._device)
-        self._model.eval()
+        except OSError as error:
+            raise ModelUnavailableError("translation runner is unavailable") from error
+        if self._process.stdin is None or self._process.stdout is None:
+            self._process.kill()
+            raise ModelUnavailableError("translation runner pipes are unavailable")
+        self._lock = threading.Lock()
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
-            english_text = ""
-            inference_ms = 0.0
-        else:
-            started = time.perf_counter()
-            inputs = self._tokenizer(
-                f"<2en> {result.text}",
-                return_tensors="pt",
-                truncation=True,
-                max_length=512,
+            return TranslationResult(
+                utterance_id=result.utterance_id,
+                source_text=result.text,
+                english_text="",
+                is_final=True,
+                inference_ms=0.0,
+                model_id="madlad400-3b-mt-q4",
             )
-            inputs = {name: value.to(self._device) for name, value in inputs.items()}
-            with self._torch.inference_mode():
-                generated = self._model.generate(**inputs, max_new_tokens=256)
-            english_text = str(
-                self._tokenizer.batch_decode(generated, skip_special_tokens=True)[0]
-            ).strip()
-            inference_ms = (time.perf_counter() - started) * 1_000
+        request = json.dumps({"id": result.utterance_id, "text": result.text})
+        if len(request.encode()) > 4 * 1024:
+            raise ModelUnavailableError("translation request exceeds the size limit")
+        with self._lock:
+            if self._process.poll() is not None:
+                raise ModelUnavailableError("translation runner exited unexpectedly")
+            assert self._process.stdin is not None
+            assert self._process.stdout is not None
+            self._process.stdin.write(request + "\n")
+            self._process.stdin.flush()
+            response_line = self._process.stdout.readline()
+        try:
+            response = json.loads(response_line)
+            if response["id"] != result.utterance_id:
+                raise ValueError("translation response id mismatch")
+            english_text = str(response["english_text"])
+            inference_ms = float(response["inference_ms"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise ModelUnavailableError(
+                "translation runner returned an invalid response"
+            ) from error
         return TranslationResult(
             utterance_id=result.utterance_id,
             source_text=result.text,
             english_text=english_text,
             is_final=True,
             inference_ms=inference_ms,
-            model_id="madlad400-3b-mt",
+            model_id="madlad400-3b-mt-q4",
         )
 
 
 def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:
+    artifact_root = model_root if model_root.name == "artifacts" else model_root / "artifacts"
+
+    def verified(model_id: str) -> bool:
+        directory = artifact_root / model_id
+        try:
+            verify_manifest(directory, directory / "manifest.json")
+        except ModelUnavailableError:
+            return False
+        return True
+
+    configured_asr = os.environ.get("LST_WHISPER_MODEL_ID", "whisper-large-v3")
+    asr_ready = verified(configured_asr)
+    translation_ready = (
+        verified("madlad400-3b-mt")
+        and Path(os.environ.get("LST_TRANSLATION_RUNNER", "translation-runner")).is_file()
+    )
     return {
         "vad": {
-            "ready": False,
+            "ready": True,
             "provider": "silero-vad-onnx",
-            "detail": "model adapter pending verified artifact",
+            "detail": "stateful CPU speech detector bundled with faster-whisper",
         },
         "asr": {
-            "ready": False,
-            "provider": "omnilingual-ctc-300m-int8",
-            "detail": "verified model install required",
+            "ready": asr_ready,
+            "provider": configured_asr,
+            "detail": (
+                "verified live and contextual model"
+                if asr_ready
+                else "verified Whisper model install required"
+            ),
         },
         "translation": {
-            "ready": False,
-            "provider": "madlad400-3b-mt",
-            "detail": "verified model install required",
+            "ready": translation_ready,
+            "provider": "madlad400-3b-mt-q4",
+            "detail": (
+                "verified local artifact and runner"
+                if translation_ready
+                else "verified model and runner required"
+            ),
         },
         "demo": {
             "ready": True,

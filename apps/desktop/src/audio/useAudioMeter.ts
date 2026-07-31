@@ -85,6 +85,13 @@ export function useAudioMeter() {
       ),
     [catalog],
   );
+  const renderEndpoints = useMemo(
+    () =>
+      (catalog?.endpoints ?? []).filter(
+        (endpoint): endpoint is AudioEndpoint => endpoint.kind === "render",
+      ),
+    [catalog],
+  );
 
   const selectedEndpoint =
     captureEndpoints.find((endpoint) => endpoint.id === selectedEndpointId) ??
@@ -124,6 +131,7 @@ export function useAudioMeter() {
     catalog,
     error,
     level,
+    renderEndpoints,
     refresh,
     selectEndpoint,
     selectedEndpoint,

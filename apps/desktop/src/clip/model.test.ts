@@ -8,7 +8,7 @@ describe("clip model", () => {
     expect(formatTimestamp(65_900)).toBe("01:05");
   });
 
-  it("rejects a result that claims a real mode", () => {
+  it("rejects an unknown provider mode", () => {
     expect(() =>
       clipResultSchema.parse({
         metadata: {
@@ -19,7 +19,7 @@ describe("clip model", () => {
         },
         captions: [],
         truncated: false,
-        mode: "real",
+        mode: "cloud",
       }),
     ).toThrow();
   });

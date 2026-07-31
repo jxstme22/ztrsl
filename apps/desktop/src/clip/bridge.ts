@@ -12,6 +12,11 @@ export async function analyzeMediaClip(
   provider: "demo" | "local",
 ): Promise<ClipResult> {
   if (!isTauri()) {
+    if (provider === "local") {
+      throw new Error(
+        "Verified local models are available only in the desktop runtime.",
+      );
+    }
     return clipResultSchema.parse({
       metadata: {
         display_name: path.split(/[\\/]/).at(-1) ?? "browser-demo.mp4",
@@ -29,6 +34,7 @@ export async function analyzeMediaClip(
           english_text: "[demo translation — local MT model not installed]",
           forced_split: false,
           provider: "demo-asr+demo-mt",
+          warnings: [],
         },
       ],
       truncated: false,
@@ -39,4 +45,3 @@ export async function analyzeMediaClip(
     await invoke("analyze_clip", { path, sourceMode, provider }),
   );
 }
-

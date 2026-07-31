@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "madlad400-3b-mt",
+  "kind": "translation",
+  "runtime": "candle-quantized-t5",
+  "source": "https://huggingface.co/google/madlad400-3b-mt",
+  "revision": "fa184c6",
+  "license": {
+    "spdx": "Apache-2.0"
+  },
+  "artifacts": [
+    {
+      "role": "config",
+      "path": "config.json",
+      "size_bytes": 749,
+      "sha256": "cad399cab799b99409a6ec2d90d72552257c2bb752861261d2016691e0643e7c"
+    },
+    {
+      "role": "model",
+      "path": "model-q4k.gguf",
+      "size_bytes": 1654597280,
+      "sha256": "ea6e5531a3e95213c7f0635988d119e078a655c09306e47851e15d4c0c3f9c37"
+    },
+    {
+      "role": "tokenizer",
+      "path": "tokenizer.json",
+      "size_bytes": 16629031,
+      "sha256": "a2799ccc696b752ba00c34f58726bfe253a04921ceb6cfc620400f560474790b"
+    }
+  ]
+}

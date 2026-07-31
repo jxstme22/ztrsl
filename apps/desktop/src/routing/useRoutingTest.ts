@@ -12,6 +12,9 @@ import { EMPTY_ROUTING_SNAPSHOT } from "./model";
 
 export function useRoutingTest() {
   const [endpoints, setEndpoints] = useState<AudioEndpoint[]>([]);
+  const [platform, setPlatform] = useState<"windows" | "development">(
+    "development",
+  );
   const [captureId, setCaptureId] = useState("");
   const [playbackId, setPlaybackId] = useState("");
   const [volume, setVolumeState] = useState(0.8);
@@ -23,6 +26,7 @@ export function useRoutingTest() {
     void fetchAudioEndpoints()
       .then((catalog) => {
         setEndpoints(catalog.endpoints);
+        setPlatform(catalog.platform);
       })
       .catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -90,6 +94,7 @@ export function useRoutingTest() {
     error,
     playbackId,
     playbacks,
+    platform,
     setCaptureId,
     setPlaybackId,
     setVolume,

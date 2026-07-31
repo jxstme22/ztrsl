@@ -8,19 +8,30 @@ import {
 
 import { useAudioMeter } from "../audio/useAudioMeter";
 
-export function AudioDevicePanel() {
-  const audio = useAudioMeter();
+type AudioController = ReturnType<typeof useAudioMeter>;
+
+type AudioDevicePanelProps = {
+  audio: AudioController;
+};
+
+export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
   const meterWidth = `${String(Math.min(100, audio.level.peak * 100))}%`;
+  const isSimulator = audio.catalog?.platform === "development";
 
   return (
     <section className="audio-card" id="audio" aria-labelledby="audio-title">
       <div className="section-heading">
         <div>
-          <p className="section-kicker">Phase 2 · Capture only</p>
-          <h2 id="audio-title">Windows audio endpoint meter</h2>
+          <p className="section-kicker">
+            {isSimulator ? "macOS bench instrument" : "Windows input channel"}
+          </p>
+          <h2 id="audio-title">
+            {isSimulator ? "Generated signal meter" : "Voice-chat input meter"}
+          </h2>
           <p className="section-description">
-            Choose a capture endpoint explicitly. This phase measures its input
-            level and never plays audio back.
+            {isSimulator
+              ? "This generated waveform proves the meter and bounded audio path work. It does not listen to your microphone, game, or clip."
+              : "Choose the Windows endpoint carrying incoming voice chat. The meter never records or plays audio."}
           </p>
         </div>
         <button
@@ -37,10 +48,10 @@ export function AudioDevicePanel() {
         <div className="inline-alert info phase-note" role="status">
           <AudioLines aria-hidden="true" size={18} />
           <div>
-            <strong>Development source active</strong>
+            <strong>Simulator—not a real audio device</strong>
             <p>
-              macOS uses deterministic synthetic audio. Windows will list real
-              WASAPI capture endpoints here.
+              Select the generated signal below to test the meter. Real
+              incoming voice-chat devices appear only in the Windows build.
             </p>
           </div>
         </div>
@@ -58,7 +69,9 @@ export function AudioDevicePanel() {
 
       <div className="audio-layout">
         <div className="field">
-          <label htmlFor="capture-endpoint">Capture endpoint</label>
+          <label htmlFor="capture-endpoint">
+            {isSimulator ? "Generated test source" : "Capture endpoint"}
+          </label>
           <select
             id="capture-endpoint"
             value={audio.selectedEndpointId ?? ""}
@@ -79,8 +92,9 @@ export function AudioDevicePanel() {
             ))}
           </select>
           <p>
-            The stable Windows endpoint ID is stored locally only after you make
-            a selection.
+            {isSimulator
+              ? "No sound is captured. The app creates a deterministic waveform in memory."
+              : "The stable Windows endpoint ID is stored locally only after you make a selection."}
           </p>
         </div>
 
@@ -88,7 +102,7 @@ export function AudioDevicePanel() {
           <div className="meter-label">
             <span>
               <Activity aria-hidden="true" size={16} />
-              Capture level
+              {isSimulator ? "Generated level" : "Capture level"}
             </span>
             <output aria-live="polite">
               {audio.active
@@ -143,7 +157,9 @@ export function AudioDevicePanel() {
           </button>
         )}
         <span className="capture-safety">
-          Capture meter only · no playback · no recording
+          {isSimulator
+            ? "Generated in memory · no microphone · no playback"
+            : "Capture meter only · no playback · no recording"}
         </span>
       </div>
     </section>

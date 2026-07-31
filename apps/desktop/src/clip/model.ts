@@ -11,6 +11,7 @@ export const clipCaptionSchema = z.object({
   english_text: z.string().max(500),
   forced_split: z.boolean(),
   provider: z.string().min(1),
+  warnings: z.array(z.enum(["LOW_CONFIDENCE", "FORCED_SPLIT"])).max(2),
 });
 
 export const clipResultSchema = z.object({
@@ -22,7 +23,7 @@ export const clipResultSchema = z.object({
   }),
   captions: z.array(clipCaptionSchema).max(128),
   truncated: z.boolean(),
-  mode: z.literal("demo"),
+  mode: z.enum(["demo", "local"]),
 });
 
 export type ClipResult = z.infer<typeof clipResultSchema>;
@@ -34,4 +35,3 @@ export function formatTimestamp(milliseconds: number): string {
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
-

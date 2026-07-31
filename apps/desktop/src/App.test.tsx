@@ -23,12 +23,12 @@ describe("control window", () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: "Caption overlay" }),
+      screen.getByRole("heading", { name: "Translation console" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Local-only prototype")).toBeInTheDocument();
+    expect(screen.getByText("Private by default")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "No recording, playback, history, telemetry, or game access.",
+        "No cloud processing, recording, transcript history, telemetry, or game-process access.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -41,7 +41,48 @@ describe("control window", () => {
 
     expect(screen.getByText("No captions yet")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Send fake caption" }),
+      screen.getByRole("button", { name: "Preview sample caption" }),
+    ).toBeEnabled();
+  });
+
+  it("requires both voice input and monitoring output for live translation", async () => {
+    render(<App />);
+
+    const start = screen.getByRole("button", { name: "Start listening" });
+    const voiceInput = screen.getByRole("combobox", {
+      name: /Voice-chat channel/,
+    });
+    const monitoringOutput = screen.getByRole("combobox", {
+      name: "Monitoring output",
+    });
+    await within(voiceInput).findByRole("option", {
+      name: "Generated voice signal (macOS simulator)",
+    });
+    await within(monitoringOutput).findByRole("option", {
+      name: "Silent test sink (macOS simulator)",
+    });
+    expect(start).toBeDisabled();
+
+    fireEvent.change(voiceInput, {
+      target: { value: "synthetic://phase-2-meter" },
+    });
+    expect(start).toBeDisabled();
+    fireEvent.change(monitoringOutput, {
+      target: { value: "synthetic://phase-3-headphones" },
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Start listening" }),
+      ).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start listening" }));
+    expect(
+      await screen.findByRole("button", { name: "Stop listening" }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Stop listening" }));
+    expect(
+      await screen.findByRole("button", { name: "Start listening" }),
     ).toBeEnabled();
   });
 
@@ -54,7 +95,7 @@ describe("control window", () => {
       name: "Capture endpoint",
     });
     await within(selector).findByRole("option", {
-      name: "Synthetic voice meter (development)",
+      name: "Generated voice signal (macOS simulator)",
     });
     fireEvent.change(selector, {
       target: { value: "synthetic://phase-2-meter" },
@@ -73,7 +114,9 @@ describe("control window", () => {
     vi.useFakeTimers();
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Send fake caption" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Preview sample caption" }),
+    );
     expect(screen.getByText("Let's rotate to B…")).toBeInTheDocument();
     expect(screen.getByText("Listening")).toBeInTheDocument();
 
@@ -89,20 +132,21 @@ describe("control window", () => {
 
   it("runs the synthetic monitoring route only after both endpoints are chosen", async () => {
     render(<App />);
+    fireEvent.click(screen.getByText("Advanced diagnostics"));
 
     const start = screen.getByRole("button", {
-      name: "Start routing test",
+      name: "Run pipeline simulator",
     });
     expect(start).toBeDisabled();
-    const capture = screen.getByRole("combobox", { name: "Capture source" });
+    const capture = screen.getByRole("combobox", { name: "Generated input" });
     const playback = screen.getByRole("combobox", {
-      name: "Monitoring output",
+      name: "Silent output sink",
     });
     await within(capture).findByRole("option", {
-      name: "Synthetic voice meter (development)",
+      name: "Generated voice signal (macOS simulator)",
     });
     await within(playback).findByRole("option", {
-      name: "Synthetic headphones (development)",
+      name: "Silent test sink (macOS simulator)",
     });
     fireEvent.change(capture, {
       target: { value: "synthetic://phase-2-meter" },
@@ -120,6 +164,7 @@ describe("control window", () => {
 
   it("sends fake binary audio through the sidecar lifecycle into the overlay", async () => {
     render(<App />);
+    fireEvent.click(screen.getByText("Advanced diagnostics"));
     fireEvent.click(screen.getByRole("button", { name: "Start fake sidecar" }));
     const run = await screen.findByRole("button", {
       name: "Send fake audio end to end",
@@ -132,5 +177,23 @@ describe("control window", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByText("18 ms fake latency")).toBeInTheDocument();
+  });
+
+  it("keeps clip inference honestly labeled in browser demo mode", async () => {
+    render(<App />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Drop an MP4, MOV, MKV, or audio file/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Analyze clip" }));
+
+    expect(
+      await screen.findByText(
+        "[demo translation — local MT model not installed]",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Demo · demo-asr\+demo-mt/)).toBeInTheDocument();
   });
 });

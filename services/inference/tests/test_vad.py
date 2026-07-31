@@ -41,4 +41,3 @@ def test_long_speech_forces_bounded_split_with_overlap() -> None:
     assert utterances[0].forced_end is True
     assert all(len(item.pcm_f32) <= SAMPLE_RATE * 300 // 1_000 for item in utterances)
     assert utterances[1].started_ns < utterances[0].ended_ns
-

@@ -12,7 +12,8 @@ mod windows;
 
 #[cfg(target_os = "windows")]
 pub use windows::{
-    EndpointEvent, WindowsDeviceWatcher, WindowsEndpointCatalog, windows_endpoint_peak,
+    EndpointEvent, WindowsAudioCapture, WindowsAudioPlayback, WindowsDeviceWatcher,
+    WindowsEndpointCatalog, windows_endpoint_peak,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -456,7 +457,7 @@ pub const SYNTHETIC_MONITOR_ENDPOINT_ID: &str = "synthetic://phase-3-headphones"
 pub fn synthetic_monitor_endpoint() -> AudioEndpoint {
     AudioEndpoint {
         id: SYNTHETIC_MONITOR_ENDPOINT_ID.to_owned(),
-        friendly_name: "Synthetic headphones (development)".to_owned(),
+        friendly_name: "Silent test sink (macOS simulator)".to_owned(),
         kind: EndpointKind::Render,
         state: EndpointState::Active,
         default_roles: DefaultRoles::default(),
@@ -493,7 +494,7 @@ impl AudioSource for SyntheticAudioSource {
     fn enumerate(&self) -> Result<Vec<AudioEndpoint>, AudioError> {
         Ok(vec![AudioEndpoint {
             id: SYNTHETIC_ENDPOINT_ID.to_owned(),
-            friendly_name: "Synthetic voice meter (development)".to_owned(),
+            friendly_name: "Generated voice signal (macOS simulator)".to_owned(),
             kind: EndpointKind::Capture,
             state: EndpointState::Active,
             default_roles: DefaultRoles::default(),

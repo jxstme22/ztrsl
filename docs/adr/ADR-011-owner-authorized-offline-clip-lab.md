@@ -35,9 +35,9 @@ replace the required Silero ONNX provider or satisfy final Phase 5 quality accep
 ## Consequences
 
 The maintainer can validate the complete clip plumbing on macOS before moving to Windows. The
-current build can detect and timestamp speech-like regions in real MP4/audio files, but it cannot
-yet truthfully transcribe or translate their contents until the pinned ASR and MT runtimes and
-artifacts are installed.
+current Mac development copy can detect and timestamp speech-like regions and run verified local
+ASR plus quantized translation. Translation output remains experimental until consented bilingual
+fixtures demonstrate acceptable Filipino, Cebuano, and code-switched quality.
 
 No clip test counts as Windows WASAPI, overlay-focus, or game validation. No voice clip is suitable
 for repository fixtures unless every speaker has consented to that retention.
@@ -53,4 +53,3 @@ first analysis was rejected because it violates the model supply-chain and norma
 Review when verified Omnilingual ASR, Silero VAD, and MADLAD artifacts are pinned, and again when the
 repository moves to Windows. Windows Phase 1–3 acceptance remains required before live voice
 capture is connected to these providers.
-

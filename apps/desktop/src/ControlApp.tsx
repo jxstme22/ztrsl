@@ -20,17 +20,20 @@ import { CaptionStack } from "./components/CaptionStack";
 import { ClipLabPanel } from "./components/ClipLabPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
+import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
+import { useAudioMeter } from "./audio/useAudioMeter";
 import { isDesktopRuntime } from "./overlay/bridge";
 import { useOverlayController } from "./overlay/useOverlayController";
 
 export function ControlApp() {
   const controller = useOverlayController();
+  const audio = useAudioMeter();
   const { snapshot } = controller;
 
   return (
     <main className="control-shell">
-      <aside className="sidebar" aria-label="Application status">
+      <header className="console-header">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
             <Captions size={21} />
@@ -41,65 +44,84 @@ export function ControlApp() {
           </div>
         </div>
 
-        <nav aria-label="Prototype sections">
-          <a className="nav-item active" href="#overlay">
-            <LayoutPanelTop aria-hidden="true" size={17} />
-            Overlay
-          </a>
-          <a className="nav-item" href="#audio">
+        <nav className="console-nav" aria-label="Console modules">
+          <a className="nav-item active" href="#live">
             <AudioLines aria-hidden="true" size={17} />
-            Audio meter
-          </a>
-          <a className="nav-item" href="#routing">
-            <AudioLines aria-hidden="true" size={17} />
-            Routing
-          </a>
-          <a className="nav-item" href="#inference">
-            <Zap aria-hidden="true" size={17} />
-            Fake inference
+            Live translation
           </a>
           <a className="nav-item" href="#clips">
             <FileVideo2 aria-hidden="true" size={17} />
             Clip lab
           </a>
-          <a className="nav-item" href="#settings">
-            <MonitorUp aria-hidden="true" size={17} />
-            Placement
+          <a className="nav-item" href="#overlay">
+            <LayoutPanelTop aria-hidden="true" size={17} />
+            Subtitle monitor
           </a>
-          <a className="nav-item" href="#privacy">
-            <ShieldCheck aria-hidden="true" size={17} />
-            Privacy
+          <a className="nav-item" href="#hardware">
+            <AudioLines aria-hidden="true" size={17} />
+            Diagnostics
+          </a>
+          <a className="nav-item" href="#settings">
+            <Move aria-hidden="true" size={17} />
+            Calibration
           </a>
         </nav>
 
-        <div className="privacy-card" id="privacy">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <div>
-            <strong>Local-only prototype</strong>
-            <p>No recording, playback, history, telemetry, or game access.</p>
-          </div>
+        <div className="runtime-pill">
+          <span aria-hidden="true" />
+          {isDesktopRuntime() ? "Local engine" : "Browser preview"}
         </div>
-      </aside>
+      </header>
 
       <section className="control-content" id="overlay">
         <header className="page-header">
           <div>
-            <p className="eyebrow">Phase 1 · External overlay</p>
-            <h1>Caption overlay</h1>
+            <p className="eyebrow">Local translation instrument · Revision 05</p>
+            <h1>Translation console</h1>
             <p>
-              Test the complete provisional-to-final experience with synthetic
-              captions before audio is connected.
+              Translate incoming Tagalog squad conversations into readable
+              English subtitles without sending voice data off this device.
             </p>
           </div>
-          <div className="runtime-pill">
-            <span aria-hidden="true" />
-            {isDesktopRuntime() ? "Desktop runtime" : "Browser preview"}
+          <div className="console-serial" aria-label="Console status">
+            <span>LST–4070</span>
+            <strong>LOCAL / ARMED</strong>
           </div>
         </header>
 
-        <AudioDevicePanel />
-        <RoutingPanel />
-        <IpcPanel onCaption={controller.ingestCaption} />
+        <section className="status-bridge" aria-label="Privacy and platform status">
+          <div>
+            <span className="status-lamp ready" aria-hidden="true" />
+            <p>
+              <strong>Local models</strong>
+              <small>Whisper large-v3 + MADLAD</small>
+            </p>
+          </div>
+          <div>
+            <span className="status-lamp standby" aria-hidden="true" />
+            <p>
+              <strong>Live voice capture</strong>
+              <small>
+                {audio.catalog?.platform === "development"
+                  ? "Simulated on this Mac"
+                  : "Windows endpoint ready"}
+              </small>
+            </p>
+          </div>
+          <div>
+            <span className="status-lamp ready" aria-hidden="true" />
+            <p>
+              <strong>Retention</strong>
+              <small>Raw audio storage off</small>
+            </p>
+          </div>
+        </section>
+
+        <LiveTranslationPanel
+          audio={audio}
+          onCaption={controller.ingestCaption}
+        />
+
         <ClipLabPanel />
 
         {controller.windowError !== null && (
@@ -160,7 +182,7 @@ export function ControlApp() {
               onClick={controller.sendFakeCaption}
             >
               <FlaskConical aria-hidden="true" size={18} />
-              Send fake caption
+              Preview sample caption
             </button>
             {snapshot.visible ? (
               <button
@@ -200,6 +222,37 @@ export function ControlApp() {
           </div>
         </section>
 
+        <details className="diagnostics-bay" id="hardware">
+          <summary>
+            <span className="status-lamp standby" aria-hidden="true" />
+            <span>
+              <strong>Advanced diagnostics</strong>
+              <small>
+                Audio meter, route health, and local inference connection
+              </small>
+            </span>
+            <span className="diagnostics-bay__action">Open service bay</span>
+          </summary>
+          <section
+            className="hardware-bay"
+            aria-labelledby="hardware-title"
+          >
+            <div className="bay-label">
+              <span>Service bay 02</span>
+              <div>
+                <h2 id="hardware-title">Audio pipeline diagnostics</h2>
+                <p>
+                  Use these instruments when selecting or troubleshooting an
+                  audio route. On macOS, they run generated signals only.
+                </p>
+              </div>
+            </div>
+            <AudioDevicePanel audio={audio} />
+            <RoutingPanel />
+            <IpcPanel onCaption={controller.ingestCaption} />
+          </section>
+        </details>
+
         <div className="content-grid" id="settings">
           <section className="settings-card" aria-labelledby="appearance-title">
             <div className="section-heading compact">
@@ -212,7 +265,7 @@ export function ControlApp() {
             <div className="toggle-row">
               <div>
                 <label htmlFor="translation-enabled">Translation preview</label>
-                <p>Pause fake English output without hiding the overlay.</p>
+                <p>Pause English subtitles without hiding the overlay.</p>
               </div>
               <input
                 id="translation-enabled"
@@ -364,6 +417,17 @@ export function ControlApp() {
             />
           </section>
         </div>
+
+        <footer className="privacy-card" id="privacy">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <div>
+            <strong>Private by default</strong>
+            <p>
+              No cloud processing, recording, transcript history, telemetry, or
+              game-process access.
+            </p>
+          </div>
+        </footer>
       </section>
     </main>
   );

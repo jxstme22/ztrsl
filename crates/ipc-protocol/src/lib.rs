@@ -105,6 +105,13 @@ pub struct ClipProcessPayload {
     pub provider: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LiveStartPayload {
+    pub source_mode: String,
+    pub provider: String,
+    pub resource_profile: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClipResultPayload {
     pub metadata: ClipMetadata,
@@ -131,6 +138,7 @@ pub struct ClipCaption {
     pub english_text: String,
     pub forced_split: bool,
     pub provider: String,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

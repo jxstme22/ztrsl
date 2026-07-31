@@ -1,9 +1,9 @@
 # Local Live Translator Overlay for VALORANT
 
-A Codex-ready specification pack for a **fully local Windows desktop companion** that:
+A working foundation for a **fully local Windows desktop companion** that:
 
 - listens to incoming party/team voice routed from VALORANT;
-- recognizes **Tagalog/Filipino, Cebuano, English, and code-switched speech**;
+- recognizes **Tagalog/Filipino and Taglish** in V1;
 - translates non-English speech into English;
 - displays low-latency subtitles in a transparent, click-through overlay;
 - does not inject into, read memory from, automate, or modify VALORANT;
@@ -11,11 +11,13 @@ A Codex-ready specification pack for a **fully local Windows desktop companion**
 
 > Research and planning snapshot: **2026-07-29**  
 > Primary target hardware: **Windows 11 + NVIDIA RTX 4070 Ti (12 GB assumed)**  
-> Initial application type: **personal/local prototype**, followed by a distributable product only after policy review and registration.
+> Initial application type: **private alpha**, followed by public distribution only after Windows
+> hardware validation, policy review, model-license review, and signing.
 
 ## Current Implementation
 
-Phase 0 and the macOS-buildable portions of Phases 1 through 4 are now implemented:
+The macOS-buildable foundation, offline clip lab, and live translation vertical slice are
+implemented:
 
 - Tauri 2 desktop control-window foundation with React and strict TypeScript;
 - Rust workspace crates for audio boundaries, caption state, IPC protocol, and content-free diagnostics;
@@ -25,7 +27,7 @@ Phase 0 and the macOS-buildable portions of Phases 1 through 4 are now implement
 - all required architecture decisions plus the macOS-first sequencing record;
 - separate transparent/topmost Tauri caption overlay;
 - click-through play mode and interactive edit mode;
-- fake provisional-to-final caption lifecycle;
+- preview provisional-to-final caption lifecycle;
 - configurable global hotkeys;
 - normalized monitor placement, persistence, and missing-monitor recovery.
 - typed Windows endpoint catalog and device-notification implementation;
@@ -36,11 +38,19 @@ Phase 0 and the macOS-buildable portions of Phases 1 through 4 are now implement
 - streaming 44.1/48/96 kHz resampling and content-free routing metrics;
 - loopback-only authenticated WebSocket IPC with bounded binary audio frames;
 - supervised Python fake inference with provisional/final captions and restart handling.
+- user-approved MP4/video/audio drag-and-drop with read-only FFmpeg streaming;
+- bounded speech segmentation and timestamped clip results;
+- pinned Faster-Whisper large-v3 Tagalog ASR with a verified turbo development fallback;
+- CPU Silero VAD and bounded live utterance segmentation;
+- continuous Windows capture-to-sidecar-to-overlay live caption plumbing;
+- a persistent Rust Candle worker for the verified MADLAD-400 3B Q4 translation model;
+- explicit atomic model installers and committed SHA-256 manifests.
 
-No real monitoring playback, audio recording, game interaction, model inference, or model download
-is active on macOS. Windows overlay and audio hardware acceptance remain deferred under ADR-008
-through ADR-010; see the Phase 1–4 validation records. The Phase 4 sidecar uses fake providers and
-the project Python environment, not packaged models.
+No audio or transcript is retained. macOS uses a clearly labeled generated-signal simulator;
+ordinary Windows endpoint capture activates only in the Windows build. Windows overlay, audio,
+CUDA, latency, VRAM, and gameplay acceptance remain unverified until the reference PC is available.
+The current sidecar still uses the project Python environment and separately built translation
+worker, not packaged public-release resources.
 
 ## Read This First
 
@@ -61,8 +71,9 @@ the project Python environment, not packaged models.
 | Windows audio | WASAPI via `windows-rs` or a carefully selected safe wrapper |
 | Routing | User-installed signed virtual audio cable for V1 |
 | VAD | Silero VAD ONNX |
-| Live ASR | Omnilingual ASR CTC 300M int8 through sherpa-onnx |
-| Quality candidate | Omnilingual ASR CTC 1B int8, benchmark-gated |
+| Live ASR | Faster-Whisper large-v3, forced Filipino, CUDA FP16 |
+| VAD | Silero VAD v6 ONNX on CPU |
+| Fallback | large-v3-turbo after an explicit benchmark or resource failure |
 | Translation | MADLAD-400 3B MT, quantized where validated |
 | Initial inference process | Python local sidecar |
 | Final optimized runtime | ONNX/sherpa-onnx native integration where practical |
@@ -162,6 +173,14 @@ uv sync --frozen --extra dev
 .\scripts\check.ps1
 ```
 
+For the owner’s first RTX 4070 Ti validation, the one-command preparation path checks FFmpeg,
+NVIDIA/CUDA visibility, builds the persistent translation worker, downloads both pinned models,
+verifies their SHA-256 manifests, and runs the repository checks:
+
+```powershell
+.\scripts\prepare_windows.ps1 -AcceptModelLicenses
+```
+
 Start the foundation UI:
 
 ```powershell
@@ -185,7 +204,7 @@ The project is not done when text appears on screen. It is done when:
 - output monitoring does not create echo or a feedback loop;
 - the overlay is readable and never steals game input;
 - the application remains outside the game process;
-- Tagalog, Cebuano, English, and mixed fixtures are benchmarked;
+- Tagalog and Taglish fixtures are benchmarked with native-speaker review;
 - latency and resource budgets are measured on target hardware;
 - raw audio is not persisted by default;
 - every failure mode has a user-visible recovery path;

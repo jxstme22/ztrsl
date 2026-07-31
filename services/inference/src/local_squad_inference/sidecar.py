@@ -15,6 +15,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from local_squad_inference.clip import process_clip
+from local_squad_inference.live import LivePipeline
 from local_squad_inference.protocol import (
     MAX_AUDIO_MESSAGE_BYTES,
     MAX_CONTROL_MESSAGE_BYTES,
@@ -23,12 +24,16 @@ from local_squad_inference.protocol import (
     ClipProcessPayload,
     ControlEnvelope,
     HelloPayload,
+    LiveStartPayload,
     parse_audio_packet,
 )
 from local_squad_inference.providers import (
+    AsrProvider,
+    DemoAsrProvider,
+    DemoTranslationProvider,
+    FasterWhisperProvider,
     MadladTranslationProvider,
-    ModelUnavailableError,
-    SherpaOmnilingualProvider,
+    TranslationProvider,
     provider_readiness,
 )
 
@@ -36,10 +41,16 @@ SendJson = Callable[[dict[str, object]], Awaitable[None]]
 
 
 @lru_cache(maxsize=1)
-def local_providers() -> tuple[SherpaOmnilingualProvider, MadladTranslationProvider]:
+def local_providers() -> tuple[FasterWhisperProvider, MadladTranslationProvider]:
     model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
+    requested_model_id = os.environ.get("LST_WHISPER_MODEL_ID", "whisper-large-v3")
+    model_dir = model_root / requested_model_id
+    if not model_dir.is_dir() and requested_model_id == "whisper-large-v3":
+        fallback = model_root / "whisper-large-v3-turbo"
+        if fallback.is_dir():
+            model_dir = fallback
     return (
-        SherpaOmnilingualProvider(model_root / "omni-ctc-300m-int8"),
+        FasterWhisperProvider(model_dir),
         MadladTranslationProvider(model_root / "madlad400-3b-mt"),
     )
 
@@ -148,6 +159,7 @@ async def handle_connection(
         )
 
         last_sequence: int | None = None
+        live_pipeline: LivePipeline | None = None
         async for message in connection:
             if isinstance(message, bytes):
                 packet = parse_audio_packet(message)
@@ -155,6 +167,37 @@ async def handle_connection(
                     await connection.close(code=1008, reason="stale audio sequence")
                     return
                 last_sequence = packet.sequence
+                if live_pipeline is not None:
+                    try:
+                        captions = await asyncio.to_thread(live_pipeline.feed, packet)
+                    except Exception as error:
+                        await connection.send(
+                            json.dumps(
+                                envelope(
+                                    "live.error",
+                                    f"live-error-{packet.sequence}",
+                                    hello_envelope.session_id,
+                                    {
+                                        "code": "LIVE_INFERENCE_FAILED",
+                                        "message": str(error),
+                                        "recoverable": True,
+                                    },
+                                )
+                            )
+                        )
+                        continue
+                    for index, caption in enumerate(captions, start=1):
+                        await connection.send(
+                            json.dumps(
+                                envelope(
+                                    f"caption.{caption.status}",
+                                    f"live-caption-{packet.sequence}-{index}",
+                                    hello_envelope.session_id,
+                                    caption.model_dump(mode="json"),
+                                )
+                            )
+                        )
+                    continue
                 for index, caption in enumerate(
                     fake_captions(
                         hello_envelope.session_id,
@@ -222,25 +265,116 @@ async def handle_connection(
                         )
                     )
                 )
-            elif control.type == "clip.process":
-                request = ClipProcessPayload.model_validate(control.payload)
+            elif control.type == "live.start":
+                live_request = LiveStartPayload.model_validate(control.payload)
                 try:
-                    kwargs: dict[str, object] = {"mode": request.provider}
-                    if request.provider == "local":
-                        asr_provider, translation_provider = local_providers()
-                        kwargs.update(
-                            {
-                                "asr": asr_provider,
-                                "translation": translation_provider,
-                            }
-                        )
-                    result = await asyncio.to_thread(
-                        process_clip,
-                        Path(request.path),
-                        request.source_mode,
-                        **kwargs,
+                    asr_provider: AsrProvider
+                    translation_provider: TranslationProvider
+                    if live_request.provider == "local":
+                        local_asr, local_translation = await asyncio.to_thread(local_providers)
+                        asr_provider = local_asr
+                        translation_provider = local_translation
+                    else:
+                        asr_provider = DemoAsrProvider()
+                        translation_provider = DemoTranslationProvider()
+                    live_pipeline = LivePipeline(
+                        asr_provider,
+                        translation_provider,
+                        source_mode=live_request.source_mode,
+                        use_silero=live_request.provider == "local",
                     )
-                except (OSError, RuntimeError, ValueError, ModelUnavailableError) as error:
+                except Exception as error:
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "live.error",
+                                control.message_id,
+                                control.session_id,
+                                {
+                                    "code": "LIVE_START_FAILED",
+                                    "message": str(error),
+                                    "recoverable": True,
+                                },
+                            )
+                        )
+                    )
+                    continue
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "live.started",
+                            control.message_id,
+                            control.session_id,
+                            {
+                                "source_mode": live_request.source_mode,
+                                "provider": live_request.provider,
+                                "resource_profile": live_request.resource_profile,
+                                "asr_model": getattr(asr_provider, "model_id", "demo-asr"),
+                                "audio_format": {
+                                    "sample_rate": 16_000,
+                                    "channels": 1,
+                                },
+                            },
+                        )
+                    )
+                )
+            elif control.type == "live.stop":
+                if live_pipeline is not None:
+                    try:
+                        captions = await asyncio.to_thread(live_pipeline.flush)
+                    except Exception:
+                        captions = ()
+                    for index, caption in enumerate(captions, start=1):
+                        await connection.send(
+                            json.dumps(
+                                envelope(
+                                    f"caption.{caption.status}",
+                                    f"live-final-{index}",
+                                    control.session_id,
+                                    caption.model_dump(mode="json"),
+                                )
+                            )
+                        )
+                    metrics = asdict(live_pipeline.metrics)
+                    live_pipeline = None
+                else:
+                    metrics = {
+                        "packets_received": 0,
+                        "utterances_completed": 0,
+                        "captions_emitted": 0,
+                        "low_confidence_captions": 0,
+                    }
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "live.stopped",
+                            control.message_id,
+                            control.session_id,
+                            {"metrics": metrics},
+                        )
+                    )
+                )
+            elif control.type == "clip.process":
+                clip_request = ClipProcessPayload.model_validate(control.payload)
+                try:
+                    if clip_request.provider == "local":
+                        asr_provider, translation_provider = local_providers()
+                        result = await asyncio.to_thread(
+                            process_clip,
+                            Path(clip_request.path),
+                            clip_request.source_mode,
+                            file_asr=asr_provider,
+                            translation=translation_provider,
+                            mode="local",
+                        )
+                    else:
+                        result = await asyncio.to_thread(
+                            process_clip,
+                            Path(clip_request.path),
+                            clip_request.source_mode,
+                            mode="demo",
+                        )
+                except Exception as error:
                     await connection.send(
                         json.dumps(
                             envelope(

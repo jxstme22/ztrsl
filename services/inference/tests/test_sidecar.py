@@ -91,6 +91,66 @@ def test_fake_audio_produces_provisional_and_final_captions() -> None:
     asyncio.run(with_server(scenario))
 
 
+def test_live_demo_session_segments_audio_and_stops_with_metrics() -> None:
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello("launch-token"))
+            await websocket.recv()
+            await websocket.send(
+                json.dumps(
+                    {
+                        "protocol_version": 1,
+                        "message_id": "live-start-1",
+                        "session_id": "session-1",
+                        "type": "live.start",
+                        "sent_monotonic_ns": 2,
+                        "payload": {
+                            "source_mode": "filipino",
+                            "provider": "demo",
+                            "resource_profile": "quality",
+                        },
+                    }
+                )
+            )
+            started: dict[str, Any] = json.loads(await websocket.recv())
+            assert started["type"] == "live.started"
+
+            for sequence, amplitude in enumerate((0.1, 0.1, 0.0, 0.0, 0.0), start=1):
+                packet = AudioPacket(
+                    session_id=b"0123456789abcdef",
+                    sequence=sequence,
+                    capture_monotonic_ns=sequence * 300_000_000,
+                    sample_rate=16_000,
+                    channels=1,
+                    flags=0,
+                    samples=tuple([amplitude] * 4_800),
+                )
+                await websocket.send(encode_audio_packet(packet))
+
+            caption: dict[str, Any] = json.loads(await websocket.recv())
+            assert caption["type"] == "caption.final"
+            assert caption["payload"]["source_mode"] == "filipino"
+
+            await websocket.send(
+                json.dumps(
+                    {
+                        "protocol_version": 1,
+                        "message_id": "live-stop-1",
+                        "session_id": "session-1",
+                        "type": "live.stop",
+                        "sent_monotonic_ns": 3,
+                        "payload": {},
+                    }
+                )
+            )
+            stopped: dict[str, Any] = json.loads(await websocket.recv())
+            assert stopped["type"] == "live.stopped"
+            assert stopped["payload"]["metrics"]["captions_emitted"] == 1
+            stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
 def test_user_selected_wav_runs_through_clip_pipeline(tmp_path: Path) -> None:
     source = tmp_path / "friends-comms.wav"
     samples = array(
