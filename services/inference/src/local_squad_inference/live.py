@@ -36,12 +36,12 @@ class LivePipeline:
         asr: AsrProvider,
         translation: TranslationProvider,
         *,
-        source_mode: str = "filipino",
+        source_mode: Literal["filipino", "chinese"] = "filipino",
         vad_config: VadConfig | None = None,
         use_silero: bool = True,
     ) -> None:
-        if source_mode != "filipino":
-            raise ValueError("V1 live mode supports Filipino / Taglish only")
+        if source_mode not in {"filipino", "chinese"}:
+            raise ValueError("V1 live mode supports Filipino or Chinese only")
         self._asr = asr
         self._translation = translation
         self._source_mode = source_mode
@@ -54,7 +54,9 @@ class LivePipeline:
         )
         self._manager = EnergyUtteranceManager(
             config,
-            SileroSpeechDetector() if use_silero else None,
+            SileroSpeechDetector(threshold=config.silero_threshold)
+            if use_silero
+            else None,
         )
         self._stream_origin_ns: int | None = None
         self._clock_origin_ns: int | None = None
@@ -91,6 +93,8 @@ class LivePipeline:
             self._utterances_completed += 1
             source_text = _normalize_transcript(transcript.text)
             if not source_text:
+                if transcript.error:
+                    captions.append(self._failure_caption(utterance, transcript.error))
                 continue
 
             warnings: list[Literal["LOW_CONFIDENCE", "FORCED_SPLIT"]] = []
@@ -100,10 +104,19 @@ class LivePipeline:
             if _UNEXPECTED_SCRIPT.search(source_text):
                 warnings.append("LOW_CONFIDENCE")
 
-            translated = self._translation.translate(transcript)
-            english_text = _normalize_transcript(translated.english_text)
-            if not english_text:
-                english_text = "[Speech unclear]"
+            try:
+                translated = self._translation.translate(transcript)
+                english_text = _normalize_transcript(translated.english_text)
+                if not english_text:
+                    english_text = "[Speech unclear]"
+                    warnings.append("LOW_CONFIDENCE")
+            except Exception:
+                # A single failed translation must never kill the live
+                # session. Surface a placeholder so the user keeps seeing
+                # the recognized source text plus a status hint, and let
+                # the next utterance try again. Translation providers that
+                # spawn a subprocess (e.g. MADLAD) recover lazily.
+                english_text = "[Translation unavailable]"
                 warnings.append("LOW_CONFIDENCE")
             if utterance.forced_end:
                 warnings.append("FORCED_SPLIT")
@@ -121,7 +134,7 @@ class LivePipeline:
                     utterance_id=utterance.utterance_id,
                     revision=1,
                     status="final",
-                    source_mode="filipino",
+                    source_mode=self._source_mode,
                     source_text=source_text,
                     english_text=english_text,
                     started_monotonic_ns=origin_ns + utterance.started_ns,
@@ -134,6 +147,33 @@ class LivePipeline:
                 )
             )
         return tuple(captions)
+
+    def _failure_caption(self, utterance: AudioUtterance, reason: str) -> CaptionPayload:
+        """Emit a visible placeholder caption when ASR fails so the user never
+        sees a silent session. The message is capped and sanitized to avoid
+        leaking secrets (e.g. API keys echoed back by a provider)."""
+        message = re.sub(r"[\r\n]+", " ", reason).strip()
+        if len(message) > 160:
+            message = message[:157] + "..."
+        origin_ns = self._clock_origin_ns or time.monotonic_ns()
+        self._captions_emitted += 1
+        self._low_confidence_captions += 1
+        return CaptionPayload(
+            caption_id=f"live-{utterance.utterance_id}",
+            utterance_id=utterance.utterance_id,
+            revision=1,
+            status="final",
+            source_mode=self._source_mode,
+            source_text="[Speech recognition unavailable]",
+            english_text=f"[Speech recognition unavailable: {message}]",
+            started_monotonic_ns=origin_ns + utterance.started_ns,
+            ended_monotonic_ns=origin_ns + utterance.ended_ns,
+            capture_to_caption_ms=0.0,
+            asr_ms=0.0,
+            translation_ms=0.0,
+            confidence=0.0,
+            warnings=["LOW_CONFIDENCE"],
+        )
 
 
 def _normalize_transcript(text: str) -> str:

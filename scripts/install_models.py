@@ -32,6 +32,22 @@ WHISPER_FILES = (
     "tokenizer.json",
     "vocabulary.json",
 )
+WHISPER_TURBO_ID = "whisper-large-v3-turbo"
+WHISPER_TURBO_REPO = "dropbox-dash/faster-whisper-large-v3-turbo"
+WHISPER_TURBO_REVISION = "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+
+WHISPER_SPECS: dict[str, dict[str, str]] = {
+    WHISPER_ID: {
+        "repo": WHISPER_REPO,
+        "revision": WHISPER_REVISION,
+        "manifest": "whisper-large-v3.json",
+    },
+    WHISPER_TURBO_ID: {
+        "repo": WHISPER_TURBO_REPO,
+        "revision": WHISPER_TURBO_REVISION,
+        "manifest": "whisper-large-v3-turbo.json",
+    },
+}
 
 
 class InstallError(RuntimeError):
@@ -181,7 +197,13 @@ def install_madlad() -> None:
     print(f"Installed and verified {MADLAD_ID}")
 
 
-def install_whisper() -> None:
+def install_whisper(model_id: str = WHISPER_ID) -> None:
+    spec = WHISPER_SPECS.get(model_id)
+    if spec is None:
+        raise InstallError(f"unknown Whisper model id: {model_id}")
+    repo = spec["repo"]
+    revision = spec["revision"]
+    manifest_name = spec["manifest"]
     try:
         from huggingface_hub import snapshot_download
     except ImportError as error:
@@ -189,10 +211,10 @@ def install_whisper() -> None:
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as temporary:
         staging = Path(temporary)
-        target_staging = staging / WHISPER_ID
+        target_staging = staging / model_id
         snapshot_download(
-            repo_id=WHISPER_REPO,
-            revision=WHISPER_REVISION,
+            repo_id=repo,
+            revision=revision,
             allow_patterns=list(WHISPER_FILES),
             local_dir=target_staging,
             cache_dir=staging / ".hf-cache",
@@ -200,13 +222,13 @@ def install_whisper() -> None:
         for filename in WHISPER_FILES:
             if not (target_staging / filename).is_file():
                 raise InstallError(f"Whisper snapshot is missing {filename}")
-        verify_committed_manifest(target_staging, "whisper-large-v3.json")
+        verify_committed_manifest(target_staging, manifest_name)
         write_manifest(
             target_staging,
-            model_id=WHISPER_ID,
+            model_id=model_id,
             kind="asr",
-            source=f"https://huggingface.co/{WHISPER_REPO}",
-            revision=WHISPER_REVISION,
+            source=f"https://huggingface.co/{repo}",
+            revision=revision,
             license_spdx="MIT",
             roles={
                 "model": "model.bin",
@@ -216,16 +238,19 @@ def install_whisper() -> None:
                 "preprocessor": "preprocessor_config.json",
             },
         )
-        destination = ARTIFACT_ROOT / WHISPER_ID
+        destination = ARTIFACT_ROOT / model_id
         if destination.exists():
             shutil.rmtree(destination)
         target_staging.replace(destination)
-    print(f"Installed and verified {WHISPER_ID}")
+    print(f"Installed and verified {model_id}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Explicit verified local model installer")
-    parser.add_argument("model", choices=("asr", "whisper", "madlad", "all"))
+    parser.add_argument(
+        "model",
+        choices=("asr", "whisper", "whisper-turbo", "madlad", "all"),
+    )
     parser.add_argument("--archive", type=Path, help="verified ASR archive already on disk")
     parser.add_argument(
         "--accept-license",
@@ -238,7 +263,9 @@ def main() -> None:
     if arguments.model in {"asr", "all"}:
         install_asr(arguments.archive)
     if arguments.model in {"whisper", "all"}:
-        install_whisper()
+        install_whisper(WHISPER_ID)
+    if arguments.model in {"whisper-turbo", "all"}:
+        install_whisper(WHISPER_TURBO_ID)
     if arguments.model in {"madlad", "all"}:
         install_madlad()
 

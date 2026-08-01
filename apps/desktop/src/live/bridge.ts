@@ -8,10 +8,40 @@ import {
 
 let browserListening = false;
 
+export type TranslationProvider =
+  | "madlad"
+  | "libretranslate"
+  | "google-translate"
+  | "mymemory"
+  | "custom-http";
+
+export type AsrProvider =
+  | "local"
+  | "whisper-turbo"
+  | "whisper-full"
+  | "ncspeech"
+  | "groq-whisper";
+
+export async function setTranslationEnv(
+  pairs: [string, string][],
+): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke("set_translation_env", {
+    request: { pairs },
+  });
+}
+
 export async function startLiveTranslation(
   endpointId: string,
-  playbackEndpointId: string,
-  provider: "demo" | "local",
+  playbackEndpointId: string | null,
+  provider: "demo" | "local" | "http",
+  monitorEnabled: boolean,
+  sourceMode: "filipino" | "chinese",
+  asrProvider: AsrProvider,
+  translationProvider: TranslationProvider,
+  vadSensitivity = 50,
 ): Promise<LiveSnapshot> {
   if (!isTauri()) {
     browserListening = true;
@@ -20,7 +50,7 @@ export async function startLiveTranslation(
       state: "listening",
       provider: "demo",
       asrModel: "browser-preview",
-      sourceMode: "filipino",
+      sourceMode,
       resourceProfile: "quality",
     };
   }
@@ -28,10 +58,14 @@ export async function startLiveTranslation(
     await invoke("start_live_translation", {
       request: {
         endpointId,
-        playbackEndpointId,
-        sourceMode: "filipino",
+        playbackEndpointId: playbackEndpointId ?? "",
+        sourceMode,
         provider,
+        asrProvider,
+        translationProvider,
         resourceProfile: "quality",
+        monitorEnabled,
+        vadSensitivity,
       },
     }),
   );

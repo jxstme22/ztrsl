@@ -84,7 +84,6 @@ export function HotkeyPanel({
         </span>
         <span>
           <strong>Global hotkeys</strong>
-          <small>Configurable, with conflict feedback</small>
         </span>
       </summary>
 

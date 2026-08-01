@@ -22,17 +22,9 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
     <section className="audio-card" id="audio" aria-labelledby="audio-title">
       <div className="section-heading">
         <div>
-          <p className="section-kicker">
-            {isSimulator ? "macOS bench instrument" : "Windows input channel"}
-          </p>
           <h2 id="audio-title">
             {isSimulator ? "Generated signal meter" : "Voice-chat input meter"}
           </h2>
-          <p className="section-description">
-            {isSimulator
-              ? "This generated waveform proves the meter and bounded audio path work. It does not listen to your microphone, game, or clip."
-              : "Choose the Windows endpoint carrying incoming voice chat. The meter never records or plays audio."}
-          </p>
         </div>
         <button
           className="button quiet"
@@ -45,10 +37,9 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
       </div>
 
       {audio.catalog?.platform === "development" && (
-        <div className="inline-alert info phase-note" role="status">
-          <AudioLines aria-hidden="true" size={18} />
+        <div className="inline-alert" role="status">
           <div>
-            <strong>Simulator—not a real audio device</strong>
+            <strong>Simulator — not a real audio device</strong>
             <p>
               Select the generated signal below to test the meter. Real
               incoming voice-chat devices appear only in the Windows build.
@@ -91,11 +82,6 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
               </option>
             ))}
           </select>
-          <p>
-            {isSimulator
-              ? "No sound is captured. The app creates a deterministic waveform in memory."
-              : "The stable Windows endpoint ID is stored locally only after you make a selection."}
-          </p>
         </div>
 
         <div className="meter-panel">

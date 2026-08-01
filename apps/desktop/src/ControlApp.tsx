@@ -1,19 +1,7 @@
-import {
-  Captions,
-  CircleAlert,
-  Eye,
-  EyeOff,
-  FlaskConical,
-  LayoutPanelTop,
-  MonitorUp,
-  Move,
-  RotateCcw,
-  ShieldCheck,
-  Trash2,
-  Zap,
-  AudioLines,
-  FileVideo2,
-} from "lucide-react";
+import { Minus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AudioDevicePanel } from "./components/AudioDevicePanel";
 import { CaptionStack } from "./components/CaptionStack";
@@ -25,247 +13,239 @@ import { RoutingPanel } from "./components/RoutingPanel";
 import { useAudioMeter } from "./audio/useAudioMeter";
 import { isDesktopRuntime } from "./overlay/bridge";
 import { useOverlayController } from "./overlay/useOverlayController";
+import { getLiquidGlassStatus } from "./windowEffects";
+
+type SectionId = "live" | "overlay" | "hotkeys" | "cliplab" | "diagnostics";
+
+type Controller = ReturnType<typeof useOverlayController>;
+type AudioController = ReturnType<typeof useAudioMeter>;
+
+const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
+  { id: "live", label: "Live" },
+  { id: "overlay", label: "Overlay" },
+  { id: "hotkeys", label: "Hotkeys" },
+  { id: "cliplab", label: "Clip Lab" },
+  { id: "diagnostics", label: "Diagnostics" },
+];
 
 export function ControlApp() {
   const controller = useOverlayController();
   const audio = useAudioMeter();
-  const { snapshot } = controller;
+  const desktop = isDesktopRuntime();
+  const [section, setSection] = useState<SectionId>("live");
+  const [glassStatus, setGlassStatus] = useState<string>("…");
+
+  useEffect(() => {
+    let cancelled = false;
+    void getLiquidGlassStatus().then((status) => {
+      if (!cancelled) {
+        setGlassStatus(status);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const minimize = () => {
+    if (desktop) {
+      void getCurrentWindow().minimize();
+    }
+  };
+
+  const close = () => {
+    if (desktop) {
+      void getCurrentWindow().close();
+    }
+  };
 
   return (
-    <main className="control-shell">
-      <header className="console-header">
-        <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true">
-            <Captions size={21} />
-          </span>
-          <div>
-            <strong>Local Squad</strong>
-            <span>Translator</span>
-          </div>
-        </div>
-
-        <nav className="console-nav" aria-label="Console modules">
-          <a className="nav-item active" href="#live">
-            <AudioLines aria-hidden="true" size={17} />
-            Live translation
-          </a>
-          <a className="nav-item" href="#clips">
-            <FileVideo2 aria-hidden="true" size={17} />
-            Clip lab
-          </a>
-          <a className="nav-item" href="#overlay">
-            <LayoutPanelTop aria-hidden="true" size={17} />
-            Subtitle monitor
-          </a>
-          <a className="nav-item" href="#hardware">
-            <AudioLines aria-hidden="true" size={17} />
-            Diagnostics
-          </a>
-          <a className="nav-item" href="#settings">
-            <Move aria-hidden="true" size={17} />
-            Calibration
-          </a>
-        </nav>
-
-        <div className="runtime-pill">
-          <span aria-hidden="true" />
-          {isDesktopRuntime() ? "Local engine" : "Browser preview"}
-        </div>
-      </header>
-
-      <section className="control-content" id="overlay">
-        <header className="page-header">
-          <div>
-            <p className="eyebrow">Local translation instrument · Revision 05</p>
-            <h1>Translation console</h1>
-            <p>
-              Translate incoming Tagalog squad conversations into readable
-              English subtitles without sending voice data off this device.
-            </p>
-          </div>
-          <div className="console-serial" aria-label="Console status">
-            <span>LST–4070</span>
-            <strong>LOCAL / ARMED</strong>
-          </div>
-        </header>
-
-        <section className="status-bridge" aria-label="Privacy and platform status">
-          <div>
-            <span className="status-lamp ready" aria-hidden="true" />
-            <p>
-              <strong>Local models</strong>
-              <small>Whisper large-v3 + MADLAD</small>
-            </p>
-          </div>
-          <div>
-            <span className="status-lamp standby" aria-hidden="true" />
-            <p>
-              <strong>Live voice capture</strong>
-              <small>
-                {audio.catalog?.platform === "development"
-                  ? "Simulated on this Mac"
-                  : "Windows endpoint ready"}
-              </small>
-            </p>
-          </div>
-          <div>
-            <span className="status-lamp ready" aria-hidden="true" />
-            <p>
-              <strong>Retention</strong>
-              <small>Raw audio storage off</small>
-            </p>
-          </div>
-        </section>
-
-        <LiveTranslationPanel
-          audio={audio}
-          onCaption={controller.ingestCaption}
-        />
-
-        <ClipLabPanel />
-
-        {controller.windowError !== null && (
-          <section className="inline-alert error" role="alert">
-            <CircleAlert aria-hidden="true" size={18} />
-            <div>
-              <strong>Overlay unavailable</strong>
-              <p>{controller.windowError}</p>
-            </div>
-            <button
-              className="button quiet"
-              type="button"
-              onClick={controller.retryWindowSync}
-            >
-              Try again
+    <main className="app-frame">
+      <div className="titlebar" data-tauri-drag-region>
+        <span className="titlebar-title">Local Squad Translator</span>
+        {desktop && (
+          <div className="window-actions">
+            <button type="button" aria-label="Minimize" onClick={minimize}>
+              <Minus aria-hidden="true" size={15} />
             </button>
-          </section>
+            <button type="button" aria-label="Close" onClick={close}>
+              <X aria-hidden="true" size={15} />
+            </button>
+          </div>
         )}
+      </div>
 
-        {controller.recoveredPlacement && (
-          <section className="inline-alert info" role="status">
-            <MonitorUp aria-hidden="true" size={18} />
-            <div>
-              <strong>Overlay moved to the primary display</strong>
-              <p>
-                The saved monitor was unavailable, so the overlay stayed
-                visible.
-              </p>
-            </div>
-          </section>
-        )}
-
-        <section className="preview-card" aria-labelledby="preview-title">
-          <div className="section-heading">
-            <div>
-              <p className="section-kicker">Live preview</p>
-              <h2 id="preview-title">What players will read</h2>
-            </div>
-            <span className={`mode-badge ${snapshot.mode}`}>
-              {snapshot.mode === "edit" ? "Edit mode" : "Play mode"}
-            </span>
-          </div>
-
-          <div className="preview-stage">
-            <div className="preview-hud" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-            <CaptionStack preview snapshot={snapshot} />
-          </div>
-
-          <div className="action-row">
-            <button
-              className="button primary"
-              type="button"
-              disabled={!snapshot.translationEnabled}
-              onClick={controller.sendFakeCaption}
-            >
-              <FlaskConical aria-hidden="true" size={18} />
-              Preview sample caption
-            </button>
-            {snapshot.visible ? (
+      <div className="app-body">
+        <aside className="sidebar">
+          <h1 className="app-title">Translation console</h1>
+          <nav className="sidebar-nav" aria-label="Sections">
+            {NAV_ITEMS.map((item) => (
               <button
-                className="button secondary"
+                key={item.id}
                 type="button"
-                onClick={controller.hideOverlay}
+                className={`nav-button ${section === item.id ? "active" : ""}`}
+                aria-current={section === item.id ? "page" : undefined}
+                onClick={() => {
+                  setSection(item.id);
+                }}
               >
-                <EyeOff aria-hidden="true" size={18} />
-                Hide overlay
+                {item.label}
               </button>
-            ) : (
-              <button
-                className="button secondary"
-                type="button"
-                onClick={controller.showOverlay}
-              >
-                <Eye aria-hidden="true" size={18} />
-                Show overlay
-              </button>
-            )}
-            <button
-              className="button secondary"
-              type="button"
-              onClick={controller.toggleEditMode}
-            >
-              <Move aria-hidden="true" size={18} />
-              {snapshot.mode === "edit" ? "Finish editing" : "Edit position"}
-            </button>
-            <button
-              className="button quiet"
-              type="button"
-              onClick={controller.clearCaptions}
-            >
-              <Trash2 aria-hidden="true" size={18} />
-              Clear
-            </button>
-          </div>
-        </section>
-
-        <details className="diagnostics-bay" id="hardware">
-          <summary>
-            <span className="status-lamp standby" aria-hidden="true" />
-            <span>
-              <strong>Advanced diagnostics</strong>
-              <small>
-                Audio meter, route health, and local inference connection
-              </small>
-            </span>
-            <span className="diagnostics-bay__action">Open service bay</span>
-          </summary>
-          <section
-            className="hardware-bay"
-            aria-labelledby="hardware-title"
-          >
-            <div className="bay-label">
-              <span>Service bay 02</span>
+            ))}
+          </nav>
+          <div className="sidebar-foot">
+            <div className="privacy-card" id="privacy">
               <div>
-                <h2 id="hardware-title">Audio pipeline diagnostics</h2>
+                <strong>Private by default</strong>
                 <p>
-                  Use these instruments when selecting or troubleshooting an
-                  audio route. On macOS, they run generated signals only.
+                  No cloud processing, recording, transcript history,
+                  telemetry, or game-process access.
                 </p>
               </div>
             </div>
-            <AudioDevicePanel audio={audio} />
-            <RoutingPanel />
-            <IpcPanel onCaption={controller.ingestCaption} />
-          </section>
-        </details>
+            <p className="glass-status">Glass: {glassStatus}</p>
+          </div>
+        </aside>
 
-        <div className="content-grid" id="settings">
-          <section className="settings-card" aria-labelledby="appearance-title">
-            <div className="section-heading compact">
-              <div>
-                <p className="section-kicker">Appearance</p>
-                <h2 id="appearance-title">Readable at a glance</h2>
-              </div>
-            </div>
+        <section className="content" aria-label="Active section">
+          {section === "live" && (
+            <LivePage controller={controller} audio={audio} />
+          )}
+          {section === "overlay" && <OverlayPage controller={controller} />}
+          {section === "hotkeys" && <HotkeysPage controller={controller} />}
+          {section === "cliplab" && <ClipLabPage />}
+          {section === "diagnostics" && (
+            <DiagnosticsPage
+              audio={audio}
+              onCaption={controller.ingestCaption}
+            />
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
 
+function LivePage({
+  controller,
+  audio,
+}: {
+  controller: Controller;
+  audio: AudioController;
+}) {
+  const { snapshot } = controller;
+
+  return (
+    <div className="page-stack">
+      {controller.windowError !== null && (
+        <section className="inline-alert error" role="alert">
+          <div>
+            <strong>Overlay unavailable</strong>
+            <p>{controller.windowError}</p>
+          </div>
+          <button
+            className="button quiet"
+            type="button"
+            onClick={controller.retryWindowSync}
+          >
+            Try again
+          </button>
+        </section>
+      )}
+
+      {controller.recoveredPlacement && (
+        <section className="inline-alert" role="status">
+          <div>
+            <strong>Overlay moved to the primary display</strong>
+            <p>The saved monitor was unavailable, so the overlay stayed visible.</p>
+          </div>
+        </section>
+      )}
+
+      <LiveTranslationPanel
+        audio={audio}
+        onCaption={controller.ingestCaption}
+      />
+
+      <section className="card" aria-labelledby="preview-title">
+        <div className="card-head">
+          <h2 className="card-title" id="preview-title">
+            On-screen captions
+          </h2>
+          <span className={`pill ${snapshot.mode === "edit" ? "on" : ""}`}>
+            <span aria-hidden="true" />
+            {snapshot.mode === "edit" ? "Edit mode" : "Play mode"}
+          </span>
+        </div>
+
+        <div className="preview-stage">
+          <CaptionStack preview snapshot={snapshot} />
+        </div>
+
+        <div className="action-row">
+          <button
+            className="button primary"
+            type="button"
+            disabled={!snapshot.translationEnabled}
+            onClick={controller.sendFakeCaption}
+          >
+            Preview sample caption
+          </button>
+          {snapshot.visible ? (
+            <button
+              className="button secondary"
+              type="button"
+              onClick={controller.hideOverlay}
+            >
+              Hide overlay
+            </button>
+          ) : (
+            <button
+              className="button secondary"
+              type="button"
+              onClick={controller.showOverlay}
+            >
+              Show overlay
+            </button>
+          )}
+          <button
+            className="button secondary"
+            type="button"
+            onClick={controller.toggleEditMode}
+          >
+            {snapshot.mode === "edit" ? "Finish editing" : "Edit position"}
+          </button>
+          <button
+            className="button quiet"
+            type="button"
+            onClick={controller.clearCaptions}
+          >
+            Clear
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OverlayPage({ controller }: { controller: Controller }) {
+  const { snapshot } = controller;
+
+  return (
+    <div className="page-stack">
+      <section className="card" aria-labelledby="overlay-appearance">
+        <div className="card-head">
+          <h2 className="card-title" id="overlay-appearance">
+            Overlay appearance
+          </h2>
+        </div>
+
+        <div className="settings-block">
+          <div className="toggles-row">
             <div className="toggle-row">
               <div>
                 <label htmlFor="translation-enabled">Translation preview</label>
-                <p>Pause English subtitles without hiding the overlay.</p>
+                <p>Pause subtitles without hiding the overlay.</p>
               </div>
               <input
                 id="translation-enabled"
@@ -273,15 +253,16 @@ export function ControlApp() {
                 type="checkbox"
                 checked={snapshot.translationEnabled}
                 onChange={(event) => {
-                  controller.setTranslationEnabled(event.currentTarget.checked);
+                  controller.setTranslationEnabled(
+                    event.currentTarget.checked,
+                  );
                 }}
               />
             </div>
-
             <div className="toggle-row">
               <div>
                 <label htmlFor="show-source">Show source line</label>
-                <p>Display compact Tagalog or Cebuano text above English.</p>
+                <p>Original text above the English line.</p>
               </div>
               <input
                 id="show-source"
@@ -291,6 +272,30 @@ export function ControlApp() {
                 onChange={(event) => {
                   controller.updateSettings({
                     showSource: event.currentTarget.checked,
+                  });
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="sliders-grid">
+            <div className="range-field">
+              <div className="range-label">
+                <label htmlFor="overlay-width">Width</label>
+                <output htmlFor="overlay-width">
+                  {Math.round(snapshot.settings.widthNormalized * 100)}%
+                </output>
+              </div>
+              <input
+                id="overlay-width"
+                type="range"
+                min="0.3"
+                max="0.95"
+                step="0.01"
+                value={snapshot.settings.widthNormalized}
+                onChange={(event) => {
+                  controller.updateSettings({
+                    widthNormalized: Number(event.currentTarget.value),
                   });
                 }}
               />
@@ -320,29 +325,7 @@ export function ControlApp() {
 
             <div className="range-field">
               <div className="range-label">
-                <label htmlFor="overlay-width">Overlay width</label>
-                <output htmlFor="overlay-width">
-                  {Math.round(snapshot.settings.widthNormalized * 100)}%
-                </output>
-              </div>
-              <input
-                id="overlay-width"
-                type="range"
-                min="0.4"
-                max="0.7"
-                step="0.01"
-                value={snapshot.settings.widthNormalized}
-                onChange={(event) => {
-                  controller.updateSettings({
-                    widthNormalized: Number(event.currentTarget.value),
-                  });
-                }}
-              />
-            </div>
-
-            <div className="range-field">
-              <div className="range-label">
-                <label htmlFor="background-opacity">Background contrast</label>
+                <label htmlFor="background-opacity">Background</label>
                 <output htmlFor="background-opacity">
                   {Math.round(snapshot.settings.backgroundOpacity * 100)}%
                 </output>
@@ -361,74 +344,61 @@ export function ControlApp() {
                 }}
               />
             </div>
-
-            <button
-              className="button quiet reset-button"
-              type="button"
-              onClick={controller.resetPlacement}
-            >
-              <RotateCcw aria-hidden="true" size={17} />
-              Reset safe position
-            </button>
-          </section>
-
-          <section className="settings-card" aria-labelledby="behavior-title">
-            <div className="section-heading compact">
-              <div>
-                <p className="section-kicker">Behavior</p>
-                <h2 id="behavior-title">Input-safe by default</h2>
-              </div>
-            </div>
-
-            <ul className="behavior-list">
-              <li>
-                <span className="behavior-icon">
-                  <Zap aria-hidden="true" size={17} />
-                </span>
-                <div>
-                  <strong>Caption updates never request focus</strong>
-                  <p>The overlay only receives text and window-state events.</p>
-                </div>
-              </li>
-              <li>
-                <span className="behavior-icon">
-                  <Move aria-hidden="true" size={17} />
-                </span>
-                <div>
-                  <strong>Play mode ignores pointer input</strong>
-                  <p>Edit mode is the only interactive overlay state.</p>
-                </div>
-              </li>
-              <li>
-                <span className="behavior-icon">
-                  <MonitorUp aria-hidden="true" size={17} />
-                </span>
-                <div>
-                  <strong>Position is normalized per monitor</strong>
-                  <p>Missing displays recover to a visible primary position.</p>
-                </div>
-              </li>
-            </ul>
-
-            <HotkeyPanel
-              hotkeys={snapshot.settings.hotkeys}
-              registrationErrors={controller.hotkeyErrors}
-              onSave={controller.updateHotkeys}
-            />
-          </section>
-        </div>
-
-        <footer className="privacy-card" id="privacy">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <div>
-            <strong>Private by default</strong>
-            <p>
-              No cloud processing, recording, transcript history, telemetry, or
-              game-process access.
-            </p>
           </div>
-        </footer>
+
+          <button
+            className="button quiet reset-button"
+            type="button"
+            onClick={controller.resetPlacement}
+          >
+            Reset position
+          </button>
+        </div>
       </section>
-    </main>
+    </div>
+  );
+}
+
+function HotkeysPage({ controller }: { controller: Controller }) {
+  const { snapshot } = controller;
+  return (
+    <div className="page-stack">
+      <section className="card" aria-labelledby="hotkeys-title">
+        <div className="card-head">
+          <h2 className="card-title" id="hotkeys-title">
+            Hotkeys
+          </h2>
+        </div>
+        <HotkeyPanel
+          hotkeys={snapshot.settings.hotkeys}
+          registrationErrors={controller.hotkeyErrors}
+          onSave={controller.updateHotkeys}
+        />
+      </section>
+    </div>
+  );
+}
+
+function ClipLabPage() {
+  return (
+    <div className="page-stack">
+      <ClipLabPanel />
+    </div>
+  );
+}
+
+function DiagnosticsPage({
+  audio,
+  onCaption,
+}: {
+  audio: AudioController;
+  onCaption: Controller["ingestCaption"];
+}) {
+  return (
+    <div className="page-stack">
+      <AudioDevicePanel audio={audio} />
+      <RoutingPanel />
+      <IpcPanel onCaption={onCaption} />
+    </div>
   );
 }

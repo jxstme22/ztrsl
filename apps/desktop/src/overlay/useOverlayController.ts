@@ -267,7 +267,7 @@ export function useOverlayController() {
       monitorId: null,
       xNormalized: 0.5,
       yNormalized: 0.72,
-      widthNormalized: 0.56,
+      widthNormalized: 0.8,
     }));
     setRecoveredPlacement(false);
   }, []);

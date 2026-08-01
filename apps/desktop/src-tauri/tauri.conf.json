@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "app.localsquadtranslator.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm ensure:runner && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm ensure:runner && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -14,19 +14,20 @@
       {
         "label": "control",
         "title": "Local Squad Translator",
-        "width": 1180,
-        "height": 780,
-        "minWidth": 720,
-        "minHeight": 560,
-        "resizable": true,
-        "fullscreen": false
+        "width": 1120,
+        "height": 720,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false
       },
       {
         "label": "overlay",
         "title": "Local Squad Translator Captions",
         "url": "index.html?window=overlay",
-        "width": 840,
-        "height": 260,
+        "width": 900,
+        "height": 150,
         "visible": false,
         "focus": false,
         "focusable": false,

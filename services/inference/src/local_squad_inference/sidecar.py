@@ -15,6 +15,11 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from local_squad_inference.clip import process_clip
+from local_squad_inference.http_asr import GroqWhisperProvider, HttpAsrError
+from local_squad_inference.http_translation import (
+    HTTP_PROVIDER_FACTORIES,
+    HttpTranslationError,
+)
 from local_squad_inference.live import LivePipeline
 from local_squad_inference.protocol import (
     MAX_AUDIO_MESSAGE_BYTES,
@@ -33,26 +38,85 @@ from local_squad_inference.providers import (
     DemoTranslationProvider,
     FasterWhisperProvider,
     MadladTranslationProvider,
+    NemoCtcTagalogProvider,
     TranslationProvider,
     provider_readiness,
 )
+from local_squad_inference.vad import vad_config_from_sensitivity
 
 SendJson = Callable[[dict[str, object]], Awaitable[None]]
 
 
 @lru_cache(maxsize=1)
-def local_providers() -> tuple[FasterWhisperProvider, MadladTranslationProvider]:
+def local_translation_provider() -> MadladTranslationProvider:
     model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
-    requested_model_id = os.environ.get("LST_WHISPER_MODEL_ID", "whisper-large-v3")
+    return MadladTranslationProvider(model_root / "madlad400-3b-mt")
+
+
+def _whisper_model_dir(model_root: Path, requested_model_id: str) -> Path:
     model_dir = model_root / requested_model_id
-    if not model_dir.is_dir() and requested_model_id == "whisper-large-v3":
-        fallback = model_root / "whisper-large-v3-turbo"
+    if model_dir.is_dir():
+        return model_dir
+    # Fall back to whichever Whisper variant is present when the requested
+    # model is unavailable. Turbo is lighter and faster; large-v3 is the
+    # full-capacity fallback for users who already downloaded it.
+    for candidate in ("whisper-large-v3-turbo", "whisper-large-v3"):
+        fallback = model_root / candidate
         if fallback.is_dir():
-            model_dir = fallback
-    return (
-        FasterWhisperProvider(model_dir),
-        MadladTranslationProvider(model_root / "madlad400-3b-mt"),
-    )
+            return fallback
+    return model_dir
+
+
+@lru_cache(maxsize=4)
+def local_whisper_provider(requested_model_id: str) -> FasterWhisperProvider:
+    model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
+    return FasterWhisperProvider(_whisper_model_dir(model_root, requested_model_id))
+
+
+@lru_cache(maxsize=1)
+def local_ncspeech_provider() -> NemoCtcTagalogProvider:
+    model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
+    return NemoCtcTagalogProvider(model_root / "ncspeech-tl-fastconformer-hybrid-large")
+
+
+def build_translation_provider(name: str) -> TranslationProvider:
+    """Return the configured translation provider. Defaults to local MADLAD.
+
+    HTTP providers are opt-in: when selected, the recognized source transcript
+    (text only — never raw audio) is sent over HTTP to the configured endpoint.
+    """
+    if name in {"madlad", "local", ""}:
+        return local_translation_provider()
+    if name in {"demo"}:
+        return DemoTranslationProvider()
+    factory = HTTP_PROVIDER_FACTORIES.get(name)
+    if factory is None:
+        raise HttpTranslationError(f"unknown HTTP translation provider: {name}")
+    return factory()
+
+
+def build_asr_provider(name: str) -> AsrProvider:
+    """Return the configured ASR provider. Defaults to local faster-whisper.
+
+    Local variants pick the installed Whisper artifact or the NCSpeech CTC
+    export; remote ASR (Groq) is opt-in and uploads each completed utterance's
+    audio to Groq's Whisper endpoint. A missing API key raises before the
+    session starts so misconfiguration is visible.
+    """
+    if name in {"", "local", "whisper-turbo"}:
+        requested = os.environ.get("LST_WHISPER_MODEL_ID", "whisper-large-v3-turbo")
+        if name == "whisper-turbo":
+            requested = "whisper-large-v3-turbo"
+        return local_whisper_provider(requested)
+    if name == "whisper-full":
+        return local_whisper_provider("whisper-large-v3")
+    if name == "ncspeech":
+        return local_ncspeech_provider()
+    if name == "groq-whisper":
+        return GroqWhisperProvider()
+    if name in {"demo"}:
+        return DemoAsrProvider()
+    raise HttpAsrError(f"unknown ASR provider: {name}")
 
 
 def envelope(
@@ -270,18 +334,26 @@ async def handle_connection(
                 try:
                     asr_provider: AsrProvider
                     translation_provider: TranslationProvider
-                    if live_request.provider == "local":
-                        local_asr, local_translation = await asyncio.to_thread(local_providers)
-                        asr_provider = local_asr
-                        translation_provider = local_translation
-                    else:
+                    if live_request.provider == "demo":
                         asr_provider = DemoAsrProvider()
                         translation_provider = DemoTranslationProvider()
+                    else:
+                        asr_provider = await asyncio.to_thread(
+                            build_asr_provider,
+                            live_request.asr_provider,
+                        )
+                        translation_provider = await asyncio.to_thread(
+                            build_translation_provider,
+                            live_request.translation_provider,
+                        )
                     live_pipeline = LivePipeline(
                         asr_provider,
                         translation_provider,
                         source_mode=live_request.source_mode,
-                        use_silero=live_request.provider == "local",
+                        vad_config=vad_config_from_sensitivity(
+                            live_request.vad_sensitivity
+                        ),
+                        use_silero=live_request.provider != "demo",
                     )
                 except Exception as error:
                     await connection.send(
@@ -358,7 +430,10 @@ async def handle_connection(
                 clip_request = ClipProcessPayload.model_validate(control.payload)
                 try:
                     if clip_request.provider == "local":
-                        asr_provider, translation_provider = local_providers()
+                        asr_provider = local_whisper_provider(
+                            os.environ.get("LST_WHISPER_MODEL_ID", "whisper-large-v3-turbo")
+                        )
+                        translation_provider = local_translation_provider()
                         result = await asyncio.to_thread(
                             process_clip,
                             Path(clip_request.path),

@@ -13,10 +13,36 @@ SAMPLE_RATE = 16_000
 class VadConfig:
     frame_ms: int = 30
     speech_rms: float = 0.018
+    silero_threshold: float = 0.5
     min_speech_ms: int = 180
     pre_roll_ms: int = 180
     min_silence_ms: int = 450
     max_utterance_ms: int = 12_000
+
+
+def vad_config_from_sensitivity(sensitivity: int) -> VadConfig:
+    """Map a 0..100 sensitivity slider to a VadConfig.
+
+    Higher sensitivity means quieter/softer speech is treated as speech:
+    the Silero threshold and energy RMS gate both drop, and shorter silence
+    closes utterances sooner so a noisy background is less likely to merge
+    separate speakers. The baseline (sensitivity == 50) matches the default
+    VadConfig values.
+    """
+    clamped = max(0, min(100, sensitivity))
+    factor = clamped / 100.0
+    silero_threshold = round(0.70 - 0.40 * factor, 3)
+    speech_rms = round(0.030 - 0.024 * factor, 4)
+    min_silence_ms = round(700 - 500 * factor)
+    return VadConfig(
+        frame_ms=32,
+        speech_rms=max(0.002, speech_rms),
+        silero_threshold=max(0.20, min(0.70, silero_threshold)),
+        min_speech_ms=180,
+        pre_roll_ms=180,
+        min_silence_ms=max(150, min_silence_ms),
+        max_utterance_ms=12_000,
+    )
 
 
 @dataclass(frozen=True)

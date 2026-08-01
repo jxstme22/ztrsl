@@ -1,19 +1,11 @@
-import {
-  Activity,
-  AudioLines,
-  Captions,
-  CircleAlert,
-  Gauge,
-  LoaderCircle,
-  Play,
-  ShieldCheck,
-  Square,
-} from "lucide-react";
-import { useState } from "react";
+import { LoaderCircle, Play, Square } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
 import type { Caption } from "../overlay/model";
 import { useLiveTranslation } from "../live/useLiveTranslation";
+import { setTranslationEnv } from "../live/bridge";
+import type { AsrProvider, TranslationProvider } from "../live/bridge";
 
 type AudioController = ReturnType<typeof useAudioMeter>;
 
@@ -22,38 +14,258 @@ type LiveTranslationPanelProps = {
   onCaption: (caption: Caption) => void;
 };
 
+const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
+const PLAYBACK_ENDPOINT_KEY = "lst.live.playback-endpoint";
+const MONITOR_ENABLED_KEY = "lst.live.monitor";
+const SOURCE_MODE_KEY = "lst.live.source-mode";
+const ASR_PROVIDER_KEY = "lst.live.asr-provider";
+const VAD_SENSITIVITY_KEY = "lst.live.vad-sensitivity";
+const GROQ_API_KEY_KEY = "lst.live.groq-api-key";
+const TRANSLATION_PROVIDER_KEY = "lst.live.translation-provider";
+const LT_ENDPOINT_KEY = "lst.live.lt-endpoint";
+const LT_API_KEY_KEY = "lst.live.lt-api-key";
+const CUSTOM_TX_ENDPOINT_KEY = "lst.live.custom-tx-endpoint";
+const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
+
+function loadStored(key: string): string | null {
+  return window.localStorage.getItem(key);
+}
+
+function loadMonitorEnabled(): boolean {
+  return window.localStorage.getItem(MONITOR_ENABLED_KEY) === "true";
+}
+
+function loadSourceMode(): "filipino" | "chinese" {
+  return window.localStorage.getItem(SOURCE_MODE_KEY) === "chinese"
+    ? "chinese"
+    : "filipino";
+}
+
+function loadAsrProvider(): AsrProvider {
+  const stored = window.localStorage.getItem(ASR_PROVIDER_KEY);
+  if (
+    stored === "whisper-turbo" ||
+    stored === "whisper-full" ||
+    stored === "ncspeech" ||
+    stored === "groq-whisper"
+  ) {
+    return stored;
+  }
+  return "local";
+}
+
+function loadVadSensitivity(): number {
+  const stored = window.localStorage.getItem(VAD_SENSITIVITY_KEY);
+  if (stored === null) {
+    return 50;
+  }
+  const parsed = Number.parseInt(stored, 10);
+  if (Number.isNaN(parsed)) {
+    return 50;
+  }
+  return Math.max(0, Math.min(100, parsed));
+}
+
+function loadTranslationProvider(): TranslationProvider {
+  const stored = window.localStorage.getItem(TRANSLATION_PROVIDER_KEY);
+  if (
+    stored === "madlad" ||
+    stored === "libretranslate" ||
+    stored === "google-translate" ||
+    stored === "mymemory" ||
+    stored === "custom-http"
+  ) {
+    return stored;
+  }
+  return "madlad";
+}
+
+function setEnvVar(name: string, value: string) {
+  // Persist configuration in localStorage so the user can switch providers
+  // without editing environment variables. The Tauri sidecar picks these up
+  // only when launched by the supervisor — for now this UI sends them as
+  // part of start_live_translation, and the Rust bridge forwards them to
+  // the sidecar via env vars on the supervisor's spawn call.
+  if (value) {
+    window.localStorage.setItem(name, value);
+  } else {
+    window.localStorage.removeItem(name);
+  }
+}
+
+async function pushProviderEnv(
+  asrProvider: AsrProvider,
+  translationProvider: TranslationProvider,
+  config: {
+    groqApiKey: string;
+    ltEndpoint: string;
+    ltApiKey: string;
+    customTxEndpoint: string;
+    customTxApiKey: string;
+  },
+): Promise<void> {
+  const pairs: [string, string][] = [];
+  if (asrProvider === "groq-whisper") {
+    pairs.push(["LST_GROQ_API_KEY", config.groqApiKey]);
+  }
+  if (translationProvider === "libretranslate") {
+    pairs.push(["LST_LT_ENDPOINT", config.ltEndpoint]);
+    pairs.push(["LST_LT_API_KEY", config.ltApiKey]);
+  } else if (translationProvider === "custom-http") {
+    pairs.push(["LST_CUSTOM_TX_ENDPOINT", config.customTxEndpoint]);
+    pairs.push(["LST_CUSTOM_TX_API_KEY", config.customTxApiKey]);
+  }
+  await setTranslationEnv(pairs);
+}
+
 export function LiveTranslationPanel({
   audio,
   onCaption,
 }: LiveTranslationPanelProps) {
   const live = useLiveTranslation(onCaption);
+  const [inputEndpointId, setInputEndpointId] = useState<string | null>(
+    () => loadStored(INPUT_ENDPOINT_KEY),
+  );
   const [playbackEndpointId, setPlaybackEndpointId] = useState<string | null>(
-    () => window.localStorage.getItem("lst.live.playback-endpoint"),
+    () => loadStored(PLAYBACK_ENDPOINT_KEY),
+  );
+  const [monitorEnabled, setMonitorEnabled] = useState<boolean>(
+    loadMonitorEnabled,
+  );
+  const [sourceMode, setSourceMode] = useState<"filipino" | "chinese">(
+    loadSourceMode,
+  );
+  const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
+  const [vadSensitivity, setVadSensitivity] = useState<number>(
+    loadVadSensitivity,
+  );
+  const [groqApiKey, setGroqApiKey] = useState<string>(
+    () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
+  );
+  const [translationProvider, setTranslationProvider] =
+    useState<TranslationProvider>(loadTranslationProvider);
+  const [ltEndpoint, setLtEndpoint] = useState<string>(
+    () => window.localStorage.getItem(LT_ENDPOINT_KEY) ?? "",
+  );
+  const [ltApiKey, setLtApiKey] = useState<string>(
+    () => window.localStorage.getItem(LT_API_KEY_KEY) ?? "",
+  );
+  const [customTxEndpoint, setCustomTxEndpoint] = useState<string>(
+    () => window.localStorage.getItem(CUSTOM_TX_ENDPOINT_KEY) ?? "",
+  );
+  const [customTxApiKey, setCustomTxApiKey] = useState<string>(
+    () => window.localStorage.getItem(CUSTOM_TX_API_KEY_KEY) ?? "",
   );
   const isSimulator = audio.catalog?.platform === "development";
   const busy = live.state === "starting" || live.state === "stopping";
   const listening = live.state === "listening";
-  const endpointReady =
-    audio.selectedEndpoint !== null &&
-    audio.selectedEndpoint.state === "active";
+
+  const endpoints = audio.catalog?.endpoints ?? [];
+  const captureInputs = useMemo(
+    () => endpoints.filter((endpoint) => endpoint.kind === "capture"),
+    [endpoints],
+  );
+  const loopbackInputs = useMemo(
+    () => endpoints.filter((endpoint) => endpoint.kind === "render"),
+    [endpoints],
+  );
+
+  const selectedInput =
+    endpoints.find((endpoint) => endpoint.id === inputEndpointId) ?? null;
+  const inputReady =
+    selectedInput !== null && selectedInput.state === "active";
+
   const playbackEndpoint =
-    audio.renderEndpoints.find(
-      (endpoint) => endpoint.id === playbackEndpointId,
+    endpoints.find(
+      (endpoint) => endpoint.id === playbackEndpointId && endpoint.kind === "render",
     ) ?? null;
   const playbackReady =
     playbackEndpoint !== null && playbackEndpoint.state === "active";
 
+  const configComplete =
+    (asrProvider !== "groq-whisper" || groqApiKey.trim().length > 0) &&
+    (translationProvider !== "libretranslate" ||
+      ltEndpoint.trim().length > 0) &&
+    (translationProvider !== "custom-http" ||
+      customTxEndpoint.trim().length > 0);
+
+  const sameEndpoint =
+    monitorEnabled &&
+    inputEndpointId !== null &&
+    playbackEndpointId !== null &&
+    inputEndpointId === playbackEndpointId;
+
+  const canStart =
+    inputReady &&
+    (!monitorEnabled || playbackReady) &&
+    !sameEndpoint &&
+    !busy &&
+    !listening &&
+    configComplete;
+
+  const setInput = (value: string | null) => {
+    setInputEndpointId(value);
+    if (value === null) {
+      window.localStorage.removeItem(INPUT_ENDPOINT_KEY);
+    } else {
+      window.localStorage.setItem(INPUT_ENDPOINT_KEY, value);
+    }
+  };
+
+  const setPlayback = (value: string | null) => {
+    setPlaybackEndpointId(value);
+    if (value === null) {
+      window.localStorage.removeItem(PLAYBACK_ENDPOINT_KEY);
+    } else {
+      window.localStorage.setItem(PLAYBACK_ENDPOINT_KEY, value);
+    }
+  };
+
+  const toggleMonitor = () => {
+    setMonitorEnabled((previous) => {
+      const next = !previous;
+      window.localStorage.setItem(MONITOR_ENABLED_KEY, String(next));
+      return next;
+    });
+  };
+
+  const changeSourceMode = (value: "filipino" | "chinese") => {
+    setSourceMode(value);
+    window.localStorage.setItem(SOURCE_MODE_KEY, value);
+  };
+
+  const changeAsrProvider = (value: AsrProvider) => {
+    setAsrProvider(value);
+    window.localStorage.setItem(ASR_PROVIDER_KEY, value);
+  };
+
+  const changeVadSensitivity = (value: number) => {
+    const clamped = Math.max(0, Math.min(100, value));
+    setVadSensitivity(clamped);
+    window.localStorage.setItem(VAD_SENSITIVITY_KEY, String(clamped));
+  };
+
+  const changeTranslationProvider = (value: TranslationProvider) => {
+    setTranslationProvider(value);
+    window.localStorage.setItem(TRANSLATION_PROVIDER_KEY, value);
+    // Persist provider-specific configuration so it's already set when the
+    // user swaps providers. Sidecar env vars are forwarded by the Rust bridge
+    // at supervisor launch time.
+    if (value === "libretranslate") {
+      setEnvVar("LST_LT_ENDPOINT", ltEndpoint);
+      setEnvVar("LST_LT_API_KEY", ltApiKey);
+    } else if (value === "custom-http") {
+      setEnvVar("LST_CUSTOM_TX_ENDPOINT", customTxEndpoint);
+      setEnvVar("LST_CUSTOM_TX_API_KEY", customTxApiKey);
+    }
+  };
+
   return (
-    <section className="live-console" id="live" aria-labelledby="live-title">
-      <div className="live-console__header">
-        <div>
-          <p className="section-kicker">Primary operation</p>
-          <h2 id="live-title">Live Tagalog translation</h2>
-          <p>
-            Incoming Filipino and Taglish become local English subtitles.
-            Audio is processed in memory and discarded.
-          </p>
-        </div>
+    <section className="card" id="live" aria-labelledby="live-title">
+      <div className="card-head">
+        <h2 className="card-title" id="live-title">
+          Live
+        </h2>
         <div
           className={`live-state ${listening ? "listening" : live.state}`}
           role="status"
@@ -70,24 +282,75 @@ export function LiveTranslationPanel({
                   ? "Needs attention"
                   : "Ready"}
         </div>
+        {listening ? (
+          <button
+            className="button secondary live-stop"
+            type="button"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void live.stop()}
+          >
+            {busy ? (
+              <LoaderCircle className="spin" aria-hidden="true" size={16} />
+            ) : (
+              <Square aria-hidden="true" size={14} />
+            )}
+            Stop listening
+          </button>
+        ) : (
+          <button
+            className="button primary live-start"
+            type="button"
+            disabled={!canStart}
+            aria-busy={busy}
+            onClick={() => {
+              if (inputEndpointId !== null) {
+                void (async () => {
+                  await pushProviderEnv(asrProvider, translationProvider, {
+                    groqApiKey,
+                    ltEndpoint,
+                    ltApiKey,
+                    customTxEndpoint,
+                    customTxApiKey,
+                  });
+                  await live.start(
+                    inputEndpointId,
+                    monitorEnabled ? playbackEndpointId : null,
+                    asrProvider !== "groq-whisper" &&
+                      translationProvider === "madlad"
+                      ? (isSimulator ? "demo" : "local")
+                      : "http",
+                    monitorEnabled,
+                    sourceMode,
+                    asrProvider,
+                    translationProvider,
+                    vadSensitivity,
+                  );
+                })();
+              }
+            }}
+          >
+            {busy ? (
+              <LoaderCircle className="spin" aria-hidden="true" size={16} />
+            ) : (
+              <Play aria-hidden="true" size={14} />
+            )}
+            {busy ? "Loading models…" : "Start listening"}
+          </button>
+        )}
       </div>
 
       {isSimulator && (
-        <div className="inline-alert info live-notice" role="status">
-          <AudioLines aria-hidden="true" size={18} />
+        <div className="inline-alert" role="status">
           <div>
-            <strong>macOS product simulation</strong>
-            <p>
-              This runs a timed generated signal through the live sidecar. Real
-              incoming communications capture activates in the Windows build.
-            </p>
+            <strong>Simulator mode</strong>
+            <p>Generated signal — real capture activates in the Windows build.</p>
           </div>
         </div>
       )}
 
       {live.error !== null && (
-        <div className="inline-alert error live-notice" role="alert">
-          <CircleAlert aria-hidden="true" size={18} />
+        <div className="inline-alert error" role="alert">
           <div>
             <strong>Live translation could not continue</strong>
             <p>{live.error}</p>
@@ -95,55 +358,263 @@ export function LiveTranslationPanel({
         </div>
       )}
 
-      <div className="live-signal-chain">
-        <label className="live-module" htmlFor="live-input">
-          <span className="module-number">01 / INPUT</span>
-          <strong>Voice-chat channel</strong>
+      <div className="live-grid">
+        <div className="field span-2">
+          <label htmlFor="live-input">Voice-chat channel</label>
           <select
             id="live-input"
-            value={audio.selectedEndpointId ?? ""}
+            aria-label="Voice-chat channel"
+            value={inputEndpointId ?? ""}
             disabled={listening || busy}
             onChange={(event) => {
-              audio.selectEndpoint(event.currentTarget.value || null);
+              setInput(event.currentTarget.value || null);
             }}
           >
             <option value="">Choose incoming communications…</option>
-            {audio.captureEndpoints.map((endpoint) => (
-              <option
-                key={endpoint.id}
-                value={endpoint.id}
-                disabled={endpoint.state !== "active"}
-              >
-                {endpoint.friendlyName}
-                {endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}
-              </option>
-            ))}
+            {captureInputs.length > 0 && (
+              <optgroup label="Microphones (your voice)">
+                {captureInputs.map((endpoint) => (
+                  <option
+                    key={endpoint.id}
+                    value={endpoint.id}
+                    disabled={endpoint.state !== "active"}
+                  >
+                    {endpoint.friendlyName}
+                    {endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {loopbackInputs.length > 0 && (
+              <optgroup label="Loopback (game / teammate mix — no mic)">
+                {loopbackInputs.map((endpoint) => (
+                  <option
+                    key={endpoint.id}
+                    value={endpoint.id}
+                    disabled={endpoint.state !== "active"}
+                  >
+                    {`${endpoint.friendlyName} · loopback`}
+                    {endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
-          <small>
-            {endpointReady
-              ? "Endpoint available"
-              : "Select the endpoint carrying your friends’ voices"}
-          </small>
-          <span className="module-divider" aria-hidden="true" />
-          <strong>Headphones / speakers</strong>
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-language">Source language</label>
           <select
+            id="live-language"
+            aria-label="Source language"
+            value={sourceMode}
+            disabled={listening || busy}
+            onChange={(event) => {
+              changeSourceMode(
+                event.currentTarget.value as "filipino" | "chinese",
+              );
+            }}
+          >
+            <option value="filipino">Filipino / Taglish</option>
+            <option value="chinese">Chinese (Mandarin/Cantonese)</option>
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-asr">Speech recognition</label>
+          <select
+            id="live-asr"
+            aria-label="Speech recognition source"
+            value={asrProvider}
+            disabled={listening || busy}
+            onChange={(event) => {
+              changeAsrProvider(event.currentTarget.value as AsrProvider);
+            }}
+          >
+            <option value="whisper-turbo">Local Whisper large-v3-turbo (fast)</option>
+            <option value="whisper-full">Local Whisper large-v3 (full)</option>
+            <option value="ncspeech">NCSpeech FastConformer (Tagalog)</option>
+            <option value="groq-whisper">Groq Whisper (free API)</option>
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-translation">Translation source</label>
+          <select
+            id="live-translation"
+            aria-label="Translation source"
+            value={translationProvider}
+            disabled={listening || busy}
+            onChange={(event) => {
+              changeTranslationProvider(
+                event.currentTarget.value as TranslationProvider,
+              );
+            }}
+          >
+            <option value="madlad">Local MADLAD (offline, private)</option>
+            <option value="google-translate">
+              Google Translate (free, unofficial endpoint)
+            </option>
+            <option value="libretranslate">
+              LibreTranslate (any instance URL)
+            </option>
+            <option value="mymemory">MyMemory (free, daily quota)</option>
+            <option value="custom-http">Custom HTTP endpoint</option>
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-vad-sensitivity">
+            Microphone sensitivity: {vadSensitivity}
+          </label>
+          <input
+            id="live-vad-sensitivity"
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={vadSensitivity}
+            disabled={listening || busy}
+            aria-label="Microphone sensitivity"
+            onChange={(event) => {
+              changeVadSensitivity(Number.parseInt(event.currentTarget.value, 10));
+            }}
+          />
+        </div>
+      </div>
+
+      {asrProvider === "groq-whisper" && (
+        <div className="live-http-config">
+          <div className="field">
+            <label htmlFor="groq-api-key">Groq API key</label>
+            <input
+              id="groq-api-key"
+              type="password"
+              placeholder="gsk_… (from console.groq.com/keys)"
+              value={groqApiKey}
+              disabled={listening || busy}
+              onChange={(event) => {
+                setGroqApiKey(event.currentTarget.value);
+                setEnvVar("LST_GROQ_API_KEY", event.currentTarget.value);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {translationProvider === "libretranslate" && (
+        <div className="live-http-config">
+          <div className="field">
+            <label htmlFor="lt-endpoint">LibreTranslate endpoint URL</label>
+            <input
+              id="lt-endpoint"
+              type="url"
+              placeholder="https://libretranslate.com/translate"
+              value={ltEndpoint}
+              disabled={listening || busy}
+              onChange={(event) => {
+                setLtEndpoint(event.currentTarget.value);
+                setEnvVar("LST_LT_ENDPOINT", event.currentTarget.value);
+              }}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="lt-api-key">API key (optional)</label>
+            <input
+              id="lt-api-key"
+              type="password"
+              placeholder="optional"
+              value={ltApiKey}
+              disabled={listening || busy}
+              onChange={(event) => {
+                setLtApiKey(event.currentTarget.value);
+                setEnvVar("LST_LT_API_KEY", event.currentTarget.value);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {translationProvider === "custom-http" && (
+        <div className="live-http-config">
+          <div className="field">
+            <label htmlFor="custom-tx-endpoint">Custom HTTP endpoint URL</label>
+            <input
+              id="custom-tx-endpoint"
+              type="url"
+              placeholder="https://api.example.com/translate"
+              value={customTxEndpoint}
+              disabled={listening || busy}
+              onChange={(event) => {
+                setCustomTxEndpoint(event.currentTarget.value);
+                setEnvVar("LST_CUSTOM_TX_ENDPOINT", event.currentTarget.value);
+              }}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="custom-tx-api-key">API key (optional)</label>
+            <input
+              id="custom-tx-api-key"
+              type="password"
+              placeholder="optional"
+              value={customTxApiKey}
+              disabled={listening || busy}
+              onChange={(event) => {
+                setCustomTxApiKey(event.currentTarget.value);
+                setEnvVar(
+                  "LST_CUSTOM_TX_API_KEY",
+                  event.currentTarget.value,
+                );
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {!configComplete && (
+        <div className="inline-alert" role="status">
+          <div>
+            <strong>Provider configuration needed</strong>
+            <p>Enter the required API key or endpoint above.</p>
+          </div>
+        </div>
+      )}
+
+      <label className="live-monitor-toggle">
+        <input
+          type="checkbox"
+          aria-label="Monitor captured audio (audible playback)"
+          checked={monitorEnabled}
+          disabled={listening || busy}
+          onChange={toggleMonitor}
+        />
+        <span>
+          <strong>Monitor captured audio</strong>
+        </span>
+      </label>
+
+      {monitorEnabled && sameEndpoint && (
+        <div className="inline-alert error" role="alert">
+          <div>
+            <strong>Capture and monitor use the same device</strong>
+            <p>Pick a different playback device, or turn monitoring off.</p>
+          </div>
+        </div>
+      )}
+
+      {monitorEnabled && (
+        <div className="field">
+          <label htmlFor="live-playback">Monitoring output</label>
+          <select
+            id="live-playback"
             aria-label="Monitoring output"
             value={playbackEndpointId ?? ""}
             disabled={listening || busy}
             onChange={(event) => {
-              const next = event.currentTarget.value || null;
-              setPlaybackEndpointId(next);
-              if (next === null) {
-                window.localStorage.removeItem("lst.live.playback-endpoint");
-              } else {
-                window.localStorage.setItem(
-                  "lst.live.playback-endpoint",
-                  next,
-                );
-              }
+              setPlayback(event.currentTarget.value || null);
             }}
           >
-            <option value="">Choose where you hear friends…</option>
+            <option value="">Choose where to hear friends…</option>
             {audio.renderEndpoints.map((endpoint) => (
               <option
                 key={endpoint.id}
@@ -155,147 +626,43 @@ export function LiveTranslationPanel({
               </option>
             ))}
           </select>
-          <small>
-            {playbackReady
-              ? "Voice chat will be monitored here"
-              : "Required so routing voice chat does not mute your friends"}
-          </small>
-        </label>
-
-        <div className="signal-rail" aria-hidden="true">
-          <span />
         </div>
+      )}
 
-        <div className="live-module fixed">
-          <span className="module-number">02 / RECOGNITION</span>
-          <strong>Whisper large-v3</strong>
-          <p>CUDA FP16 · Filipino forced · quality profile</p>
-          <small>
-            {live.snapshot.asrModel ?? "Loads when listening starts"}
-          </small>
+      {(listening || live.lastCaption !== null) && (
+        <div className="readout" aria-live="polite">
+          {live.lastCaption === null ? (
+            <p className="readout-empty">Listening for a complete phrase…</p>
+          ) : (
+            <>
+              <p className="readout-source">{live.lastCaption.source_text}</p>
+              <p className="readout-english">{live.lastCaption.english_text}</p>
+            </>
+          )}
+          <dl className="metrics">
+            <div>
+              <dt>Captions</dt>
+              <dd>{live.snapshot.metrics.captionsReceived}</dd>
+            </div>
+            <div>
+              <dt>ASR</dt>
+              <dd>
+                {live.lastCaption === null
+                  ? "—"
+                  : `${String(Math.round(live.lastCaption.asr_ms))} ms`}
+              </dd>
+            </div>
+            <div>
+              <dt>Packets</dt>
+              <dd>{live.snapshot.metrics.audioPacketsSent}</dd>
+            </div>
+            <div>
+              <dt>Drops</dt>
+              <dd>{live.snapshot.metrics.captureDrops}</dd>
+            </div>
+          </dl>
         </div>
-
-        <div className="signal-rail" aria-hidden="true">
-          <span />
-        </div>
-
-        <div className="live-module fixed">
-          <span className="module-number">03 / OUTPUT</span>
-          <strong>English overlay</strong>
-          <p>MADLAD local translation · source line retained</p>
-          <small>Maximum two captions on screen</small>
-        </div>
-      </div>
-
-      <div className="live-readout" aria-live="polite">
-        <div className="live-transcript">
-          <Captions aria-hidden="true" size={20} />
-          <div>
-            <span>Latest translation</span>
-            {live.lastCaption === null ? (
-              <p>
-                {listening
-                  ? "Listening for a complete phrase…"
-                  : "Start listening when your communications channel is ready."}
-              </p>
-            ) : (
-              <>
-                <small>{live.lastCaption.source_text}</small>
-                <strong>{live.lastCaption.english_text}</strong>
-              </>
-            )}
-          </div>
-        </div>
-        <dl className="live-metrics">
-          <div>
-            <dt>Packets</dt>
-            <dd>{live.snapshot.metrics.audioPacketsSent}</dd>
-          </div>
-          <div>
-            <dt>Input drops</dt>
-            <dd>{live.snapshot.metrics.captureDrops}</dd>
-          </div>
-          <div>
-            <dt>Monitor drops</dt>
-            <dd>{live.snapshot.metrics.monitorDrops}</dd>
-          </div>
-          <div>
-            <dt>Monitor gaps</dt>
-            <dd>{live.snapshot.metrics.monitorUnderrunSamples}</dd>
-          </div>
-          <div>
-            <dt>Captions</dt>
-            <dd>{live.snapshot.metrics.captionsReceived}</dd>
-          </div>
-          <div>
-            <dt>ASR latency</dt>
-            <dd>
-              {live.lastCaption === null
-                ? "—"
-                : `${String(Math.round(live.lastCaption.asr_ms))} ms`}
-            </dd>
-          </div>
-        </dl>
-      </div>
-
-      <div className="live-actions">
-        {listening ? (
-          <button
-            className="button live-stop"
-            type="button"
-            disabled={busy}
-            aria-busy={busy}
-            onClick={() => void live.stop()}
-          >
-            {busy ? (
-              <LoaderCircle className="spin" aria-hidden="true" size={18} />
-            ) : (
-              <Square aria-hidden="true" size={16} />
-            )}
-            Stop listening
-          </button>
-        ) : (
-          <button
-            className="button live-start"
-            type="button"
-            disabled={!endpointReady || !playbackReady || busy}
-            aria-busy={busy}
-            onClick={() => {
-              if (
-                audio.selectedEndpointId !== null &&
-                playbackEndpointId !== null
-              ) {
-                void live.start(
-                  audio.selectedEndpointId,
-                  playbackEndpointId,
-                  isSimulator ? "demo" : "local",
-                );
-              }
-            }}
-          >
-            {busy ? (
-              <LoaderCircle className="spin" aria-hidden="true" size={18} />
-            ) : (
-              <Play aria-hidden="true" size={17} />
-            )}
-            {busy ? "Loading local models…" : "Start listening"}
-          </button>
-        )}
-        <div className="live-assurances">
-          <span>
-            <ShieldCheck aria-hidden="true" size={14} />
-            Local only
-          </span>
-          <span>
-            <Gauge aria-hidden="true" size={14} />
-            One GPU job at a time
-          </span>
-          <span>
-            <Activity aria-hidden="true" size={14} />
-            Bounded audio queue
-          </span>
-        </div>
-      </div>
+      )}
     </section>
   );
 }

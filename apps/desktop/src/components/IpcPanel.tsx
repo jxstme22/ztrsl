@@ -1,6 +1,5 @@
 import {
   Activity,
-  CircleAlert,
   Play,
   RefreshCw,
   Server,
@@ -21,12 +20,7 @@ export function IpcPanel({ onCaption }: IpcPanelProps) {
     <section className="audio-card" id="inference" aria-labelledby="ipc-title">
       <div className="section-heading">
         <div>
-          <p className="section-kicker">Phase 4 · Local IPC</p>
           <h2 id="ipc-title">Authenticated fake inference</h2>
-          <p className="section-description">
-            A supervised Python sidecar accepts bounded binary audio only after
-            a per-launch token handshake on 127.0.0.1.
-          </p>
         </div>
         <span className={`sidecar-state ${sidecar.state}`}>
           <Activity aria-hidden="true" size={14} />
@@ -35,8 +29,7 @@ export function IpcPanel({ onCaption }: IpcPanelProps) {
       </div>
 
       {sidecar.error !== null && (
-        <div className="inline-alert error phase-note" role="alert">
-          <CircleAlert aria-hidden="true" size={18} />
+        <div className="inline-alert error" role="alert">
           <div>
             <strong>Sidecar stopped unexpectedly</strong>
             <p>{sidecar.error}</p>

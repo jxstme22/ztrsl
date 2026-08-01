@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-export const sourceModeSchema = z.enum(["filipino", "cebuano", "mixed"]);
+export const sourceModeSchema = z.enum([
+  "filipino",
+  "cebuano",
+  "chinese",
+  "mixed",
+]);
 
 export const clipCaptionSchema = z.object({
   utterance_id: z.string().min(1),

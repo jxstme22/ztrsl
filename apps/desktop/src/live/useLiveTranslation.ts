@@ -7,6 +7,8 @@ import {
   fetchLiveSnapshot,
   startLiveTranslation,
   stopLiveTranslation,
+  type AsrProvider,
+  type TranslationProvider,
 } from "./bridge";
 import { EMPTY_LIVE_SNAPSHOT, type LiveSnapshot } from "./model";
 
@@ -99,15 +101,29 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
   const start = useCallback(
     async (
       endpointId: string,
-      playbackEndpointId: string,
-      provider: "demo" | "local",
+      playbackEndpointId: string | null,
+      provider: "demo" | "local" | "http",
+      monitorEnabled: boolean,
+      sourceMode: "filipino" | "chinese",
+      asrProvider: AsrProvider,
+      translationProvider: TranslationProvider,
+      vadSensitivity = 50,
     ) => {
       setState("starting");
       setError(null);
       setLastCaption(null);
       try {
         applySnapshot(
-          await startLiveTranslation(endpointId, playbackEndpointId, provider),
+          await startLiveTranslation(
+            endpointId,
+            playbackEndpointId,
+            provider,
+            monitorEnabled,
+            sourceMode,
+            asrProvider,
+            translationProvider,
+            vadSensitivity,
+          ),
         );
       } catch (cause) {
         running.current = false;

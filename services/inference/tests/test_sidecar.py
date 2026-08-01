@@ -108,6 +108,7 @@ def test_live_demo_session_segments_audio_and_stops_with_metrics() -> None:
                             "source_mode": "filipino",
                             "provider": "demo",
                             "resource_profile": "quality",
+                            "vad_sensitivity": 30,
                         },
                     }
                 )

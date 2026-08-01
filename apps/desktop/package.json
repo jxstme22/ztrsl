@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "dev": "vite",
+    "ensure:runner": "node ../../scripts/ensure-translation-runner.mjs",
     "lint": "eslint . --max-warnings 0",
     "tauri": "tauri",
     "test": "vitest run",

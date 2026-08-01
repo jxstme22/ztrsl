@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -10,10 +10,12 @@ use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::{PROPERTYKEY, RPC_E_CHANGED_MODE};
 use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use windows::Win32::Media::Audio::{
+    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
     DEVICE_STATE, DEVICE_STATE_ACTIVE, DEVICE_STATE_DISABLED, DEVICE_STATE_NOTPRESENT,
-    DEVICE_STATE_UNPLUGGED, EDataFlow, ERole, IAudioClient, IMMDevice, IMMDeviceEnumerator,
-    IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator, eCapture,
-    eCommunications, eConsole, eMultimedia, eRender,
+    DEVICE_STATE_UNPLUGGED, EDataFlow, ERole, IAudioCaptureClient, IAudioClient, IMMDevice,
+    IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
+    WAVEFORMATEX, WAVEFORMATEXTENSIBLE, eCapture, eCommunications, eConsole, eMultimedia,
+    eRender,
 };
 use windows::Win32::System::Com::{
     CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
@@ -114,10 +116,31 @@ pub fn windows_endpoint_peak(endpoint_id: &str) -> Result<f32, AudioError> {
 }
 
 pub struct WindowsAudioCapture {
-    _stream: Stream,
+    // `inner` keeps the cpal stream or the loopback worker alive; it is
+    // intentionally never read — the field exists for its Drop side-effects.
+    #[allow(dead_code)]
+    inner: CaptureHandle,
     frames: Receiver<AudioFrame>,
     dropped_frames: Arc<AtomicU64>,
     format: AudioFormat,
+}
+
+enum CaptureHandle {
+    #[allow(dead_code)]
+    Cpal(Stream),
+    Loopback { stop: Sender<()>, worker: Option<JoinHandle<()>> },
+}
+
+impl Drop for CaptureHandle {
+    fn drop(&mut self) {
+        if let CaptureHandle::Loopback { stop, worker } = self {
+            let _ = stop.send(());
+            if let Some(handle) = worker.take() {
+                let _ = handle.join();
+            }
+        }
+        // The cpal `Stream` stops itself on drop.
+    }
 }
 
 pub struct WindowsAudioPlayback {
@@ -248,7 +271,51 @@ impl WindowsAudioCapture {
             .play()
             .map_err(|error| AudioError::Platform(error.to_string()))?;
         Ok(Self {
-            _stream: stream,
+            inner: CaptureHandle::Cpal(stream),
+            frames,
+            dropped_frames,
+            format: AudioFormat {
+                sample_rate,
+                channels: 1,
+            },
+        })
+    }
+
+    /// Capture the mix rendered to a Render endpoint (e.g. headphones or
+    /// speakers) using WASAPI shared-mode loopback. The captured signal is
+    /// the *system* mix for that endpoint and is independent of the user's
+    /// microphone; VALORANT voice-chat output is captured here.
+    pub fn start_loopback(friendly_name: &str, queue_capacity: usize) -> Result<Self, AudioError> {
+        if queue_capacity == 0 {
+            return Err(AudioError::InvalidQueueCapacity);
+        }
+        let apartment = ComApartment::initialize()?;
+        let enumerator = create_enumerator()?;
+        let device = find_render_device_by_name(&enumerator, friendly_name)?;
+        let (sample_rate, channels) = discover_loopback_format(&device);
+        drop(enumerator);
+        drop(apartment);
+
+        if channels == 0 || sample_rate == 0 {
+            return Err(AudioError::InvalidFormat);
+        }
+
+        let (sender, frames) = mpsc::sync_channel(queue_capacity);
+        let dropped_frames = Arc::new(AtomicU64::new(0));
+        let callback_drops = Arc::clone(&dropped_frames);
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let owned_name = friendly_name.to_owned();
+        let worker = thread::Builder::new()
+            .name("audio-loopback-capture".to_owned())
+            .spawn(move || {
+                run_loopback_capture(&owned_name, sender, callback_drops, stop_rx);
+            })
+            .map_err(|error| AudioError::Platform(error.to_string()))?;
+        Ok(Self {
+            inner: CaptureHandle::Loopback {
+                stop: stop_tx,
+                worker: Some(worker),
+            },
             frames,
             dropped_frames,
             format: AudioFormat {
@@ -638,6 +705,251 @@ fn native_format(device: &IMMDevice) -> Option<AudioFormat> {
     unsafe { CoTaskMemFree(Some(format.cast())) };
     Some(discovered)
 }
+
+fn find_render_device_by_name(
+    enumerator: &IMMDeviceEnumerator,
+    friendly_name: &str,
+) -> Result<IMMDevice, AudioError> {
+    // SAFETY: Enumerator is valid and state mask is a documented bit combination.
+    let collection = unsafe { enumerator.EnumAudioEndpoints(eRender, ALL_DEVICE_STATES) }
+        .map_err(platform_error)?;
+    // SAFETY: Collection is valid for this COM apartment.
+    let count = unsafe { collection.GetCount() }.map_err(platform_error)?;
+    for index in 0..count {
+        // SAFETY: `index` is strictly less than the collection count.
+        let device = unsafe { collection.Item(index) }.map_err(platform_error)?;
+        // SAFETY: Read-only property access on a valid device.
+        let store = unsafe { device.OpenPropertyStore(STGM_READ) }.map_err(platform_error)?;
+        // SAFETY: The property key is a static Windows-defined key.
+        let name = unsafe { store.GetValue(&PKEY_Device_FriendlyName) }
+            .map(|value| value.to_string())
+            .unwrap_or_else(|_| "Unnamed audio endpoint".to_owned());
+        if name == friendly_name {
+            return Ok(device);
+        }
+    }
+    Err(AudioError::EndpointNotFound)
+}
+
+/// Inspect the WASAPI shared mix format of a Render endpoint and return
+/// `(sample_rate, channel_count)` for the loopback stream. The shared-mode
+/// engine format on modern Windows is IEEE float 32-bit; if the format is
+/// not float32, `AudioError::InvalidFormat` is returned.
+fn discover_loopback_format(device: &IMMDevice) -> (u32, u16) {
+    // SAFETY: Activation uses the standard audio client solely for mix-format
+    // discovery. The returned format is copied before freeing its allocation.
+    let client: IAudioClient = match unsafe { device.Activate(CLSCTX_ALL, None) } {
+        Ok(client) => client,
+        Err(_) => return (0, 0),
+    };
+    // SAFETY: Valid IAudioClient; Windows allocates the result with CoTaskMem.
+    let format = match unsafe { client.GetMixFormat() } {
+        Ok(format) if !format.is_null() => format,
+        _ => return (0, 0),
+    };
+    let discovered = parse_loopback_format(format);
+    // SAFETY: GetMixFormat documents CoTaskMemFree for the returned allocation.
+    unsafe { CoTaskMemFree(Some(format.cast())) };
+    discovered
+}
+
+/// Parse a WAVEFORMATEX returned by GetMixFormat for the loopback worker.
+/// Returns `(sample_rate, channels)` when the format is IEEE float 32-bit
+/// (possibly via a WAVEFORMATEXTENSIBLE wrapper); otherwise `(0, 0)`.
+fn parse_loopback_format(format: *const WAVEFORMATEX) -> (u32, u16) {
+    // SAFETY: `format` is non-null and points to a valid WAVEFORMATEX for this call.
+    let header = unsafe { &*format };
+    let sample_rate = header.nSamplesPerSec;
+    let channels = header.nChannels;
+    let bits = header.wBitsPerSample;
+    // WAVEFORMATEXTENSIBLE adds Samples(2) + dwChannelMask(4) + SubFormat(16)
+    // beyond the WAVEFORMATEX header, so cbSize must cover at least that tail.
+    if header.wFormatTag == WAVE_FORMAT_EXTENSIBLE_TAG && header.cbSize >= 22 {
+        // SAFETY: The extensible header follows the base header in memory and
+        // is valid when cbSize covers the SubFormat GUID, which we checked
+        // above. The packed extensible struct is read unaligned to avoid UB.
+        let extensible_ptr = format as *const WAVEFORMATEXTENSIBLE;
+        let sub_format = unsafe {
+            std::ptr::addr_of!((*extensible_ptr).SubFormat).read_unaligned()
+        };
+        if sub_format != KSDATAFORMAT_SUBTYPE_IEEE_FLOAT || bits != 32 {
+            return (0, 0);
+        }
+    } else if header.wFormatTag != WAVE_FORMAT_IEEE_FLOAT_TAG || bits != 32 {
+        return (0, 0);
+    }
+    (sample_rate, channels)
+}
+
+/// `WAVE_FORMAT_EXTENSIBLE` (0xFFFE).
+const WAVE_FORMAT_EXTENSIBLE_TAG: u16 = 0xFFFE;
+/// `WAVE_FORMAT_IEEE_FLOAT` (0x0003).
+const WAVE_FORMAT_IEEE_FLOAT_TAG: u16 = 0x0003;
+/// KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: `00000003-0000-0010-8000-00aa00389b71`.
+const KSDATAFORMAT_SUBTYPE_IEEE_FLOAT: windows::core::GUID =
+    windows::core::GUID::from_u128(0x00000003_0000_0010_8000_00aa00389b71);
+
+fn run_loopback_capture(
+    friendly_name: &str,
+    sender: SyncSender<AudioFrame>,
+    dropped_frames: Arc<AtomicU64>,
+    stop: Receiver<()>,
+) {
+    let apartment = match ComApartment::initialize() {
+        Ok(apartment) => apartment,
+        Err(_) => return,
+    };
+    let enumerator = match create_enumerator() {
+        Ok(enumerator) => enumerator,
+        Err(_) => return,
+    };
+    let device = match find_render_device_by_name(&enumerator, friendly_name) {
+        Ok(device) => device,
+        Err(_) => return,
+    };
+    let client: IAudioClient = match unsafe { device.Activate(CLSCTX_ALL, None) } {
+        Ok(client) => client,
+        Err(_) => return,
+    };
+    let format = match unsafe { client.GetMixFormat() } {
+        Ok(format) if !format.is_null() => format,
+        _ => return,
+    };
+    let (sample_rate, channels) = parse_loopback_format(format);
+    if channels == 0 || sample_rate == 0 {
+        // SAFETY: GetMixFormat documents CoTaskMemFree for the returned allocation.
+        unsafe { CoTaskMemFree(Some(format.cast())) };
+        return;
+    }
+
+    // SAFETY: Initialize uses a mix-format pointer returned by GetMixFormat on
+    // the same audio client; LOOPBACK in shared mode is the documented way to
+    // capture the render mix for this endpoint.
+    let initialize = unsafe {
+        client.Initialize(
+            AUDCLNT_SHAREMODE_SHARED,
+            AUDCLNT_STREAMFLAGS_LOOPBACK,
+            LOOPBACK_BUFFER_MS * 10_000, // 100ns units
+            0,
+            format,
+            None,
+        )
+    };
+    if initialize.is_err() {
+        // SAFETY: GetMixFormat documents CoTaskMemFree for the returned allocation.
+        unsafe { CoTaskMemFree(Some(format.cast())) };
+        return;
+    }
+    let capture_client: IAudioCaptureClient = match unsafe {
+        client.GetService::<IAudioCaptureClient>()
+    } {
+        Ok(capture) => capture,
+        Err(_) => {
+            // SAFETY: GetMixFormat documents CoTaskMemFree for the returned allocation.
+            unsafe { CoTaskMemFree(Some(format.cast())) };
+            return;
+        }
+    };
+    // SAFETY: The format pointer is no longer needed after Initialize succeeded.
+    unsafe { CoTaskMemFree(Some(format.cast())) };
+
+    if unsafe { client.Start() }.is_err() {
+        return;
+    }
+
+    let channel_count = usize::from(channels);
+    let mut sequence = 0_u64;
+    let mut captured_samples = 0_u64;
+    loop {
+        if stop.try_recv().is_ok() {
+            break;
+        }
+        // Drain every available packet before sleeping. Loopback has no event
+        // handle, so we poll at a fraction of the buffer duration.
+        loop {
+            let mut data_ptr: *mut u8 = std::ptr::null_mut();
+            let mut num_frames = 0_u32;
+            let mut flags = 0_u32;
+            // SAFETY: The capture client and buffers are valid in this COM
+            // apartment; pointers are written by the OS and not stored beyond
+            // the matching ReleaseBuffer call.
+            let result = unsafe {
+                capture_client.GetBuffer(
+                    &mut data_ptr,
+                    &mut num_frames,
+                    &mut flags,
+                    None,
+                    None,
+                )
+            };
+            if result.is_err() {
+                break;
+            }
+            let silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0;
+            if silent || data_ptr.is_null() || num_frames == 0 {
+                let _ = unsafe { capture_client.ReleaseBuffer(num_frames) };
+                break;
+            }
+            // SAFETY: GetBuffer hands `num_frames` of interleaved float32
+            // samples for the lifetime until ReleaseBuffer.
+            let samples_f32: &[f32] = unsafe {
+                std::slice::from_raw_parts(
+                    data_ptr as *const f32,
+                    usize::try_from(num_frames).unwrap_or(0) * channel_count,
+                )
+            };
+            let mono = downmix_to_mono_slice_f32(samples_f32, channel_count);
+            if !mono.is_empty() {
+                let mono_len = u64::try_from(mono.len()).unwrap_or(u64::MAX);
+                let timestamp_ns =
+                    captured_samples.saturating_mul(1_000_000_000) / u64::from(sample_rate);
+                captured_samples = captured_samples.saturating_add(mono_len);
+                let frame = AudioFrame {
+                    sequence,
+                    capture_monotonic_ns: timestamp_ns,
+                    sample_rate,
+                    channels: 1,
+                    samples: mono,
+                };
+                sequence = sequence.saturating_add(1);
+                if sender.try_send(frame).is_err() {
+                    dropped_frames.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            let _ = unsafe { capture_client.ReleaseBuffer(num_frames) };
+            // Continue the inner loop to drain trailing packets without sleeping.
+            continue;
+        }
+        let _ = stop.try_recv();
+        thread::sleep(Duration::from_millis(LOOPBACK_POLL_MS));
+    }
+
+    let _ = unsafe { client.Stop() };
+    drop(capture_client);
+    drop(client);
+    drop(device);
+    drop(enumerator);
+    drop(apartment);
+}
+
+fn downmix_to_mono_slice_f32(samples: &[f32], channels: usize) -> Vec<f32> {
+    if channels == 0 || samples.len() % channels != 0 {
+        return Vec::new();
+    }
+    if channels == 1 {
+        return samples.to_vec();
+    }
+    let inv = 1.0_f32 / channels as f32;
+    samples
+        .chunks_exact(channels)
+        .map(|frame| frame.iter().copied().sum::<f32>() * inv)
+        .collect()
+}
+
+/// Loopback buffer size (milliseconds). Larger = fewer wakeups, more latency.
+const LOOPBACK_BUFFER_MS: i64 = 200;
+/// Polling interval for the loopback worker (no event handle is used).
+const LOOPBACK_POLL_MS: u64 = 5;
 
 fn default_endpoint_ids(enumerator: &IMMDeviceEnumerator) -> Vec<(EndpointKind, ERole, String)> {
     let mut defaults = Vec::new();

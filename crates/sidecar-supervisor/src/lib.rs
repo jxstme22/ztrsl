@@ -20,13 +20,18 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const CLIP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LIVE_START_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SidecarConfig {
     pub python_executable: PathBuf,
     pub python_source_root: PathBuf,
     pub model_root: PathBuf,
     pub runtime_library_dir: Option<PathBuf>,
     pub translation_runner: PathBuf,
+    /// Extra environment variables applied to the sidecar subprocess at
+    /// spawn time. Used to forward opt-in HTTP translation API configuration
+    /// (e.g. `LST_LT_ENDPOINT`, `LST_CUSTOM_TX_API_KEY`) from the UI without
+    /// requiring the user to set system-level environment variables.
+    pub extra_env: Vec<(String, String)>,
 }
 
 impl SidecarConfig {
@@ -59,6 +64,7 @@ impl SidecarConfig {
                     "translation-runner"
                 },
             ),
+            extra_env: Vec::new(),
         }
     }
 
@@ -100,6 +106,9 @@ impl SidecarSupervisor {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        for (key, value) in &config.extra_env {
+            command.env(key, value);
+        }
         #[cfg(target_os = "macos")]
         if let Some(runtime_library_dir) = &config.runtime_library_dir {
             command.env("DYLD_LIBRARY_PATH", runtime_library_dir);
@@ -199,7 +208,10 @@ impl SidecarSupervisor {
         &mut self,
         source_mode: &str,
         provider: &str,
+        asr_provider: &str,
+        translation_provider: &str,
         resource_profile: &str,
+        vad_sensitivity: u8,
     ) -> Result<serde_json::Value, SupervisorError> {
         self.ensure_running()?;
         let request = Envelope {
@@ -211,7 +223,10 @@ impl SidecarSupervisor {
             payload: LiveStartPayload {
                 source_mode: source_mode.to_owned(),
                 provider: provider.to_owned(),
+                asr_provider: asr_provider.to_owned(),
+                translation_provider: translation_provider.to_owned(),
                 resource_profile: resource_profile.to_owned(),
+                vad_sensitivity,
             },
         };
         self.next_sequence = self.next_sequence.saturating_add(1);

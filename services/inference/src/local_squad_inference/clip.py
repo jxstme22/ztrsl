@@ -56,7 +56,7 @@ def process_clip(
     translation: TranslationProvider | None = None,
     mode: str = "demo",
 ) -> ClipResult:
-    if source_mode not in {"filipino", "cebuano", "mixed"}:
+    if source_mode not in {"filipino", "cebuano", "chinese", "mixed"}:
         raise ValueError("unsupported source mode")
     media = decoder or FfmpegDecoder()
     metadata = media.inspect(source)
@@ -145,12 +145,18 @@ def _append_caption(
     transcript = asr_provider.transcribe(utterance, source_mode)
     if not transcript.text.strip():
         return
-    translated = translation_provider.translate(transcript)
     warnings: list[str] = []
-    english_text = translated.english_text
-    if not english_text.strip():
-        english_text = "[No reliable English translation]"
+    try:
+        translated = translation_provider.translate(transcript)
+        english_text = translated.english_text
+        provider_tag = translated.model_id
+        if not english_text.strip():
+            english_text = "[No reliable English translation]"
+            warnings.append("LOW_CONFIDENCE")
+    except Exception:
+        english_text = "[Translation unavailable]"
         warnings.append("LOW_CONFIDENCE")
+        provider_tag = "unavailable"
     if utterance.forced_end:
         warnings.append("FORCED_SPLIT")
     captions.append(
@@ -162,7 +168,7 @@ def _append_caption(
             source_text=transcript.text,
             english_text=english_text,
             forced_split=utterance.forced_end,
-            provider=f"{transcript.model_id}+{translated.model_id}",
+            provider=f"{transcript.model_id}+{provider_tag}",
             warnings=tuple(warnings),
         )
     )

@@ -31,6 +31,7 @@ describe("control window", () => {
         "No cloud processing, recording, transcript history, telemetry, or game-process access.",
       ),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
     expect(
       screen.getByText("Capture meter only · no playback · no recording"),
     ).toBeInTheDocument();
@@ -45,30 +46,20 @@ describe("control window", () => {
     ).toBeEnabled();
   });
 
-  it("requires both voice input and monitoring output for live translation", async () => {
+  it("starts live translation once a voice channel is chosen with monitor off by default", async () => {
     render(<App />);
 
     const start = screen.getByRole("button", { name: "Start listening" });
     const voiceInput = screen.getByRole("combobox", {
       name: /Voice-chat channel/,
     });
-    const monitoringOutput = screen.getByRole("combobox", {
-      name: "Monitoring output",
-    });
     await within(voiceInput).findByRole("option", {
       name: "Generated voice signal (macOS simulator)",
-    });
-    await within(monitoringOutput).findByRole("option", {
-      name: "Silent test sink (macOS simulator)",
     });
     expect(start).toBeDisabled();
 
     fireEvent.change(voiceInput, {
       target: { value: "synthetic://phase-2-meter" },
-    });
-    expect(start).toBeDisabled();
-    fireEvent.change(monitoringOutput, {
-      target: { value: "synthetic://phase-3-headphones" },
     });
     await waitFor(() => {
       expect(
@@ -86,8 +77,41 @@ describe("control window", () => {
     ).toBeEnabled();
   });
 
+  it("requires a monitoring output only when monitor is on", async () => {
+    render(<App />);
+
+    const voiceInput = screen.getByRole("combobox", {
+      name: /Voice-chat channel/,
+    });
+    await within(voiceInput).findByRole("option", {
+      name: "Generated voice signal (macOS simulator)",
+    });
+    fireEvent.change(voiceInput, {
+      target: { value: "synthetic://phase-2-meter" },
+    });
+
+    const monitorToggle = screen.getByRole("checkbox", {
+      name: /Monitor captured audio/,
+    });
+    fireEvent.click(monitorToggle);
+
+    const monitoringOutput = await screen.findByRole("combobox", {
+      name: "Monitoring output",
+    });
+    const start = screen.getByRole("button", { name: "Start listening" });
+    expect(start).toBeDisabled();
+
+    fireEvent.change(monitoringOutput, {
+      target: { value: "synthetic://phase-3-headphones" },
+    });
+    await waitFor(() => {
+      expect(start).toBeEnabled();
+    });
+  });
+
   it("requires explicit endpoint selection before starting the meter", async () => {
     render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
 
     const start = screen.getByRole("button", { name: "Start meter" });
     expect(start).toBeDisabled();
@@ -132,7 +156,7 @@ describe("control window", () => {
 
   it("runs the synthetic monitoring route only after both endpoints are chosen", async () => {
     render(<App />);
-    fireEvent.click(screen.getByText("Advanced diagnostics"));
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
 
     const start = screen.getByRole("button", {
       name: "Run pipeline simulator",
@@ -164,7 +188,7 @@ describe("control window", () => {
 
   it("sends fake binary audio through the sidecar lifecycle into the overlay", async () => {
     render(<App />);
-    fireEvent.click(screen.getByText("Advanced diagnostics"));
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
     fireEvent.click(screen.getByRole("button", { name: "Start fake sidecar" }));
     const run = await screen.findByRole("button", {
       name: "Send fake audio end to end",
@@ -172,15 +196,19 @@ describe("control window", () => {
     fireEvent.click(run);
 
     await waitFor(() => {
+      expect(screen.getByText("18 ms fake latency")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    await waitFor(() => {
       expect(
         screen.getByText("Let's rotate to B—they're already on A."),
       ).toBeInTheDocument();
     });
-    expect(screen.getByText("18 ms fake latency")).toBeInTheDocument();
   });
 
   it("keeps clip inference honestly labeled in browser demo mode", async () => {
     render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Clip Lab" }));
 
     fireEvent.click(
       screen.getByRole("button", {

@@ -88,6 +88,7 @@ pub enum SourceMode {
     Filipino,
     Cebuano,
     English,
+    Chinese,
     Mixed,
 }
 
@@ -109,7 +110,17 @@ pub struct ClipProcessPayload {
 pub struct LiveStartPayload {
     pub source_mode: String,
     pub provider: String,
+    pub asr_provider: String,
+    pub translation_provider: String,
     pub resource_profile: String,
+    /// 0..100 VAD sensitivity slider. 50 is the baseline. Higher means
+    /// quieter speech is treated as speech and utterances close sooner.
+    #[serde(default = "default_vad_sensitivity")]
+    pub vad_sensitivity: u8,
+}
+
+pub fn default_vad_sensitivity() -> u8 {
+    50
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

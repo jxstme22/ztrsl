@@ -1,4 +1,4 @@
-import { AudioLines, CircleAlert, Headphones, Square } from "lucide-react";
+import { AudioLines, Headphones, Square } from "lucide-react";
 
 import { useRoutingTest } from "../routing/useRoutingTest";
 
@@ -14,17 +14,9 @@ export function RoutingPanel() {
     >
       <div className="section-heading">
         <div>
-          <p className="section-kicker">
-            {isSimulator ? "macOS bench routing" : "Windows live routing"}
-          </p>
           <h2 id="routing-title">
             {isSimulator ? "Silent pipeline simulator" : "Monitoring and inference branch"}
           </h2>
-          <p className="section-description">
-            {isSimulator
-              ? "A generated signal flows through the real bounded queues and resampler into a silent memory sink. You will not hear audio."
-              : "Monitoring keeps native channels while a separate bounded branch downmixes and resamples to 16 kHz mono."}
-          </p>
         </div>
         <span className="mode-badge">
           {routing.active ? "Routing active" : "Stopped"}
@@ -32,8 +24,7 @@ export function RoutingPanel() {
       </div>
 
       {routing.error !== null && (
-        <div className="inline-alert error phase-note" role="alert">
-          <CircleAlert aria-hidden="true" size={18} />
+        <div className="inline-alert error" role="alert">
           <div>
             <strong>Routing test unavailable</strong>
             <p>{routing.error}</p>

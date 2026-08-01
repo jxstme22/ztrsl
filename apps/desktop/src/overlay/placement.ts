@@ -17,7 +17,7 @@ export type ResolvedPlacement = {
   recovered: boolean;
 };
 
-const OVERLAY_HEIGHT = 260;
+const OVERLAY_HEIGHT = 150;
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
@@ -28,7 +28,7 @@ export function normalizeSettings(settings: OverlaySettings): OverlaySettings {
     ...settings,
     xNormalized: clamp(settings.xNormalized, 0, 1),
     yNormalized: clamp(settings.yNormalized, 0, 1),
-    widthNormalized: clamp(settings.widthNormalized, 0.4, 0.7),
+    widthNormalized: clamp(settings.widthNormalized, 0.3, 0.95),
     fontScale: clamp(settings.fontScale, 0.8, 1.6),
     backgroundOpacity: clamp(settings.backgroundOpacity, 0.35, 0.9),
   };

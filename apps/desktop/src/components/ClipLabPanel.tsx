@@ -1,11 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  CircleAlert,
-  FileVideo2,
-  FlaskConical,
-  LoaderCircle,
-  ShieldCheck,
-} from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { analyzeMediaClip } from "../clip/bridge";
@@ -79,15 +73,10 @@ export function ClipLabPanel() {
   };
 
   return (
-    <section className="audio-card clip-lab" id="clips" aria-labelledby="clip-title">
+    <section className="audio-card clip-lab glass-panel" id="clips" aria-labelledby="clip-title">
       <div className="section-heading">
         <div>
-          <p className="section-kicker">Phase 5 · Offline clip lab</p>
           <h2 id="clip-title">Test a friends’ comms clip</h2>
-          <p className="section-description">
-            The selected file is decoded locally into memory, segmented, and
-            discarded. Raw audio and transcripts are not saved.
-          </p>
         </div>
         <span className={`mode-badge ${provider === "demo" ? "edit" : ""}`}>
           {provider === "demo" ? "Demo providers" : "Local models"}
@@ -104,14 +93,8 @@ export function ClipLabPanel() {
             }
           }}
         >
-          <FileVideo2 aria-hidden="true" size={24} />
           <span>
             <strong>{displayName}</strong>
-            <small>
-              {isDesktopRuntime()
-                ? "Drag and drop one user-approved clip here"
-                : "Click to load a browser-only demonstration"}
-            </small>
           </span>
         </button>
         <label className="field" htmlFor="clip-language">
@@ -126,6 +109,7 @@ export function ClipLabPanel() {
             <option value="mixed">Tagalog-first mixed / code-switched</option>
             <option value="filipino">Filipino / Taglish</option>
             <option value="cebuano">Cebuano / Bislish</option>
+            <option value="chinese">Chinese (Mandarin/Cantonese)</option>
           </select>
         </label>
         <label className="field" htmlFor="clip-provider">
@@ -143,27 +127,8 @@ export function ClipLabPanel() {
         </label>
       </div>
 
-      <div className="inline-alert info phase-note" role="status">
-        <FlaskConical aria-hidden="true" size={18} />
-        <div>
-          <strong>
-            {provider === "demo"
-              ? "Media and VAD are real; captions are clearly marked demo"
-              : "Contextual Whisper ASR + reset-safe MADLAD translation"}
-          </strong>
-          <p>
-            {provider === "demo"
-              ? "This mode checks the pipeline without pretending it understood the speech."
-              : sourceMode === "cebuano"
-                ? "Cebuano is experimental: Whisper uses a Filipino decoder constraint to prevent script drift."
-                : "Tagalog-first decoding preserves full-clip context and rejects unconstrained language guessing."}
-          </p>
-        </div>
-      </div>
-
       {error !== null && (
-        <div className="inline-alert error phase-note" role="alert">
-          <CircleAlert aria-hidden="true" size={18} />
+        <div className="inline-alert error" role="alert">
           <div>
             <strong>Clip analysis failed</strong>
             <p>{error}</p>
@@ -180,15 +145,12 @@ export function ClipLabPanel() {
           onClick={() => void analyze()}
         >
           {state === "running" ? (
-            <LoaderCircle className="spin" aria-hidden="true" size={17} />
-          ) : (
-            <FileVideo2 aria-hidden="true" size={17} />
-          )}
+            <LoaderCircle className="spin" aria-hidden="true" size={16} />
+          ) : null}
           {state === "running" ? "Analyzing locally…" : "Analyze clip"}
         </button>
         <span className="capture-safety">
-          <ShieldCheck aria-hidden="true" size={14} /> Read-only · local-only ·
-          memory-only
+          Read-only · local-only · memory-only
         </span>
       </div>
 

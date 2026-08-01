@@ -1,5 +1,3 @@
-import { Captions } from "lucide-react";
-
 import type { OverlaySnapshot } from "../overlay/model";
 
 type CaptionStackProps = {
@@ -16,7 +14,6 @@ export function CaptionStack({ snapshot, preview = false }: CaptionStackProps) {
   if (snapshot.captions.length === 0) {
     return preview ? (
       <div className="caption-empty">
-        <Captions aria-hidden="true" size={24} strokeWidth={1.8} />
         <strong>No captions yet</strong>
         <span>Send a fake line to test the full caption lifecycle.</span>
       </div>

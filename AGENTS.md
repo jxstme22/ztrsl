@@ -58,6 +58,42 @@ The application may only:
 - Every model artifact must have a checksum and documented license/source.
 - Pin critical dependencies after the first working milestone.
 
+## Local Setup (Windows)
+
+One-time, from the workspace root:
+
+1. `uv sync --extra dev --extra models` — installs `faster-whisper`, `ctranslate2`,
+   `onnxruntime`, `sherpa-onnx`, etc. into `.venv`. Without `--extra models`, live
+   local ASR fails with "faster-whisper and CTranslate2 are required for quality
+   local ASR".
+2. `python scripts/install_models.py whisper-turbo --accept-license` (or
+   `whisper` for the full large-v3 model) and
+   `python scripts/install_models.py madlad --accept-license` — downloads the
+   verified model artifacts into `models/artifacts/`. The live sidecar prefers
+   `whisper-large-v3-turbo` (lighter, ~1.6 GB) and falls back to
+   `whisper-large-v3` (~3.1 GB) when only that is installed. Override with the
+   `LST_WHISPER_MODEL_ID` environment variable.
+3. Optional NCSpeech Tagalog ASR: `scripts/export_ncspeech_onnx.py` performs a
+   one-time NeMo→CTC ONNX export into `models/artifacts/` and writes a verified
+   manifest. It requires a build venv with `nemo_toolkit[asr]` and `torch`
+   (~2-3 GB extra disk); the runtime inference venv only needs `sherpa-onnx`.
+   Without the export the `ncspeech` provider raises a visible start error.
+4. The `translation-runner` Rust binary is rebuilt automatically by the Tauri
+   `beforeDev`/`beforeBuild` hooks via `scripts/ensure-translation-runner.mjs`.
+   After a manual `cargo clean`, the first `pnpm tauri dev`/`pnpm tauri build`
+   will relink it; no manual step is needed.
+
+Run the app from `apps/desktop`:
+
+- `pnpm tauri dev` — Vite + Tauri dev window.
+- `pnpm tauri build` — packaged installer under
+  `apps/desktop/src-tauri/target/release/bundle/`.
+
+Sanity checks:
+
+- `cargo test -p audio-core`, `cargo test -p sidecar-supervisor`
+- `pnpm test`, `pnpm typecheck`, `pnpm lint` (run from `apps/desktop`)
+
 ## Work Method
 
 For every phase:

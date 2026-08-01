@@ -1,4 +1,11 @@
-from local_squad_inference.vad import SAMPLE_RATE, EnergyUtteranceManager, VadConfig
+import pytest
+
+from local_squad_inference.vad import (
+    SAMPLE_RATE,
+    EnergyUtteranceManager,
+    VadConfig,
+    vad_config_from_sensitivity,
+)
 
 
 def frames(milliseconds: int, amplitude: float) -> tuple[float, ...]:
@@ -41,3 +48,30 @@ def test_long_speech_forces_bounded_split_with_overlap() -> None:
     assert utterances[0].forced_end is True
     assert all(len(item.pcm_f32) <= SAMPLE_RATE * 300 // 1_000 for item in utterances)
     assert utterances[1].started_ns < utterances[0].ended_ns
+
+
+def test_sensitivity_50_matches_baseline_vad_config() -> None:
+    baseline = VadConfig()
+    mapped = vad_config_from_sensitivity(50)
+
+    assert mapped.silero_threshold == baseline.silero_threshold
+    assert mapped.speech_rms == pytest.approx(baseline.speech_rms, abs=0.001)
+    assert mapped.min_silence_ms == pytest.approx(baseline.min_silence_ms, abs=50)
+
+
+def test_higher_sensitivity_lowers_gates_and_silence() -> None:
+    sensitive = vad_config_from_sensitivity(100)
+    strict = vad_config_from_sensitivity(0)
+
+    assert sensitive.silero_threshold < strict.silero_threshold
+    assert sensitive.speech_rms < strict.speech_rms
+    assert sensitive.min_silence_ms < strict.min_silence_ms
+
+
+def test_sensitivity_clamps_out_of_range() -> None:
+    assert vad_config_from_sensitivity(1000).silero_threshold == vad_config_from_sensitivity(
+        100
+    ).silero_threshold
+    assert vad_config_from_sensitivity(-20).min_silence_ms == vad_config_from_sensitivity(
+        0
+    ).min_silence_ms

@@ -10,8 +10,7 @@ use audio_core::StreamingLinearResampler;
 use audio_core::{
     AtomicLevelMeter, AudioEndpoint, AudioError, AudioFormat, AudioMonitor, AudioRouter,
     AudioSource, EndpointKind, EndpointState, LevelSnapshot, RoutingMetrics, SYNTHETIC_ENDPOINT_ID,
-    SYNTHETIC_MONITOR_ENDPOINT_ID, SyntheticAudioMonitor, SyntheticAudioSource,
-    synthetic_monitor_endpoint, validate_route,
+    SYNTHETIC_MONITOR_ENDPOINT_ID, SyntheticAudioMonitor, SyntheticAudioSource, validate_route,
 };
 use ipc_protocol::{CaptionPayload, ClipResultPayload, Envelope};
 use serde::{Deserialize, Serialize};
@@ -31,6 +30,11 @@ struct AudioRuntimeState {
     sequence: u64,
     synthetic: SyntheticAudioSource,
     synthetic_meter: AtomicLevelMeter,
+}
+
+#[derive(Default)]
+struct TranslationApiRuntime {
+    env: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 #[derive(Default)]
@@ -110,18 +114,47 @@ struct LiveStarted {
 #[serde(rename_all = "camelCase")]
 struct LiveStartRequest {
     endpoint_id: String,
-    playback_endpoint_id: String,
+    /// Optional when monitoring is disabled. Empty string is treated as None.
+    playback_endpoint_id: Option<String>,
     source_mode: String,
     provider: String,
+    /// ASR backend: "local"/"whisper-turbo" (large-v3-turbo), "whisper-full"
+    /// (large-v3), "ncspeech" (NVIDIA FastConformer Tagalog), or "groq-whisper".
+    #[serde(default)]
+    asr_provider: String,
+    /// Translation backend: "madlad" (local), "libretranslate",
+    /// "google-translate", "mymemory", "custom-http".
+    #[serde(default)]
+    translation_provider: String,
     resource_profile: String,
+    /// When true, captured audio is sent to the playback endpoint for the user
+    /// to hear. Defaults to false so captions are shown without audible echo.
+    #[serde(default)]
+    monitor_enabled: bool,
+    /// 0..100 VAD sensitivity slider. 50 is the baseline; higher treats
+    /// quieter speech as speech and closes utterances sooner.
+    #[serde(default = "default_vad_sensitivity")]
+    vad_sensitivity: u8,
+}
+
+fn default_vad_sensitivity() -> u8 {
+    50
 }
 
 struct LiveWorkerConfig {
     endpoint_name: String,
-    playback_endpoint_name: String,
+    /// `Some(name)` when monitoring is enabled, otherwise `None`.
+    playback_endpoint_name: Option<String>,
     source_mode: String,
     provider: String,
+    asr_provider: String,
+    translation_provider: String,
     resource_profile: String,
+    /// True when the selected endpoint is a Render endpoint captured via WASAPI
+    /// shared-mode loopback rather than a microphone capture stream.
+    loopback: bool,
+    monitor_enabled: bool,
+    vad_sensitivity: u8,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -204,57 +237,117 @@ async fn start_live_translation(
     audio: tauri::State<'_, AudioRuntime>,
     sidecar: tauri::State<'_, SidecarRuntime>,
     live: tauri::State<'_, LiveRuntime>,
+    translation_api: tauri::State<'_, TranslationApiRuntime>,
 ) -> Result<LiveSnapshot, String> {
-    let LiveStartRequest {
+let LiveStartRequest {
         endpoint_id,
         playback_endpoint_id,
         source_mode,
         provider,
+        asr_provider,
+        translation_provider,
         resource_profile,
+        monitor_enabled,
+        vad_sensitivity,
     } = request;
-    if source_mode != "filipino" {
-        return Err("V1 live mode supports Filipino / Taglish only".to_owned());
+    if source_mode != "filipino" && source_mode != "chinese" {
+        return Err("V1 live mode supports Filipino or Chinese only".to_owned());
     }
-    if !matches!(provider.as_str(), "demo" | "local") {
-        return Err("live provider must be demo or local".to_owned());
+    if !matches!(provider.as_str(), "demo" | "local" | "http") {
+        return Err("live provider must be demo, local, or http".to_string());
     }
+    if !matches!(
+        asr_provider.as_str(),
+        "local" | "whisper-turbo" | "whisper-full" | "ncspeech" | "groq-whisper"
+    ) {
+        return Err(format!("unknown ASR provider: {asr_provider}"));
+    }
+    if !matches!(
+        translation_provider.as_str(),
+        "madlad" | "libretranslate" | "google-translate" | "mymemory" | "custom-http"
+    ) {
+        return Err(format!("unknown translation provider: {translation_provider}"));
+    }
+    // Any remote provider (Groq ASR or an HTTP translation backend) implies the
+    // "http" mode so the sidecar keeps the demo flag off and routes through the
+    // configured remote provider.
+    let provider = if asr_provider == "groq-whisper"
+        || translation_provider != "madlad"
+    {
+        "http".to_string()
+    } else {
+        provider
+    };
     if !matches!(resource_profile.as_str(), "balanced" | "quality") {
-        return Err("unknown live resource profile".to_owned());
+        return Err("unknown live resource profile".to_string());
+    }
+    if vad_sensitivity > 100 {
+        return Err("vad_sensitivity must be between 0 and 100".to_string());
     }
     let endpoints = platform_endpoints(&audio)?;
     let endpoint = endpoints
         .iter()
         .find(|candidate| candidate.id == endpoint_id)
         .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
-    if endpoint.kind != EndpointKind::Capture || endpoint.state != EndpointState::Active {
+    if endpoint.state != EndpointState::Active {
         return Err(AudioError::EndpointInvalidated.to_string());
     }
-    let playback_endpoint = endpoints
-        .iter()
-        .find(|candidate| candidate.id == playback_endpoint_id)
-        .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
-    if playback_endpoint.kind != EndpointKind::Render
-        || playback_endpoint.state != EndpointState::Active
-    {
-        return Err(AudioError::EndpointInvalidated.to_string());
-    }
-    if endpoint.id == playback_endpoint.id {
-        return Err("capture and monitoring endpoints must be different".to_owned());
-    }
+    // A Capture endpoint captures a microphone; a Render endpoint is opened in
+    // WASAPI shared-mode loopback to capture the game/teammates mix being
+    // played through that render endpoint (e.g. headphones or speakers).
+    let loopback = match endpoint.kind {
+        EndpointKind::Capture => false,
+        EndpointKind::Render => true,
+    };
+
+    let playback_endpoint_name = if monitor_enabled {
+        let raw_playback_id = playback_endpoint_id.as_deref().unwrap_or("").trim();
+        if raw_playback_id.is_empty() {
+            return Err("monitoring output endpoint is required when monitoring is enabled"
+                .to_owned());
+        }
+        let playback_endpoint = endpoints
+            .iter()
+            .find(|candidate| candidate.id == raw_playback_id)
+            .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
+        if playback_endpoint.kind != EndpointKind::Render
+            || playback_endpoint.state != EndpointState::Active
+        {
+            return Err(AudioError::EndpointInvalidated.to_string());
+        }
+        // Even with loopback on the same physical device, feeding the captured
+        // mix back into the same render endpoint doubles audio and risks echo.
+        if endpoint.id == playback_endpoint.id {
+            return Err("capture and monitoring endpoints must be different".to_owned());
+        }
+        Some(playback_endpoint.friendly_name.clone())
+    } else {
+        None
+    };
 
     let state = Arc::clone(&live.state);
     let sidecar = Arc::clone(&sidecar.supervisor);
+    let translation_api = Arc::clone(&translation_api.env);
     let endpoint_name = endpoint.friendly_name.clone();
-    let playback_endpoint_name = playback_endpoint.friendly_name.clone();
     let worker_config = LiveWorkerConfig {
         endpoint_name,
         playback_endpoint_name,
         source_mode,
         provider,
+        asr_provider,
+        translation_provider,
         resource_profile,
+        loopback,
+        monitor_enabled,
+        vad_sensitivity,
     };
     tauri::async_runtime::spawn_blocking(move || {
-        start_live_translation_blocking(worker_config, state, sidecar)
+        start_live_translation_blocking(
+            worker_config,
+            state,
+            sidecar,
+            translation_api,
+        )
     })
     .await
     .map_err(|error| format!("live start worker failed: {error}"))?
@@ -264,6 +357,7 @@ fn start_live_translation_blocking(
     worker_config: LiveWorkerConfig,
     live: Arc<Mutex<LiveRuntimeState>>,
     sidecar: Arc<Mutex<Option<SidecarSupervisor>>>,
+    translation_api: Arc<Mutex<Vec<(String, String)>>>,
 ) -> Result<LiveSnapshot, String> {
     let mut state = live.lock().map_err(lock_error)?;
     if state.worker.is_some() && !state.stopped {
@@ -280,7 +374,13 @@ fn start_live_translation_blocking(
     let worker = thread::Builder::new()
         .name("live-translation".to_owned())
         .spawn(move || {
-            run_live_worker(worker_config, stop_rx, event_tx, ready_tx);
+            run_live_worker(
+                worker_config,
+                stop_rx,
+                event_tx,
+                ready_tx,
+                Arc::clone(&translation_api),
+            );
         })
         .map_err(|error| format!("live worker could not start: {error}"))?;
     let started = match ready_rx.recv_timeout(Duration::from_secs(3 * 60)) {
@@ -404,11 +504,11 @@ fn audio_endpoints(runtime: tauri::State<'_, AudioRuntime>) -> Result<EndpointCa
             .unwrap_or(false);
         let endpoints =
             audio_core::WindowsEndpointCatalog::enumerate().map_err(audio_error_to_string)?;
-        return Ok(EndpointCatalog {
+        Ok(EndpointCatalog {
             platform: "windows",
             endpoints,
             device_change_detected,
-        });
+        })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -661,13 +761,13 @@ fn audio_meter_snapshot(
         let peak =
             audio_core::windows_endpoint_peak(&endpoint_id).map_err(audio_error_to_string)?;
         state.sequence = state.sequence.saturating_add(1);
-        return Ok(LevelSnapshot {
+        Ok(LevelSnapshot {
             sequence: state.sequence,
             peak,
             rms: peak,
             clipped: peak >= 1.0,
             dropped_frames: 0,
-        });
+        })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -730,20 +830,36 @@ fn lock_error<T>(error: std::sync::PoisonError<T>) -> String {
     format!("audio runtime state is unavailable: {error}")
 }
 
+fn worker_sidecar_config(
+    translation_env: &Arc<Mutex<Vec<(String, String)>>>,
+) -> SidecarConfig {
+    let mut config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+    if let Ok(env) = translation_env.lock() {
+        config.extra_env = env.clone();
+    }
+    config
+}
+
 fn run_live_worker(
     config: LiveWorkerConfig,
     stop: Receiver<()>,
     events: SyncSender<LiveWorkerEvent>,
     ready: SyncSender<Result<LiveStarted, String>>,
+    translation_env: Arc<Mutex<Vec<(String, String)>>>,
 ) {
     let LiveWorkerConfig {
         endpoint_name,
         playback_endpoint_name,
         source_mode,
         provider,
+        asr_provider,
+        translation_provider,
         resource_profile,
+        loopback,
+        monitor_enabled,
+        vad_sensitivity,
     } = config;
-    let sidecar_config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+    let sidecar_config = worker_sidecar_config(&translation_env);
     let mut supervisor = match SidecarSupervisor::start(&sidecar_config) {
         Ok(supervisor) => supervisor,
         Err(error) => {
@@ -751,7 +867,14 @@ fn run_live_worker(
             return;
         }
     };
-    let detail = match supervisor.start_live(&source_mode, &provider, &resource_profile) {
+    let detail = match supervisor.start_live(
+        &source_mode,
+        &provider,
+        &asr_provider,
+        &translation_provider,
+        &resource_profile,
+        vad_sensitivity,
+    ) {
         Ok(detail) => detail,
         Err(error) => {
             let _ = ready.send(Err(error.to_string()));
@@ -779,6 +902,8 @@ fn run_live_worker(
     #[cfg(target_os = "windows")]
     let result = run_windows_live_loop(
         endpoint_name,
+        loopback,
+        monitor_enabled,
         playback_endpoint_name,
         &stop,
         &events,
@@ -790,6 +915,10 @@ fn run_live_worker(
     let _ = endpoint_name;
     #[cfg(not(target_os = "windows"))]
     let _ = playback_endpoint_name;
+    #[cfg(not(target_os = "windows"))]
+    let _ = loopback;
+    #[cfg(not(target_os = "windows"))]
+    let _ = monitor_enabled;
 
     if let Err(error) = result {
         let _ = events.send(LiveWorkerEvent::Error(error));
@@ -801,20 +930,43 @@ fn run_live_worker(
 #[cfg(target_os = "windows")]
 fn run_windows_live_loop(
     endpoint_name: String,
-    playback_endpoint_name: String,
+    loopback: bool,
+    monitor_enabled: bool,
+    playback_endpoint_name: Option<String>,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), String> {
-    let capture = audio_core::WindowsAudioCapture::start(&endpoint_name, 32)
-        .map_err(audio_error_to_string)?;
-    let playback = audio_core::WindowsAudioPlayback::start(&playback_endpoint_name, 32)
-        .map_err(audio_error_to_string)?;
+    let capture = if loopback {
+        audio_core::WindowsAudioCapture::start_loopback(&endpoint_name, 32)
+            .map_err(audio_error_to_string)?
+    } else {
+        audio_core::WindowsAudioCapture::start(&endpoint_name, 32)
+            .map_err(audio_error_to_string)?
+    };
+    let mut playback = if monitor_enabled {
+        let Some(name) = playback_endpoint_name.as_deref() else {
+            return Err("monitoring output endpoint is missing".to_owned());
+        };
+        Some(
+            audio_core::WindowsAudioPlayback::start(name, 32)
+                .map_err(audio_error_to_string)?,
+        )
+    } else {
+        None
+    };
     let mut resampler = StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
         .map_err(audio_error_to_string)?;
-    let mut monitor_resampler =
-        StreamingLinearResampler::new(capture.format().sample_rate, playback.format().sample_rate)
-            .map_err(audio_error_to_string)?;
+    let mut monitor_resampler = playback
+        .as_ref()
+        .map(|playback| {
+            StreamingLinearResampler::new(
+                capture.format().sample_rate,
+                playback.format().sample_rate,
+            )
+        })
+        .transpose()
+        .map_err(audio_error_to_string)?;
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
     loop {
@@ -825,11 +977,18 @@ fn run_windows_live_loop(
             Some(frame) => {
                 metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                 metrics.capture_drops = capture.dropped_frames();
-                metrics.monitor_drops = playback.dropped_frames();
-                metrics.monitor_underrun_samples = playback.underrun_samples();
-                let monitor_samples = monitor_resampler.process(&frame.samples);
-                if !monitor_samples.is_empty() {
-                    playback.try_write(monitor_samples);
+                if let Some(playback) = playback.as_mut() {
+                    metrics.monitor_drops = playback.dropped_frames();
+                    metrics.monitor_underrun_samples = playback.underrun_samples();
+                    // monitor_resampler is guaranteed to be Some when playback
+                    // is Some, but the borrow checker cannot see through it, so
+                    // take+refill the resampler pair locally.
+                    if let Some(resampler) = monitor_resampler.as_mut() {
+                        let monitor_samples = resampler.process(&frame.samples);
+                        if !monitor_samples.is_empty() {
+                            playback.try_write(monitor_samples);
+                        }
+                    }
                 }
                 let samples = resampler.process(&frame.samples);
                 if !samples.is_empty() {
@@ -978,6 +1137,43 @@ fn create_runtime() -> AudioRuntime {
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetTranslationEnvRequest {
+    /// Pairs of (name, value). Empty value removes the variable.
+    pairs: Vec<(String, String)>,
+}
+
+#[tauri::command]
+fn set_translation_env(
+    request: SetTranslationEnvRequest,
+    runtime: tauri::State<'_, TranslationApiRuntime>,
+) -> Result<(), String> {
+    const ALLOWED: &[&str] = &[
+        "LST_GROQ_API_KEY",
+        "LST_LT_ENDPOINT",
+        "LST_LT_API_KEY",
+        "LST_CUSTOM_TX_ENDPOINT",
+        "LST_CUSTOM_TX_API_KEY",
+    ];
+    let mut env = runtime.env.lock().map_err(lock_error)?;
+    for (name, value) in request.pairs {
+        if !ALLOWED.contains(&name.as_str()) {
+            continue;
+        }
+        if value.is_empty() {
+            env.retain(|(n, _)| n != &name);
+        } else {
+            if let Some(slot) = env.iter_mut().find(|(n, _)| n == &name) {
+                slot.1 = value;
+            } else {
+                env.push((name, value));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let result = tauri::Builder::default()
@@ -985,6 +1181,7 @@ pub fn run() {
         .manage(RoutingRuntime::default())
         .manage(SidecarRuntime::default())
         .manage(LiveRuntime::default())
+        .manage(TranslationApiRuntime::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             app_status,
@@ -1002,6 +1199,7 @@ pub fn run() {
             start_live_translation,
             live_translation_snapshot,
             stop_live_translation,
+            set_translation_env,
             analyze_clip
         ])
         .run(tauri::generate_context!());

@@ -11,6 +11,8 @@ MAX_AUDIO_MESSAGE_BYTES = 256 * 1024
 AUDIO_HEADER = struct.Struct("<4sHH16sQQIHI")
 AUDIO_MAGIC = b"LSTA"
 
+SourceMode = Literal["filipino", "cebuano", "english", "chinese", "mixed"]
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -47,7 +49,7 @@ class CaptionPayload(StrictModel):
     utterance_id: str
     revision: int = Field(ge=1)
     status: Literal["provisional", "final"]
-    source_mode: Literal["filipino", "cebuano", "english", "mixed"]
+    source_mode: SourceMode
     source_text: str = Field(max_length=500)
     english_text: str = Field(max_length=500)
     started_monotonic_ns: int = Field(ge=0)
@@ -61,14 +63,30 @@ class CaptionPayload(StrictModel):
 
 class ClipProcessPayload(StrictModel):
     path: str = Field(min_length=1, max_length=4096)
-    source_mode: Literal["filipino", "cebuano", "mixed"]
+    source_mode: Literal["filipino", "cebuano", "chinese", "mixed"]
     provider: Literal["demo", "local"] = "demo"
 
 
 class LiveStartPayload(StrictModel):
-    source_mode: Literal["filipino"] = "filipino"
-    provider: Literal["demo", "local"] = "local"
+    source_mode: Literal["filipino", "chinese"] = "filipino"
+    provider: Literal["demo", "local", "http"] = "local"
+    asr_provider: Literal[
+        "local",
+        "whisper-turbo",
+        "whisper-full",
+        "ncspeech",
+        "groq-whisper",
+    ] = "local"
+    translation_provider: Literal[
+        "madlad",
+        "demo",
+        "libretranslate",
+        "google-translate",
+        "mymemory",
+        "custom-http",
+    ] = "madlad"
     resource_profile: Literal["balanced", "quality"] = "quality"
+    vad_sensitivity: int = Field(default=50, ge=0, le=100)
 
 
 def parse_audio_packet(data: bytes) -> AudioPacket:

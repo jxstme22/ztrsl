@@ -43,7 +43,7 @@ describe("overlay placement", () => {
     expect(settings.monitorId).toBe(PRIMARY.id);
     expect(settings.widthNormalized).toBe(0.5);
     expect(settings.xNormalized).toBe(0.4);
-    expect(settings.yNormalized).toBeCloseTo(0.5, 2);
+    expect(settings.yNormalized).toBeCloseTo(590 / (PRIMARY.height - 150), 2);
   });
 
   it("clamps unsafe values to supported bounds", () => {
@@ -51,7 +51,7 @@ describe("overlay placement", () => {
       ...DEFAULT_OVERLAY_SETTINGS,
       xNormalized: -1,
       yNormalized: 2,
-      widthNormalized: 0.9,
+      widthNormalized: 0.99,
       fontScale: 3,
       backgroundOpacity: 0,
     });
@@ -59,7 +59,7 @@ describe("overlay placement", () => {
     expect(normalized).toMatchObject({
       xNormalized: 0,
       yNormalized: 1,
-      widthNormalized: 0.7,
+      widthNormalized: 0.95,
       fontScale: 1.6,
       backgroundOpacity: 0.35,
     });
