@@ -36,3 +36,7 @@ apps/desktop/src-tauri/sidecars/*
 !apps/desktop/src-tauri/sidecars/README.md
 local-squad-sidecar.spec
 
+
+# Packaged installers live on the GitHub Releases page, not in the repo
+/xTRSNLTR_*_x64-setup.exe
+/xTRSNLTR_*_x64_en-US.msi

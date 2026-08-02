@@ -53,9 +53,7 @@ def find_nemo(url: str, api_key: str) -> tuple[str, str, int]:
             version_id = entry.get("versionId", "")
             path = artifact.get("path", "")
             size = int(artifact.get("size", 0) or 0)
-            download_url = (
-                f"{url}/versions/{version_id}/files/{path}" if path else ""
-            )
+            download_url = f"{url}/versions/{version_id}/files/{path}" if path else ""
             return download_url, name, size
     raise NgcError(f"no .nemo artifact found in {url}")
 
@@ -68,12 +66,12 @@ def download(url: str, api_key: str, destination: Path) -> Path:
         urllib.request.urlopen(request, timeout=600) as response,
         destination.open("wb") as output,
     ):
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk)
-                digest.update(chunk)
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            output.write(chunk)
+            digest.update(chunk)
     print(f"Downloaded {destination} ({destination.stat().st_size / 1e9:.2f} GB)")
     print(f"sha256: {digest.hexdigest()}")
     return destination
