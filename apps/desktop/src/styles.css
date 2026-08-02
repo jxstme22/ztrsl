@@ -975,6 +975,8 @@ input[type="range"]::-moz-range-thumb {
   position: relative;
   display: grid;
   min-height: 150px;
+  max-height: 240px;
+  overflow: hidden;
   padding: 20px 18px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius);
@@ -1486,6 +1488,11 @@ input[type="range"]::-moz-range-thumb {
     0 12px 32px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
+  /* Long captions shrink the font (see --caption-fit-scale) instead of
+     growing the card, so the entry height stays bounded. */
+  font-size: calc(1em * var(--caption-fit-scale, 1));
+  min-width: 0;
+  overflow: hidden;
 }
 
 .caption-entry[data-status="provisional"] {
@@ -1512,7 +1519,7 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.25;
   letter-spacing: -0.01em;
   text-align: center;
-  text-wrap: balance;
+  overflow-wrap: break-word;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;

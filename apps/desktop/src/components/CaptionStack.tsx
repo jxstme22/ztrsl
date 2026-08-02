@@ -1,4 +1,5 @@
 import type { OverlaySnapshot } from "../overlay/model";
+import { fitScaleForLength } from "./captionFit";
 
 type CaptionStackProps = {
   snapshot: OverlaySnapshot;
@@ -43,6 +44,13 @@ export function CaptionStack({
           className="caption-entry"
           data-status={caption.status}
           key={caption.id}
+          style={
+            {
+              "--caption-fit-scale": fitScaleForLength(
+                caption.englishText.length,
+              ),
+            } as React.CSSProperties
+          }
         >
           {snapshot.settings.showSource && (
             <p className="caption-source">{caption.sourceText}</p>
