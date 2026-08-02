@@ -230,6 +230,10 @@ impl SidecarSupervisor {
         Ok(vec![provisional, final_caption])
     }
 
+    /// Start a live translation session. The argument list mirrors the
+    /// sidecar's `live.start` payload; grouping them in a config struct is
+    /// not worth it while every caller passes the same seven values.
+    #[allow(clippy::too_many_arguments)]
     pub fn start_live(
         &mut self,
         source_mode: &str,

@@ -217,8 +217,10 @@ mod tests {
             .entry("whisper-large-v3-turbo")
             .expect("turbo entry");
         assert_eq!(turbo.kind, ModelKind::Asr);
-        assert_eq!(turbo.recommended, true);
-        let nllb = catalog.entry("nllb-200-distilled-600M-ct2-int8").expect("nllb");
+        assert!(turbo.recommended);
+        let nllb = catalog
+            .entry("nllb-200-distilled-600M-ct2-int8")
+            .expect("nllb");
         assert_eq!(nllb.kind, ModelKind::Translation);
         assert!(nllb.files.iter().all(|f| f.sha256.len() == 64));
         assert_eq!(
