@@ -10,6 +10,42 @@ use serde::Deserialize;
 /// Embedded, verified catalog source.
 pub const CATALOG_JSON: &str = include_str!("../../../models/catalog.json");
 
+/// Default Hugging Face host. `HF_ENDPOINT` (huggingface_hub convention) or
+/// `LST_HF_ENDPOINT` overrides it so users behind the Great Firewall can use
+/// `https://hf-mirror.com` without rebuilding the catalog.
+pub const DEFAULT_HF_ENDPOINT: &str = "https://huggingface.co";
+
+/// Resolve the Hugging Face endpoint honoring, in order: `LST_HF_ENDPOINT`,
+/// `HF_ENDPOINT`, then the upstream default.
+pub fn huggingface_endpoint() -> String {
+    for key in ["LST_HF_ENDPOINT", "HF_ENDPOINT"] {
+        if let Some(value) = std::env::var_os(key) {
+            let value = value
+                .to_string_lossy()
+                .trim()
+                .trim_end_matches('/')
+                .to_string();
+            if !value.is_empty() {
+                return value;
+            }
+        }
+    }
+    DEFAULT_HF_ENDPOINT.to_owned()
+}
+
+/// Rewrite a Hugging Face download URL onto `endpoint` (used for mirror
+/// support). Non-HF URLs are returned untouched.
+pub fn rewrite_hf_url(url: &str, endpoint: &str) -> String {
+    let prefix = format!("{DEFAULT_HF_ENDPOINT}/");
+    let trimmed = endpoint.trim().trim_end_matches('/');
+    if trimmed.is_empty() || trimmed == DEFAULT_HF_ENDPOINT {
+        return url.to_owned();
+    }
+    url.strip_prefix(&prefix)
+        .map(|rest| format!("{trimmed}/{rest}"))
+        .unwrap_or_else(|| url.to_owned())
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ModelCatalog {
@@ -129,13 +165,18 @@ impl ModelCatalog {
             .collect()
     }
 
-    /// Derive the pinned download URL for a plain file artifact.
-    pub fn file_url(&self, entry: &CatalogEntry, file: &CatalogFile) -> String {
-        format!(
-            "{}/resolve/{}/{}",
-            entry.source.trim_end_matches('/'),
-            entry.revision,
-            file.path
+    /// Derive the pinned download URL for a plain file artifact. `endpoint`
+    /// is the Hugging Face host to use (see `huggingface_endpoint`); mirrors
+    /// like hf-mirror.com are honored without changing the pinned revision.
+    pub fn file_url(&self, entry: &CatalogEntry, file: &CatalogFile, endpoint: &str) -> String {
+        rewrite_hf_url(
+            &format!(
+                "{}/resolve/{}/{}",
+                entry.source.trim_end_matches('/'),
+                entry.revision,
+                file.path
+            ),
+            endpoint,
         )
     }
 
@@ -190,9 +231,28 @@ mod tests {
     fn file_url_uses_pinned_revision() {
         let catalog = ModelCatalog::embedded();
         let entry = catalog.entry("whisper-large-v3-turbo").unwrap();
-        let url = catalog.file_url(entry, &entry.files[0]);
+        let url = catalog.file_url(entry, &entry.files[0], DEFAULT_HF_ENDPOINT);
         assert!(url.starts_with("https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/"));
         assert!(url.ends_with("/model.bin"));
+    }
+
+    #[test]
+    fn mirror_endpoint_rewrites_hf_urls_only() {
+        let catalog = ModelCatalog::embedded();
+        let entry = catalog.entry("whisper-large-v3-turbo").unwrap();
+        let url = catalog.file_url(entry, &entry.files[0], "https://hf-mirror.com");
+        assert!(url.starts_with(
+            "https://hf-mirror.com/dropbox-dash/faster-whisper-large-v3-turbo/resolve/"
+        ));
+        let archive_url =
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/model.tar.bz2";
+        assert_eq!(
+            rewrite_hf_url(archive_url, "https://hf-mirror.com"),
+            archive_url
+        );
+        // Trailing slashes on the endpoint are normalized.
+        let url = catalog.file_url(entry, &entry.files[0], "https://hf-mirror.com/");
+        assert!(url.starts_with("https://hf-mirror.com/dropbox-dash/"));
     }
 
     #[test]
@@ -201,7 +261,11 @@ mod tests {
         let entry = catalog.entry("omni-ctc-300m-int8").unwrap();
         let archive = entry.archive.as_ref().expect("archive entry");
         assert!(archive.url.ends_with(".tar.bz2"));
-        assert!(archive.extract_only.contains(&"model.int8.onnx".to_string()));
+        assert!(
+            archive
+                .extract_only
+                .contains(&"model.int8.onnx".to_string())
+        );
     }
 
     #[test]

@@ -5,10 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::Error;
 use crate::catalog::{CatalogArchive, CatalogEntry, CatalogFile};
 use crate::downloader::{CancelHandle, DownloadProgress, Fetcher, ProgressFn};
 use crate::store::ModelStore;
-use crate::Error;
 
 /// Overall progress of an install, including download and extraction phases.
 #[derive(Debug, Clone, Copy)]
@@ -35,11 +35,23 @@ pub type InstallProgressFn = Arc<dyn Fn(InstallProgress) + Send + Sync>;
 pub struct ModelInstaller {
     store: ModelStore,
     fetcher: Arc<dyn Fetcher>,
+    /// Hugging Face host used for downloads (mirror-aware).
+    hf_endpoint: String,
 }
 
 impl ModelInstaller {
     pub fn new(store: ModelStore, fetcher: Arc<dyn Fetcher>) -> Self {
-        Self { store, fetcher }
+        Self {
+            store,
+            fetcher,
+            hf_endpoint: crate::catalog::huggingface_endpoint(),
+        }
+    }
+
+    /// Override the Hugging Face endpoint used for downloads (mirror support).
+    pub fn with_hf_endpoint(mut self, endpoint: String) -> Self {
+        self.hf_endpoint = endpoint;
+        self
     }
 
     pub fn store(&self) -> &ModelStore {
@@ -56,16 +68,14 @@ impl ModelInstaller {
         on_progress: InstallProgressFn,
     ) -> Result<(), Error> {
         if self.store.is_installed(&entry.id) {
-            return Err(Error::AlreadyInstalled { id: entry.id.clone() });
+            return Err(Error::AlreadyInstalled {
+                id: entry.id.clone(),
+            });
         }
         assert_safe_artifact_paths(entry)?;
         let root = self.store.root();
         std::fs::create_dir_all(root)?;
-        let staging = root.join(format!(
-            ".staging-{}-{}",
-            entry.id,
-            std::process::id()
-        ));
+        let staging = root.join(format!(".staging-{}-{}", entry.id, std::process::id()));
         let _ = std::fs::remove_dir_all(&staging);
         std::fs::create_dir_all(&staging)?;
 
@@ -124,7 +134,8 @@ impl ModelInstaller {
             if let Some(parent) = destination.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let url = crate::catalog::ModelCatalog::embedded().file_url(entry, file);
+            let url =
+                crate::catalog::ModelCatalog::embedded().file_url(entry, file, &self.hf_endpoint);
             let expected_size = file.size_bytes;
             let progress = self.plain_progress(
                 index,
@@ -173,6 +184,9 @@ impl ModelInstaller {
         })
     }
 
+    /// Download the single archive artifact and extract the requested files.
+    /// Mirrors `download_plain_files`' parameter list for progress reporting.
+    #[allow(clippy::too_many_arguments)]
     async fn download_and_extract_archive(
         &self,
         entry: &CatalogEntry,
@@ -201,7 +215,12 @@ impl ModelInstaller {
             });
         });
         self.fetcher
-            .fetch(&archive.url, &archive_path, cancel, progress)
+            .fetch(
+                &crate::catalog::rewrite_hf_url(&archive.url, &self.hf_endpoint),
+                &archive_path,
+                cancel,
+                progress,
+            )
             .await?;
         crate::downloader::verify_file_sha256(&archive_path, &archive.sha256)?;
         if cancel.is_cancelled() {
@@ -238,7 +257,9 @@ impl ModelInstaller {
         }
         let destination = self.store.model_dir(&entry.id);
         if destination.exists() {
-            return Err(Error::AlreadyInstalled { id: entry.id.clone() });
+            return Err(Error::AlreadyInstalled {
+                id: entry.id.clone(),
+            });
         }
         // The parent must exist for the rename; it is the store root.
         std::fs::create_dir_all(destination.parent().expect("store root has a parent"))?;
@@ -371,8 +392,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::downloader::CancelHandle;
     use crate::Fetcher;
+    use crate::downloader::CancelHandle;
 
     struct FakeFetcher {
         /// (url, bytes) map; unknown urls fail.
@@ -459,7 +480,8 @@ mod tests {
 
     #[tokio::test]
     async fn install_rejects_checksum_mismatch_and_leaves_no_dir() {
-        let root = std::env::temp_dir().join(format!("lst-install-checksum-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("lst-install-checksum-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let fetcher: Arc<dyn Fetcher> = Arc::new(FakeFetcher::with(
             "https://huggingface.co/test/repo/resolve/rev1/model.bin",
@@ -517,7 +539,10 @@ mod tests {
         assert!(matches!(error, Error::Canceled));
         assert!(!root.join("test-model").exists());
         assert!(!std::fs::read_dir(&root).unwrap().any(|e| {
-            e.unwrap().file_name().to_string_lossy().starts_with(".staging")
+            e.unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".staging")
         }));
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -537,7 +562,10 @@ mod tests {
         // Drive-letter paths are rejected when not consumed by stripping.
         assert_eq!(sanitize_archive_path("C:/evil.bin", 0), None);
         // A leading slash collapses to a relative path (still contained).
-        assert_eq!(sanitize_archive_path("/etc/passwd", 0), Some("etc/passwd".to_owned()));
+        assert_eq!(
+            sanitize_archive_path("/etc/passwd", 0),
+            Some("etc/passwd".to_owned())
+        );
         // The stripped root itself is skipped.
         assert_eq!(sanitize_archive_path("bundle-v1", 1), None);
         // Backslash separators are normalized.
@@ -573,8 +601,7 @@ mod tests {
             builder.finish().unwrap();
             let bytes = builder.into_inner().unwrap();
             let mut out = std::fs::File::create(&tar_path).unwrap();
-            let mut encoder =
-                bzip2::write::BzEncoder::new(&mut out, bzip2::Compression::best());
+            let mut encoder = bzip2::write::BzEncoder::new(&mut out, bzip2::Compression::best());
             std::io::Write::write_all(&mut encoder, &bytes).unwrap();
             encoder.finish().unwrap();
         }
@@ -590,7 +617,10 @@ mod tests {
             &cancel,
         )
         .unwrap();
-        assert_eq!(std::fs::read(destination.join("model.onnx")).unwrap(), payload);
+        assert_eq!(
+            std::fs::read(destination.join("model.onnx")).unwrap(),
+            payload
+        );
         assert!(!destination.join("tokens.txt").exists());
 
         std::fs::remove_dir_all(root).unwrap();

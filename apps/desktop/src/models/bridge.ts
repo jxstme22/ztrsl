@@ -4,13 +4,43 @@ import { isTauri } from "@tauri-apps/api/core";
 
 import {
   EMPTY_MODELS_LIST,
+  downloadEndpointSchema,
   modelsListSchema,
   modelProgressSchema,
+  type DownloadEndpointInfo,
   type ModelsList,
   type ModelProgress,
 } from "./model";
 
 export type ProgressHandler = (event: ModelProgress) => void;
+
+/** Current effective Hugging Face endpoint (mirror-aware). */
+export async function getDownloadEndpoint(): Promise<DownloadEndpointInfo> {
+  if (!isTauri()) {
+    return {
+      endpoint: "https://huggingface.co",
+      mirror: false,
+      userOverride: false,
+    };
+  }
+  return downloadEndpointSchema.parse(await invoke("models_download_endpoint"));
+}
+
+/** Persist a user-chosen download endpoint; empty string resets to auto. */
+export async function setDownloadEndpoint(
+  endpoint: string,
+): Promise<DownloadEndpointInfo> {
+  if (!isTauri()) {
+    return {
+      endpoint: "https://huggingface.co",
+      mirror: false,
+      userOverride: false,
+    };
+  }
+  return downloadEndpointSchema.parse(
+    await invoke("models_set_download_endpoint", { endpoint }),
+  );
+}
 
 export async function listModels(): Promise<ModelsList> {
   if (!isTauri()) {
@@ -53,6 +83,8 @@ export function onInstallProgress(handler: ProgressHandler): () => void {
     handler(modelProgressSchema.parse(event.payload));
   });
   return () => {
-    void unlisten.then((stop) => { stop(); });
+    void unlisten.then((stop) => {
+      stop();
+    });
   };
 }

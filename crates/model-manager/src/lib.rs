@@ -11,8 +11,13 @@ mod downloader;
 mod installer;
 mod store;
 
-pub use catalog::{CatalogArchive, CatalogEntry, CatalogEntryView, CatalogFile, ModelCatalog, ModelKind};
-pub use downloader::{CancelHandle, DownloadProgress, Fetcher, ProgressFn, ReqwestFetcher, verify_file_sha256};
+pub use catalog::{
+    CatalogArchive, CatalogEntry, CatalogEntryView, CatalogFile, DEFAULT_HF_ENDPOINT, ModelCatalog,
+    ModelKind, huggingface_endpoint, rewrite_hf_url,
+};
+pub use downloader::{
+    CancelHandle, DownloadProgress, Fetcher, ProgressFn, ReqwestFetcher, verify_file_sha256,
+};
 pub use installer::{InstallPhase, InstallProgress, InstallProgressFn, ModelInstaller};
 pub use store::{InstalledModel, ModelStore};
 

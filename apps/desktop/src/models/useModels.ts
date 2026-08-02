@@ -3,16 +3,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelInstall,
   deleteModel,
+  getDownloadEndpoint,
   installModel,
   listModels,
   onInstallProgress,
+  setDownloadEndpoint,
 } from "./bridge";
 import {
   EMPTY_MODELS_LIST,
+  EMPTY_DOWNLOAD_ENDPOINT,
+  type DownloadEndpointInfo,
   type ModelInfo,
   type ModelProgress,
   type ModelsList,
 } from "./model";
+import { loadModelsSettings, saveModelsSettings } from "./storage";
 
 export type ModelUiState = {
   list: ModelsList;
@@ -28,7 +33,11 @@ export type ModelUiState = {
   isInstalling: (id: string) => boolean;
   installed: ModelInfo[];
   available: ModelInfo[];
-}
+  /** Effective Hugging Face download endpoint (mirror-aware). */
+  downloadEndpoint: DownloadEndpointInfo;
+  /** Persist a user-chosen download endpoint; "" resets to auto. */
+  setDownloadEndpoint: (endpoint: string) => Promise<void>;
+};
 
 const SORT_ORDER: Record<string, number> = {
   "whisper-large-v3-turbo": 0,
@@ -43,6 +52,8 @@ export function useModels(desktopOnly = true): ModelUiState {
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<Record<string, ModelProgress>>({});
   const [error, setError] = useState<string | null>(null);
+  const [downloadEndpoint, setDownloadEndpointState] =
+    useState<DownloadEndpointInfo>(EMPTY_DOWNLOAD_ENDPOINT);
   const refreshRef = useRef<() => void>(() => undefined);
 
   const refresh = useCallback(async () => {
@@ -56,6 +67,25 @@ export function useModels(desktopOnly = true): ModelUiState {
     }
   }, []);
 
+  const syncDownloadEndpoint = useCallback(async () => {
+    try {
+      setDownloadEndpointState(await getDownloadEndpoint());
+    } catch {
+      setDownloadEndpointState(EMPTY_DOWNLOAD_ENDPOINT);
+    }
+  }, []);
+
+  const updateDownloadEndpoint = useCallback(async (endpoint: string) => {
+    const trimmed = endpoint.trim().replace(/\/+$/, "");
+    saveModelsSettings({ hfEndpoint: trimmed === "" ? null : trimmed });
+    setError(null);
+    try {
+      setDownloadEndpointState(await setDownloadEndpoint(trimmed));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, []);
+
   refreshRef.current = () => {
     void refresh();
   };
@@ -65,6 +95,16 @@ export function useModels(desktopOnly = true): ModelUiState {
       setLoading(false);
       return;
     }
+    const saved = loadModelsSettings();
+    if (saved.hfEndpoint !== null) {
+      // Reapply the saved mirror; on failure fall back to the auto endpoint.
+      void setDownloadEndpoint(saved.hfEndpoint).then(
+        syncDownloadEndpoint,
+        syncDownloadEndpoint,
+      );
+    } else {
+      void syncDownloadEndpoint();
+    }
     void refresh();
     return onInstallProgress((event: ModelProgress) => {
       setProgress((previous) => ({ ...previous, [event.modelId]: event }));
@@ -72,7 +112,7 @@ export function useModels(desktopOnly = true): ModelUiState {
         refreshRef.current();
       }
     });
-  }, [desktopOnly, refresh]);
+  }, [desktopOnly, refresh, syncDownloadEndpoint]);
 
   const startInstall = useCallback(async (id: string) => {
     setError(null);
@@ -92,15 +132,18 @@ export function useModels(desktopOnly = true): ModelUiState {
     }
   }, []);
 
-  const remove = useCallback(async (id: string) => {
-    setError(null);
-    try {
-      await deleteModel(id);
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [refresh]);
+  const remove = useCallback(
+    async (id: string) => {
+      setError(null);
+      try {
+        await deleteModel(id);
+        await refresh();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    },
+    [refresh],
+  );
 
   const isInstalling = useCallback(
     (id: string) => progress[id] !== undefined && !progress[id].done,
@@ -136,5 +179,7 @@ export function useModels(desktopOnly = true): ModelUiState {
     isInstalling,
     installed,
     available,
+    downloadEndpoint,
+    setDownloadEndpoint: updateDownloadEndpoint,
   };
 }

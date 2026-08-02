@@ -12,11 +12,19 @@ and no telemetry**.
 - **Does not** inject into, read the memory of, automate, or modify VALORANT —
   see [Safety boundaries](#safety-boundaries).
 
-> **Download the Windows installer**: [`xTRSNLTR_0.1.0_x64-setup.exe`](./xTRSNLTR_0.1.0_x64-setup.exe) (NSIS, ~72 MB)
+> **Download the Windows installer** from the
+> [GitHub Releases page](https://github.com/jxstme22/ztrsl/releases/latest)
+> (`xTRSNLTR_0.2.0_x64-setup.exe`, NSIS, ~72 MB). Installers are built by CI
+> and attached to each release; nothing binary lives in the repository.
 
 > **Status: beta.** It works end-to-end on Windows, but production hardening
 > (code signing, auto-update, keychain, native-speaker benchmarks) is
 > still in progress. See the [roadmap](#roadmap-and-release-state).
+
+> **macOS:** the app builds and runs on Apple Silicon (M4) in development
+> mode, but the live voice-chat pipeline needs a port (audio capture is WASAPI
+> on Windows). See [docs/16_MACOS_PORT.md](docs/16_MACOS_PORT.md) for the
+> reliability assessment and the recommended M4 stack.
 
 ---
 
@@ -25,7 +33,10 @@ and no telemetry**.
 - **In-app model manager** — no model files ship with the installer. On first
   run you choose which models to download; every download shows a confirmation
   dialog with size, source, and license, verifies SHA-256 checksums, and can be
-  cancelled or deleted from the app afterward.
+  cancelled or deleted from the app afterward. If you are in mainland China and
+  cannot reach Hugging Face, switch the **Download server** setting in the
+  Models tab to `hf-mirror.com` (or set the `HF_ENDPOINT`/`LST_HF_ENDPOINT`
+  environment variable to your mirror before launching).
 - **Live caption pipeline** — bounded audio capture → VAD segmentation →
   Whisper ASR (Tagalog/Cebuano/Chinese/English) → NLLB/MADLAD or optional
   HTTP translation → provisional/final captions in the overlay.
@@ -188,11 +199,14 @@ Current release state: **beta** (functional end-to-end; not yet production).
 
 ### Installer
 
-A Windows installer is built from `main` and can be downloaded directly:
+Windows installers are built from tagged releases by CI
+(`.github/workflows/release.yml`) and attached to the
+[GitHub Releases page](https://github.com/jxstme22/ztrsl/releases):
 
-- **`xTRSNLTR_0.1.0_x64-setup.exe`** (NSIS, ~72 MB) — at the repo root → or
-  build it yourself with `pnpm --filter desktop tauri build`
-  (outputs under `target/release/bundle/`; an MSI is produced alongside).
+- **`xTRSNLTR_<version>_x64-setup.exe`** (NSIS, ~72 MB) — installs the app and
+  bundles the frozen inference sidecar; an MSI is produced alongside.
+- Build it yourself with `pnpm --filter desktop tauri build`
+  (outputs under `target/release/bundle/`).
 
 The installer bundles everything a user needs to run the app:
 
@@ -203,7 +217,9 @@ The installer bundles everything a user needs to run the app:
 - the `translation-runner` (MADLAD candle) binary.
 
 Models are **not** bundled — the app downloads them on first run through the
-welcome dialog (see [Models](#features)).
+welcome dialog (see [Models](#features)). Downloads come from Hugging Face by
+default; for mainland China use the in-app **Download server** setting
+(hf-mirror.com) or set `HF_ENDPOINT` before launch.
 
 > Signed builds are coming for 1.0; the current installer is unsigned, so
 > Windows SmartScreen will show a warning until then.

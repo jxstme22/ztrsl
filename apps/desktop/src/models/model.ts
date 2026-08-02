@@ -51,3 +51,17 @@ export const modelProgressSchema = z.object({
 });
 
 export type ModelProgress = z.infer<typeof modelProgressSchema>;
+
+export const downloadEndpointSchema = z.object({
+  endpoint: z.string(),
+  mirror: z.boolean(),
+  userOverride: z.boolean(),
+});
+
+export type DownloadEndpointInfo = z.infer<typeof downloadEndpointSchema>;
+
+export const EMPTY_DOWNLOAD_ENDPOINT: DownloadEndpointInfo = {
+  endpoint: "https://huggingface.co",
+  mirror: false,
+  userOverride: false,
+};

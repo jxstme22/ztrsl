@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import type { ModelInfo, ModelProgress } from "../models/model";
 import type { ModelUiState } from "../models/useModels";
+import { Select } from "./Select";
 
 export function formatBytes(bytes: number): string {
   if (bytes <= 0) {
@@ -51,7 +52,10 @@ export function ProgressBar({ event }: { event: ModelProgress }) {
         {label} · {formatBytes(event.totalBytesDone)} /{" "}
         {formatBytes(event.totalBytesTotal)}
         {event.fileCount > 1 && event.phase === "download"
-          ? " · file " + String(event.fileIndex + 1) + " of " + String(event.fileCount)
+          ? " · file " +
+            String(event.fileIndex + 1) +
+            " of " +
+            String(event.fileCount)
           : ""}
       </span>
     </div>
@@ -81,16 +85,24 @@ export function ConfirmModelDialog({
   const { model } = action;
   const isDelete = action.kind === "delete";
   return (
-    <div className="lst-modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div
+      className="lst-modal-backdrop"
+      role="presentation"
+      onMouseDown={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={isDelete ? "Delete model" : "Install model"}
         className="lst-modal"
-        onMouseDown={(event) => { event.stopPropagation(); }}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
       >
         <div className="lst-modal-head">
-          <h3>{isDelete ? `Delete ${model.name}?` : `Install ${model.name}?`}</h3>
+          <h3>
+            {isDelete ? `Delete ${model.name}?` : `Install ${model.name}?`}
+          </h3>
           <button
             type="button"
             className="button quiet"
@@ -104,13 +116,12 @@ export function ConfirmModelDialog({
           <p className="lst-modal-body">
             This removes <strong>{model.name}</strong> and frees{" "}
             <strong>{formatBytes(model.installedSizeBytes)}</strong>. You can
-            reinstall it later. {inUse && "It is in use — stop the live session first."}
+            reinstall it later.{" "}
+            {inUse && "It is in use — stop the live session first."}
           </p>
         ) : (
           <>
-            <p className="lst-modal-body">
-              {model.description}
-            </p>
+            <p className="lst-modal-body">{model.description}</p>
             <dl className="lst-modal-details">
               <div>
                 <dt>Type</dt>
@@ -125,7 +136,10 @@ export function ConfirmModelDialog({
                 <dd>
                   {model.licenseSpdx}
                   {model.licenseNotice ? (
-                    <span className="lst-modal-note"> — {model.licenseNotice}</span>
+                    <span className="lst-modal-note">
+                      {" "}
+                      — {model.licenseNotice}
+                    </span>
                   ) : null}
                 </dd>
               </div>
@@ -135,7 +149,10 @@ export function ConfirmModelDialog({
               </div>
               <div>
                 <dt>Files</dt>
-                <dd>{model.fileCount} artifact{model.fileCount === 1 ? "" : "s"} · checksums verified</dd>
+                <dd>
+                  {model.fileCount} artifact{model.fileCount === 1 ? "" : "s"} ·
+                  checksums verified
+                </dd>
               </div>
             </dl>
           </>
@@ -150,7 +167,9 @@ export function ConfirmModelDialog({
               type="button"
               className="button primary lst-danger"
               disabled={inUse}
-              onClick={() => { onDelete(model.id); }}
+              onClick={() => {
+                onDelete(model.id);
+              }}
             >
               <Trash2 aria-hidden="true" size={14} />
               Delete
@@ -159,7 +178,9 @@ export function ConfirmModelDialog({
             <button
               type="button"
               className="button primary"
-              onClick={() => { onInstall(model.id); }}
+              onClick={() => {
+                onInstall(model.id);
+              }}
             >
               <HardDriveDownload aria-hidden="true" size={14} />
               Download &amp; install
@@ -188,7 +209,8 @@ function ModelCard({
 }) {
   const installing = progress !== null && !progress.done;
   const installed = model.status === "installed";
-  const finishedError = progress !== null && progress.done && progress.error !== null;
+  const finishedError =
+    progress !== null && progress.done && progress.error !== null;
   return (
     <article className="lst-model-card">
       <div className="lst-model-card-head">
@@ -211,9 +233,7 @@ function ModelCard({
         <span>{model.licenseSpdx}</span>
       </div>
       {installing && <ProgressBar event={progress} />}
-      {finishedError && (
-        <p className="lst-error-text">{progress.error}</p>
-      )}
+      {finishedError && <p className="lst-error-text">{progress.error}</p>}
       <div className="lst-model-card-actions">
         {installed ? (
           <button
@@ -221,7 +241,9 @@ function ModelCard({
             className="button secondary"
             disabled={inUse || installing}
             title={inUse ? "In use by the live session" : undefined}
-            onClick={() => { onDeleteClick(model); }}
+            onClick={() => {
+              onDeleteClick(model);
+            }}
           >
             <Trash2 aria-hidden="true" size={14} />
             Delete
@@ -230,7 +252,9 @@ function ModelCard({
           <button
             type="button"
             className="button secondary"
-            onClick={() => { onInstallClick(model); }}
+            onClick={() => {
+              onInstallClick(model);
+            }}
             aria-label={`Cancel install ${model.name}`}
           >
             Cancel
@@ -240,7 +264,9 @@ function ModelCard({
             type="button"
             className={`button primary ${instantiating ? "disabled" : ""}`}
             disabled={instantiating}
-            onClick={() => { onInstallClick(model); }}
+            onClick={() => {
+              onInstallClick(model);
+            }}
           >
             <HardDriveDownload aria-hidden="true" size={14} />
             Install
@@ -248,6 +274,41 @@ function ModelCard({
         )}
       </div>
     </article>
+  );
+}
+
+function DownloadServerRow({ models }: { models: ModelUiState }) {
+  const { downloadEndpoint } = models;
+  const userPicked = downloadEndpoint.userOverride;
+  const mirrorInUse = downloadEndpoint.mirror;
+  return (
+    <div className="lst-download-server">
+      <div className="lst-download-server-copy">
+        <label htmlFor="model-download-server">Download server</label>
+        <p>
+          {mirrorInUse
+            ? `Downloads go through ${downloadEndpoint.endpoint}.`
+            : userPicked
+              ? "Downloads go through Hugging Face directly."
+              : "Downloads go through Hugging Face directly. Set HF_ENDPOINT or LST_HF_ENDPOINT to use a mirror."}
+        </p>
+      </div>
+      <Select
+        id="model-download-server"
+        label="Model download server"
+        value={userPicked ? downloadEndpoint.endpoint : ""}
+        onChange={(endpoint) => {
+          void models.setDownloadEndpoint(endpoint);
+        }}
+        options={[
+          { value: "", label: "Automatic" },
+          {
+            value: "https://hf-mirror.com",
+            label: "hf-mirror.com (mainland China)",
+          },
+        ]}
+      />
+    </div>
   );
 }
 
@@ -270,7 +331,9 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
   const cards = (list: ModelInfo[]): ReactNode =>
     list.length === 0 ? (
       <p className="lst-model-empty">
-        {list === models.installed ? "No models installed yet." : "No models available."}
+        {list === models.installed
+          ? "No models installed yet."
+          : "No models available."}
       </p>
     ) : (
       <div className="lst-model-grid">
@@ -281,8 +344,12 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
             progress={models.progress[model.id] ?? null}
             inUse={models.list.inUse.includes(model.id)}
             instantiating={instantiating === model.id}
-            onInstallClick={(clicked) => { setAction({ kind: "install", model: clicked }); }}
-            onDeleteClick={(clicked) => { setAction({ kind: "delete", model: clicked }); }}
+            onInstallClick={(clicked) => {
+              setAction({ kind: "install", model: clicked });
+            }}
+            onDeleteClick={(clicked) => {
+              setAction({ kind: "delete", model: clicked });
+            }}
           />
         ))}
       </div>
@@ -301,6 +368,7 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
         official sources referenced in the confirmation dialogs. Nothing is
         fetched at install time.
       </p>
+      <DownloadServerRow models={models} />
       {models.error !== null && (
         <p className="lst-error-text">{models.error}</p>
       )}

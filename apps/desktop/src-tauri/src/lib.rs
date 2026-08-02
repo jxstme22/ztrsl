@@ -12,7 +12,8 @@ use audio_core::StreamingLinearResampler;
 use audio_core::{
     AtomicLevelMeter, AudioEndpoint, AudioError, AudioFormat, AudioMonitor, AudioRouter,
     AudioSource, EndpointKind, EndpointState, LevelSnapshot, RoutingMetrics, SYNTHETIC_ENDPOINT_ID,
-    SYNTHETIC_MONITOR_ENDPOINT_ID, SyntheticAudioMonitor, SyntheticAudioSource, validate_route,
+    SYNTHETIC_MONITOR_ENDPOINT_ID, SyntheticAudioMonitor, SyntheticAudioSource,
+    synthetic_monitor_endpoint, validate_route,
 };
 use ipc_protocol::{CaptionPayload, ClipResultPayload, Envelope};
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,19 @@ struct ModelRuntimeState {
     installs: HashMap<String, model_manager::CancelHandle>,
     /// Model ids loaded by the running live session; deletion is refused.
     in_use: HashSet<String>,
+    /// User-selected Hugging Face endpoint override (mirror support). `None`
+    /// means resolve from `LST_HF_ENDPOINT`/`HF_ENDPOINT`/default.
+    hf_endpoint: Option<String>,
+}
+
+impl ModelRuntimeState {
+    /// Endpoint used for model downloads: explicit user choice first, then
+    /// environment, then the upstream default.
+    fn effective_hf_endpoint(&self) -> String {
+        self.hf_endpoint
+            .clone()
+            .unwrap_or_else(model_manager::huggingface_endpoint)
+    }
 }
 
 impl ModelRuntime {
@@ -61,6 +75,7 @@ impl ModelRuntime {
                 catalog: model_manager::ModelCatalog::embedded(),
                 installs: HashMap::new(),
                 in_use: HashSet::new(),
+                hf_endpoint: None,
             })),
         }
     }
@@ -72,7 +87,12 @@ impl ModelRuntime {
 /// users).
 fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
     let workspace = workspace_root_from_manifest();
-    if workspace.join("services").join("inference").join("src").is_dir() {
+    if workspace
+        .join("services")
+        .join("inference")
+        .join("src")
+        .is_dir()
+    {
         workspace.join("models")
     } else {
         app.path()
@@ -100,10 +120,7 @@ struct SidecarPaths {
 
 /// Build a sidecar config for the current runtime mode: the frozen exe when a
 /// bundled build is present, otherwise the workspace `.venv` interpreter.
-fn sidecar_config(
-    bundled: Option<&BundledPaths>,
-    extra_env: &[(String, String)],
-) -> SidecarConfig {
+fn sidecar_config(bundled: Option<&BundledPaths>, extra_env: &[(String, String)]) -> SidecarConfig {
     let mut config = match bundled {
         Some(paths) => SidecarConfig::for_bundled(
             paths.sidecar_exe.clone(),
@@ -191,9 +208,7 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
 }
 
 #[tauri::command]
-async fn models_list(
-    models: tauri::State<'_, ModelRuntime>,
-) -> Result<ModelsList, String> {
+async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsList, String> {
     let state = models.state.lock().map_err(lock_error)?;
     let installed = state.store.installed().map_err(|error| error.to_string())?;
     let installed_sizes: HashMap<&str, u64> = installed
@@ -222,6 +237,62 @@ async fn models_list(
     })
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadEndpointInfo {
+    /// Effective endpoint used for model downloads right now.
+    endpoint: String,
+    /// `true` when the endpoint is a mirror rather than the upstream host.
+    mirror: bool,
+    /// `true` when the user explicitly chose this endpoint in the app.
+    user_override: bool,
+}
+
+#[tauri::command]
+fn models_download_endpoint(
+    models: tauri::State<'_, ModelRuntime>,
+) -> Result<DownloadEndpointInfo, String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    let endpoint = state.effective_hf_endpoint();
+    let upstream = model_manager::DEFAULT_HF_ENDPOINT;
+    Ok(DownloadEndpointInfo {
+        mirror: endpoint != upstream,
+        user_override: state.hf_endpoint.is_some(),
+        endpoint,
+    })
+}
+
+#[tauri::command]
+fn models_set_download_endpoint(
+    models: tauri::State<'_, ModelRuntime>,
+    endpoint: String,
+) -> Result<DownloadEndpointInfo, String> {
+    let trimmed = endpoint.trim().trim_end_matches('/').to_owned();
+    if !trimmed.is_empty() {
+        let host = trimmed
+            .strip_prefix("https://")
+            .and_then(|rest| rest.split('/').next())
+            .unwrap_or_default();
+        if host.is_empty() || host.contains(' ') || host.contains('@') {
+            return Err(
+                "download endpoint must be a plain https:// URL (no userinfo or path)".to_owned(),
+            );
+        }
+    }
+    let mut state = models.state.lock().map_err(lock_error)?;
+    state.hf_endpoint = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.clone())
+    };
+    let endpoint = state.effective_hf_endpoint();
+    Ok(DownloadEndpointInfo {
+        mirror: endpoint != model_manager::DEFAULT_HF_ENDPOINT,
+        user_override: !trimmed.is_empty(),
+        endpoint,
+    })
+}
+
 #[tauri::command]
 async fn models_install(
     app: tauri::AppHandle,
@@ -246,13 +317,19 @@ async fn models_install(
         let state = models.state.lock().map_err(lock_error)?;
         state.store.root().to_owned()
     };
+    let hf_endpoint = {
+        let state = models.state.lock().map_err(lock_error)?;
+        state.effective_hf_endpoint()
+    };
     let state_arc = Arc::clone(&models.state);
     tauri::async_runtime::spawn(async move {
         let emit = |app: &tauri::AppHandle, payload: &ModelProgressPayload| {
             let _ = app.emit("models://progress", payload);
         };
         let fetcher = match model_manager::ReqwestFetcher::new() {
-            Ok(fetcher) => std::sync::Arc::new(fetcher) as std::sync::Arc<dyn model_manager::Fetcher>,
+            Ok(fetcher) => {
+                std::sync::Arc::new(fetcher) as std::sync::Arc<dyn model_manager::Fetcher>
+            }
             Err(error) => {
                 let _ = app.emit(
                     "models://progress",
@@ -273,36 +350,33 @@ async fn models_install(
                 return;
             }
         };
-        let installer = model_manager::ModelInstaller::new(
-            model_manager::ModelStore::new(models_dir),
-            fetcher,
-        );
+        let installer =
+            model_manager::ModelInstaller::new(model_manager::ModelStore::new(models_dir), fetcher)
+                .with_hf_endpoint(hf_endpoint);
         let app_for_progress = app.clone();
         let id_for_progress = id.clone();
-        let progress = std::sync::Arc::new(
-            move |event: model_manager::InstallProgress| {
-                emit(
-                    &app_for_progress,
-                    &ModelProgressPayload {
-                        model_id: id_for_progress.clone(),
-                        done: false,
-                        canceled: false,
-                        error: None,
-                        phase: match event.phase {
-                            model_manager::InstallPhase::Downloading => "download".to_owned(),
-                            model_manager::InstallPhase::Extracting => "extract".to_owned(),
-                            model_manager::InstallPhase::Installing => "install".to_owned(),
-                        },
-                        file_index: event.file_index,
-                        file_count: event.file_count,
-                        file_bytes_done: event.file_bytes_done,
-                        file_bytes_total: event.file_bytes_total,
-                        total_bytes_done: event.total_bytes_done,
-                        total_bytes_total: event.total_bytes_total,
+        let progress = std::sync::Arc::new(move |event: model_manager::InstallProgress| {
+            emit(
+                &app_for_progress,
+                &ModelProgressPayload {
+                    model_id: id_for_progress.clone(),
+                    done: false,
+                    canceled: false,
+                    error: None,
+                    phase: match event.phase {
+                        model_manager::InstallPhase::Downloading => "download".to_owned(),
+                        model_manager::InstallPhase::Extracting => "extract".to_owned(),
+                        model_manager::InstallPhase::Installing => "install".to_owned(),
                     },
-                );
-            },
-        );
+                    file_index: event.file_index,
+                    file_count: event.file_count,
+                    file_bytes_done: event.file_bytes_done,
+                    file_bytes_total: event.file_bytes_total,
+                    total_bytes_done: event.total_bytes_done,
+                    total_bytes_total: event.total_bytes_total,
+                },
+            );
+        });
         let result = installer.install(&entry, &cancel, progress).await;
         if let Ok(mut state) = state_arc.lock() {
             state.installs.remove(&id);
@@ -368,10 +442,7 @@ async fn models_cancel_install(
 }
 
 #[tauri::command]
-async fn models_delete(
-    models: tauri::State<'_, ModelRuntime>,
-    id: String,
-) -> Result<(), String> {
+async fn models_delete(models: tauri::State<'_, ModelRuntime>, id: String) -> Result<(), String> {
     let state = models.state.lock().map_err(lock_error)?;
     if state.installs.contains_key(&id) {
         return Err("cannot delete a model while it is being installed".to_owned());
@@ -599,7 +670,7 @@ async fn start_live_translation(
     models: tauri::State<'_, ModelRuntime>,
     paths: tauri::State<'_, SidecarPaths>,
 ) -> Result<LiveSnapshot, String> {
-let LiveStartRequest {
+    let LiveStartRequest {
         endpoint_id,
         playback_endpoint_id,
         source_mode,
@@ -622,8 +693,13 @@ let LiveStartRequest {
     }
     if !matches!(
         asr_provider.as_str(),
-        "local" | "whisper-turbo" | "whisper-full" | "ncspeech" | "ncspeech-zh"
-            | "ncspeech-zh-parakeet" | "groq-whisper"
+        "local"
+            | "whisper-turbo"
+            | "whisper-full"
+            | "ncspeech"
+            | "ncspeech-zh"
+            | "ncspeech-zh-parakeet"
+            | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
     }
@@ -631,7 +707,9 @@ let LiveStartRequest {
         translation_provider.as_str(),
         "nllb" | "madlad" | "libretranslate" | "google-translate" | "mymemory" | "custom-http"
     ) {
-        return Err(format!("unknown translation provider: {translation_provider}"));
+        return Err(format!(
+            "unknown translation provider: {translation_provider}"
+        ));
     }
     // Any remote provider (Groq ASR or an HTTP translation backend) implies the
     // "http" mode so the sidecar keeps the demo flag off and routes through the
@@ -668,8 +746,9 @@ let LiveStartRequest {
     let playback_endpoint_name = if monitor_enabled {
         let raw_playback_id = playback_endpoint_id.as_deref().unwrap_or("").trim();
         if raw_playback_id.is_empty() {
-            return Err("monitoring output endpoint is required when monitoring is enabled"
-                .to_owned());
+            return Err(
+                "monitoring output endpoint is required when monitoring is enabled".to_owned(),
+            );
         }
         let playback_endpoint = endpoints
             .iter()
@@ -743,8 +822,10 @@ fn start_live_translation_blocking(
     let (stop_tx, stop_rx) = mpsc::sync_channel(1);
     let (event_tx, event_rx) = mpsc::sync_channel(64);
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
-    let in_use_ids =
-        provider_model_ids(&worker_config.asr_provider, &worker_config.translation_provider);
+    let in_use_ids = provider_model_ids(
+        &worker_config.asr_provider,
+        &worker_config.translation_provider,
+    );
     let worker = thread::Builder::new()
         .name("live-translation".to_owned())
         .spawn(move || {
@@ -800,11 +881,9 @@ async fn stop_live_translation(
 ) -> Result<LiveSnapshot, String> {
     let state = Arc::clone(&live.state);
     let live_models = Arc::clone(&models.state);
-    tauri::async_runtime::spawn_blocking(move || {
-        stop_live_translation_blocking(state, live_models)
-    })
-    .await
-    .map_err(|error| format!("live stop worker failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || stop_live_translation_blocking(state, live_models))
+        .await
+        .map_err(|error| format!("live stop worker failed: {error}"))?
 }
 
 fn stop_live_translation_blocking(
@@ -1240,9 +1319,9 @@ fn audio_error_to_string(error: AudioError) -> String {
 fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE,
-        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMSBT_TRANSIENTWINDOW,
-        DWMWCP_ROUND,
+        DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE, DWMSBT_TRANSIENTWINDOW,
+        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+        DwmSetWindowAttribute,
     };
 
     let hwnd = HWND(window.hwnd().map_err(|error| error.to_string())?.0);
@@ -1394,17 +1473,13 @@ fn run_windows_live_loop(
         audio_core::WindowsAudioCapture::start_loopback(&endpoint_name, 32)
             .map_err(audio_error_to_string)?
     } else {
-        audio_core::WindowsAudioCapture::start(&endpoint_name, 32)
-            .map_err(audio_error_to_string)?
+        audio_core::WindowsAudioCapture::start(&endpoint_name, 32).map_err(audio_error_to_string)?
     };
     let mut playback = if monitor_enabled {
         let Some(name) = playback_endpoint_name.as_deref() else {
             return Err("monitoring output endpoint is missing".to_owned());
         };
-        Some(
-            audio_core::WindowsAudioPlayback::start(name, 32)
-                .map_err(audio_error_to_string)?,
-        )
+        Some(audio_core::WindowsAudioPlayback::start(name, 32).map_err(audio_error_to_string)?)
     } else {
         None
     };
@@ -1680,7 +1755,9 @@ pub fn run() {
             models_list,
             models_install,
             models_cancel_install,
-            models_delete
+            models_delete,
+            models_download_endpoint,
+            models_set_download_endpoint
         ])
         .run(tauri::generate_context!());
 

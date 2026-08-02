@@ -10,6 +10,8 @@ vi.mock("./bridge", () => ({
   cancelInstall: vi.fn(),
   deleteModel: vi.fn(),
   onInstallProgress: vi.fn(),
+  getDownloadEndpoint: vi.fn(),
+  setDownloadEndpoint: vi.fn(),
 }));
 
 const mocked = vi.mocked(bridge);
@@ -57,25 +59,67 @@ describe("useModels", () => {
     vi.clearAllMocks();
   });
 
+  const mockEndpoint = () => {
+    mocked.getDownloadEndpoint.mockResolvedValue({
+      endpoint: "https://huggingface.co",
+      mirror: false,
+      userOverride: false,
+    });
+  };
+
   it("loads the catalog and exposes installed vs available", async () => {
     mocked.listModels.mockResolvedValue(AVAILABLE);
     mocked.onInstallProgress.mockReturnValue(() => undefined);
+    mockEndpoint();
     const { result } = renderHook(() => useModels());
-    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
     expect(result.current.available).toHaveLength(2);
     expect(result.current.installed).toHaveLength(0);
     expect(result.current.hasInstalledModels).toBe(false);
   });
 
+  it("restores a saved mirror endpoint and applies it", async () => {
+    mocked.listModels.mockResolvedValue(AVAILABLE);
+    mocked.onInstallProgress.mockReturnValue(() => undefined);
+    mocked.getDownloadEndpoint.mockResolvedValue({
+      endpoint: "https://hf-mirror.com",
+      mirror: true,
+      userOverride: true,
+    });
+    mocked.setDownloadEndpoint.mockResolvedValue({
+      endpoint: "https://hf-mirror.com",
+      mirror: true,
+      userOverride: true,
+    });
+    localStorage.setItem(
+      "local-squad-translator.models.v1",
+      JSON.stringify({ hfEndpoint: "https://hf-mirror.com" }),
+    );
+    const { result } = renderHook(() => useModels());
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(mocked.setDownloadEndpoint).toHaveBeenCalledWith(
+      "https://hf-mirror.com",
+    );
+    expect(result.current.downloadEndpoint.mirror).toBe(true);
+    localStorage.removeItem("local-squad-translator.models.v1");
+  });
+
   it("tracks progress and refreshes once an install finishes", async () => {
     let handler: ((event: unknown) => void) | undefined;
     mocked.listModels.mockResolvedValue(AVAILABLE);
+    mockEndpoint();
     mocked.onInstallProgress.mockImplementation((cb) => {
       handler = cb as (event: unknown) => void;
       return () => undefined;
     });
     const { result } = renderHook(() => useModels());
-    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
 
     act(() => {
       handler?.({
@@ -154,10 +198,13 @@ describe("useModels", () => {
 
   it("surfaces install errors without losing the list", async () => {
     mocked.listModels.mockResolvedValue(AVAILABLE);
+    mockEndpoint();
     mocked.installModel.mockRejectedValue(new Error("already installing"));
     mocked.onInstallProgress.mockReturnValue(() => undefined);
     const { result } = renderHook(() => useModels());
-    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
     await act(async () => {
       await result.current.startInstall("whisper-large-v3-turbo");
     });
