@@ -30,3 +30,9 @@ diagnostics/
 
 # Environment files (never commit API keys or tokens to the repo)
 .env*
+
+# Generated PyInstaller/tauri sidecar resources (rebuilt by scripts/build-sidecar.mjs)
+apps/desktop/src-tauri/sidecars/*
+!apps/desktop/src-tauri/sidecars/README.md
+local-squad-sidecar.spec
+

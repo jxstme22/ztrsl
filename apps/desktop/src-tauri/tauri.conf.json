@@ -60,7 +60,6 @@
     "macOS": {
       "signingIdentity": "-"
     },
-    "resources": ["sidecars/"],
-    "externalBin": ["sidecars/translation-runner"]
+    "resources": ["sidecars/"]
   }
 }

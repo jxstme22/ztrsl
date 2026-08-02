@@ -1,6 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -69,7 +70,7 @@ impl ModelRuntime {
 /// checked-out artifacts keep working; packaged builds use the per-user app
 /// data directory (never `Program Files`, which is read-only for standard
 /// users).
-fn resolve_models_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
     let workspace = workspace_root_from_manifest();
     if workspace.join("services").join("inference").join("src").is_dir() {
         workspace.join("models")
@@ -79,6 +80,58 @@ fn resolve_models_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
             .unwrap_or_else(|_| std::env::temp_dir().join("xTRSNLTR"))
             .join("models")
     }
+}
+
+/// Resolved paths for the packaged (PyInstaller) sidecar build. `None` means
+/// the app is running from the source workspace and uses the `.venv`
+/// interpreter instead.
+#[derive(Debug, Clone)]
+struct BundledPaths {
+    sidecar_exe: PathBuf,
+    translation_runner: PathBuf,
+    model_root: PathBuf,
+}
+
+/// Managed state resolving the sidecar config once at startup.
+#[derive(Default)]
+struct SidecarPaths {
+    bundled: Option<BundledPaths>,
+}
+
+/// Build a sidecar config for the current runtime mode: the frozen exe when a
+/// bundled build is present, otherwise the workspace `.venv` interpreter.
+fn sidecar_config(
+    bundled: Option<&BundledPaths>,
+    extra_env: &[(String, String)],
+) -> SidecarConfig {
+    let mut config = match bundled {
+        Some(paths) => SidecarConfig::for_bundled(
+            paths.sidecar_exe.clone(),
+            paths.translation_runner.clone(),
+            paths.model_root.clone(),
+        ),
+        None => SidecarConfig::for_workspace(&workspace_root_from_manifest()),
+    };
+    config.extra_env = extra_env.to_vec();
+    config
+}
+
+/// Detect a packaged installation (the frozen sidecar exe sits under the
+/// Tauri resource directory). Returns `None` in dev/workspace mode.
+fn resolve_bundled_paths(app: &tauri::AppHandle) -> Option<BundledPaths> {
+    let resource_dir = app.path().resource_dir().ok()?;
+    let sidecars = resource_dir.join("sidecars");
+    let sidecar_exe = sidecars
+        .join("local-squad-sidecar")
+        .join("local-squad-sidecar.exe");
+    if !sidecar_exe.is_file() {
+        return None;
+    }
+    Some(BundledPaths {
+        sidecar_exe,
+        translation_runner: sidecars.join("translation-runner.exe"),
+        model_root: resolve_models_dir(app),
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -544,6 +597,7 @@ async fn start_live_translation(
     live: tauri::State<'_, LiveRuntime>,
     translation_api: tauri::State<'_, TranslationApiRuntime>,
     models: tauri::State<'_, ModelRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
 ) -> Result<LiveSnapshot, String> {
 let LiveStartRequest {
         endpoint_id,
@@ -640,6 +694,7 @@ let LiveStartRequest {
     let sidecar = Arc::clone(&sidecar.supervisor);
     let translation_api = Arc::clone(&translation_api.env);
     let live_models = Arc::clone(&models.state);
+    let bundled = paths.bundled.clone();
     let endpoint_name = endpoint.friendly_name.clone();
     let worker_config = LiveWorkerConfig {
         endpoint_name,
@@ -661,6 +716,7 @@ let LiveStartRequest {
             sidecar,
             translation_api,
             live_models,
+            bundled,
         )
     })
     .await
@@ -673,6 +729,7 @@ fn start_live_translation_blocking(
     sidecar: Arc<Mutex<Option<SidecarSupervisor>>>,
     translation_api: Arc<Mutex<Vec<(String, String)>>>,
     live_models: Arc<Mutex<ModelRuntimeState>>,
+    bundled: Option<BundledPaths>,
 ) -> Result<LiveSnapshot, String> {
     let mut state = live.lock().map_err(lock_error)?;
     if state.worker.is_some() && !state.stopped {
@@ -697,6 +754,7 @@ fn start_live_translation_blocking(
                 event_tx,
                 ready_tx,
                 Arc::clone(&translation_api),
+                bundled,
             );
         })
         .map_err(|error| format!("live worker could not start: {error}"))?;
@@ -776,10 +834,12 @@ async fn analyze_clip(
     source_mode: String,
     provider: String,
     runtime: tauri::State<'_, SidecarRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
 ) -> Result<ClipResultPayload, String> {
     let supervisor = Arc::clone(&runtime.supervisor);
+    let bundled = paths.bundled.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        analyze_clip_blocking(supervisor, path, source_mode, provider)
+        analyze_clip_blocking(supervisor, path, source_mode, provider, bundled)
     })
     .await
     .map_err(|error| format!("clip worker failed: {error}"))?
@@ -790,6 +850,7 @@ fn analyze_clip_blocking(
     path: String,
     source_mode: String,
     provider: String,
+    bundled: Option<BundledPaths>,
 ) -> Result<ClipResultPayload, String> {
     let mut supervisor = runtime.lock().map_err(lock_error)?;
     let needs_restart = supervisor
@@ -799,7 +860,7 @@ fn analyze_clip_blocking(
         let _ = supervisor.take();
     }
     if supervisor.is_none() {
-        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        let config = sidecar_config(bundled.as_ref(), &[]);
         *supervisor = Some(SidecarSupervisor::start(&config).map_err(|error| error.to_string())?);
     }
     let first_attempt = supervisor
@@ -810,7 +871,7 @@ fn analyze_clip_blocking(
         Ok(result) => Ok(result),
         Err(error) if error.is_transport_failure() => {
             let _ = supervisor.take();
-            let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+            let config = sidecar_config(bundled.as_ref(), &[]);
             let mut replacement =
                 SidecarSupervisor::start(&config).map_err(|start_error| start_error.to_string())?;
             let result = replacement
@@ -993,7 +1054,10 @@ fn stop_synthetic_routing(runtime: tauri::State<'_, RoutingRuntime>) -> Result<(
 }
 
 #[tauri::command]
-fn start_fake_sidecar(runtime: tauri::State<'_, SidecarRuntime>) -> Result<SidecarStatus, String> {
+fn start_fake_sidecar(
+    runtime: tauri::State<'_, SidecarRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
+) -> Result<SidecarStatus, String> {
     let mut supervisor = runtime.supervisor.lock().map_err(lock_error)?;
     let needs_restart = supervisor
         .as_mut()
@@ -1002,7 +1066,7 @@ fn start_fake_sidecar(runtime: tauri::State<'_, SidecarRuntime>) -> Result<Sidec
         let _ = supervisor.take();
     }
     if supervisor.is_none() {
-        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        let config = sidecar_config(paths.bundled.as_ref(), &[]);
         *supervisor = Some(SidecarSupervisor::start(&config).map_err(|error| error.to_string())?);
     }
     Ok(SidecarStatus {
@@ -1216,12 +1280,13 @@ fn lock_error<T>(error: std::sync::PoisonError<T>) -> String {
 
 fn worker_sidecar_config(
     translation_env: &Arc<Mutex<Vec<(String, String)>>>,
+    bundled: Option<&BundledPaths>,
 ) -> SidecarConfig {
-    let mut config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
-    if let Ok(env) = translation_env.lock() {
-        config.extra_env = env.clone();
-    }
-    config
+    let env = translation_env
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default();
+    sidecar_config(bundled, &env)
 }
 
 fn run_live_worker(
@@ -1230,6 +1295,7 @@ fn run_live_worker(
     events: SyncSender<LiveWorkerEvent>,
     ready: SyncSender<Result<LiveStarted, String>>,
     translation_env: Arc<Mutex<Vec<(String, String)>>>,
+    bundled: Option<BundledPaths>,
 ) {
     let LiveWorkerConfig {
         endpoint_name,
@@ -1244,7 +1310,7 @@ fn run_live_worker(
         monitor_enabled,
         vad_sensitivity,
     } = config;
-    let sidecar_config = worker_sidecar_config(&translation_env);
+    let sidecar_config = worker_sidecar_config(&translation_env, bundled.as_ref());
     let mut supervisor = match SidecarSupervisor::start(&sidecar_config) {
         Ok(supervisor) => supervisor,
         Err(error) => {
@@ -1586,6 +1652,9 @@ pub fn run() {
         .setup(|app| {
             let models_dir = resolve_models_dir(app.handle());
             app.manage(ModelRuntime::new(models_dir));
+            app.manage(SidecarPaths {
+                bundled: resolve_bundled_paths(app.handle()),
+            });
             Ok(())
         })
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
