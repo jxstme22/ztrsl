@@ -1,21 +1,92 @@
+import { useState } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
+  Ear,
   HardDriveDownload,
-  MousePointerClick,
+  Languages,
+  Lock,
   RotateCw,
-  Scale,
   ShieldCheck,
 } from "lucide-react";
 
-import { formatBytes } from "./ModelsPanel";
+import { formatBytes, ProgressBar } from "./ModelsPanel";
 import type { ModelInfo } from "../models/model";
 import type { ModelUiState } from "../models/useModels";
-import { ProgressBar } from "./ModelsPanel";
 
-const FACTS: readonly { icon: typeof ShieldCheck; text: string }[] = [
-  { icon: ShieldCheck, text: "Audio never leaves this PC" },
-  { icon: MousePointerClick, text: "You choose what to download" },
-  { icon: Scale, text: "License shown before install" },
+const STEPS: readonly {
+  number: string;
+  icon: typeof Ear;
+  title: string;
+  text: string;
+}[] = [
+  { number: "1", icon: Ear, title: "Listen", text: "Captures voice chat" },
+  {
+    number: "2",
+    icon: Languages,
+    title: "Translate",
+    text: "Tagalog & Cebuano to English",
+  },
+  { number: "3", icon: Lock, title: "Private", text: "Runs on this PC" },
 ];
+
+function ChoiceCard({
+  model,
+  models,
+  onInstall,
+}: {
+  model: ModelInfo;
+  models: ModelUiState;
+  onInstall: (id: string) => void;
+}) {
+  const progress = models.progress[model.id];
+  const installing = progress !== undefined && !progress.done;
+  const failed = progress?.done === true && progress.error !== null;
+  return (
+    <article className="lst-model-card lst-welcome-card">
+      <div className="lst-model-card-head">
+        <h3>{model.name}</h3>
+        {model.recommended && <span className="lst-badge">Recommended</span>}
+      </div>
+      <p className="lst-model-description">{model.description}</p>
+      <div className="lst-model-meta">
+        <span>
+          {model.kind === "asr" ? "Speech recognition" : "Translation"}
+        </span>
+        <span>·</span>
+        <span>{formatBytes(model.downloadSizeBytes)}</span>
+        <span>·</span>
+        <span>{model.licenseSpdx}</span>
+      </div>
+      {installing && <ProgressBar event={progress} />}
+      {failed && <p className="lst-error-text">{progress.error}</p>}
+      <div className="lst-model-card-actions">
+        {installing ? (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => {
+              void models.cancel(model.id);
+            }}
+          >
+            Cancel
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => {
+              onInstall(model.id);
+            }}
+          >
+            <HardDriveDownload aria-hidden="true" size={14} />
+            Install
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
 
 export function WelcomeModelsDialog({
   models,
@@ -28,65 +99,16 @@ export function WelcomeModelsDialog({
   error: string | null;
   onRetry: () => void;
 }) {
+  const [showOptional, setShowOptional] = useState(false);
   const recommended = models.available.filter((model) => model.recommended);
   const others = models.available.filter((model) => !model.recommended);
-
-  const ChoiceCard = ({ model }: { model: ModelInfo }) => {
-    const progress = models.progress[model.id];
-    const installing = progress !== undefined && !progress.done;
-    const failed = progress?.done === true && progress.error !== null;
-    return (
-      <article className="lst-model-card lst-welcome-card">
-        <div className="lst-model-card-head">
-          <h3>{model.name}</h3>
-          {model.recommended && <span className="lst-badge">Recommended</span>}
-        </div>
-        <p className="lst-model-description">{model.description}</p>
-        <div className="lst-model-meta">
-          <span>
-            {model.kind === "asr" ? "Speech recognition" : "Translation"}
-          </span>
-          <span>·</span>
-          <span>{formatBytes(model.downloadSizeBytes)}</span>
-          <span>·</span>
-          <span>{model.licenseSpdx}</span>
-        </div>
-        {installing && <ProgressBar event={progress} />}
-        {failed && <p className="lst-error-text">{progress.error}</p>}
-        <div className="lst-model-card-actions">
-          {installing ? (
-            <button
-              type="button"
-              className="button secondary"
-              onClick={() => {
-                void models.cancel(model.id);
-              }}
-            >
-              Cancel
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="button primary"
-              onClick={() => {
-                onInstall(model.id);
-              }}
-            >
-              <HardDriveDownload aria-hidden="true" size={14} />
-              Install
-            </button>
-          )}
-        </div>
-      </article>
-    );
-  };
 
   return (
     <div className="lst-welcome-backdrop" role="presentation">
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Welcome — choose your models"
+        aria-label="Welcome to xTRSNLTR"
         className="lst-welcome"
       >
         <div className="lst-welcome-accent" aria-hidden="true" />
@@ -102,20 +124,20 @@ export function WelcomeModelsDialog({
           </div>
         </div>
 
-        <p className="lst-welcome-copy">
-          Pick the speech recognition and translation models you want. They are
-          downloaded to your machine and run locally; the app never sends your
-          audio anywhere.
-        </p>
-
-        <ul className="lst-welcome-facts">
-          {FACTS.map(({ icon: Icon, text }) => (
-            <li key={text}>
-              <Icon aria-hidden="true" size={13} />
-              {text}
+        <ol className="lst-welcome-steps" aria-label="How it works">
+          {STEPS.map(({ number, icon: Icon, title, text }) => (
+            <li key={number}>
+              <span className="lst-welcome-step-number" aria-hidden="true">
+                {number}
+              </span>
+              <Icon aria-hidden="true" size={15} />
+              <div>
+                <strong>{title}</strong>
+                <span>{text}</span>
+              </div>
             </li>
           ))}
-        </ul>
+        </ol>
 
         {models.loading ? (
           <div className="lst-welcome-loading" role="status">
@@ -139,32 +161,71 @@ export function WelcomeModelsDialog({
           </div>
         ) : (
           <>
+            <div className="lst-welcome-pick">
+              <h3 className="section-heading">Pick your models</h3>
+              <p>
+                Start with the recommended pair. Downloads are verified and can
+                be changed anytime in the Models tab.
+              </p>
+            </div>
+
             <section
               className="lst-model-section"
               aria-label="Recommended models"
             >
-              <h3 className="section-heading">Recommended</h3>
               <div className="lst-model-grid">
-                {recommended.map((m) => (
-                  <ChoiceCard key={m.id} model={m} />
+                {recommended.map((model) => (
+                  <ChoiceCard
+                    key={model.id}
+                    model={model}
+                    models={models}
+                    onInstall={onInstall}
+                  />
                 ))}
               </div>
             </section>
 
-            <section className="lst-model-section" aria-label="Optional models">
-              <h3 className="section-heading">Optional</h3>
-              <div className="lst-model-grid">
-                {others.map((m) => (
-                  <ChoiceCard key={m.id} model={m} />
-                ))}
-              </div>
-            </section>
+            {others.length > 0 && (
+              <section
+                className="lst-model-section lst-welcome-optional"
+                aria-label="Optional models"
+              >
+                <button
+                  type="button"
+                  className="lst-welcome-toggle"
+                  aria-expanded={showOptional}
+                  onClick={() => {
+                    setShowOptional((open) => !open);
+                  }}
+                >
+                  {showOptional ? (
+                    <ChevronDown aria-hidden="true" size={14} />
+                  ) : (
+                    <ChevronRight aria-hidden="true" size={14} />
+                  )}
+                  Show {others.length} optional model
+                  {others.length === 1 ? "" : "s"}
+                </button>
+                {showOptional && (
+                  <div className="lst-model-grid lst-welcome-optional-grid">
+                    {others.map((model) => (
+                      <ChoiceCard
+                        key={model.id}
+                        model={model}
+                        models={models}
+                        onInstall={onInstall}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
 
         <p className="lst-welcome-foot">
-          Downloads are checksum-verified and come from the pinned sources shown
-          in the Models tab, where you can add or remove models any time.
+          Installer is ready when at least one model is installed — you can
+          start and stop subtitles from the Live tab.
         </p>
       </div>
     </div>

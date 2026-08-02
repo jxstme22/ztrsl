@@ -1928,33 +1928,92 @@ input[type="range"]::-moz-range-thumb {
   font-size: 12.5px;
   color: var(--faint);
 }
-.lst-welcome-copy {
-  margin: 0 0 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-dim, #c6cbd6);
-}
-.lst-welcome-facts {
-  display: flex;
-  flex-wrap: wrap;
+.lst-welcome-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 18px;
   padding: 0;
   list-style: none;
 }
-.lst-welcome-facts li {
+.lst-welcome-steps li {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--faint);
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
 }
-.lst-welcome-facts svg {
-  color: #6fe3b0;
+.lst-welcome-steps li > svg {
   flex: none;
+  color: #6fe3b0;
+}
+.lst-welcome-steps li div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.lst-welcome-steps strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.lst-welcome-steps div span {
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lst-welcome-step-number {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  background: rgba(94, 201, 242, 0.16);
+  border: 1px solid rgba(94, 201, 242, 0.3);
+  color: #9adcf7;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.lst-welcome-pick {
+  margin-bottom: 14px;
+}
+.lst-welcome-pick .section-heading {
+  margin: 0 0 4px;
+}
+.lst-welcome-pick p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim, #c6cbd6);
+}
+.lst-welcome-optional {
+  margin-top: 4px;
+}
+.lst-welcome-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.lst-welcome-toggle:hover {
+  color: var(--fg-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
+.lst-welcome-optional-grid {
+  margin-top: 10px;
 }
 .lst-welcome-loading {
   display: flex;
