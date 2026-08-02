@@ -16,7 +16,9 @@ export function RoutingPanel() {
       <div className="section-heading">
         <div>
           <h2 id="routing-title">
-            {isSimulator ? "Silent pipeline simulator" : "Monitoring and inference branch"}
+            {isSimulator
+              ? "Silent pipeline simulator"
+              : "Monitoring and inference branch"}
           </h2>
         </div>
         <span className="mode-badge">

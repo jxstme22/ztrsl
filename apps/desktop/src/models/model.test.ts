@@ -17,7 +17,8 @@ describe("models schemas", () => {
           licenseSpdx: "MIT",
           licenseNotice: "",
           downloadSizeBytes: 1621665983,
-          source: "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo",
+          source:
+            "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo",
           revision: "0a363e9",
           fileCount: 5,
           status: "installed",

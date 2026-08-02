@@ -1,10 +1,4 @@
-import {
-  Activity,
-  Play,
-  RefreshCw,
-  Server,
-  Square,
-} from "lucide-react";
+import { Activity, Play, RefreshCw, Server, Square } from "lucide-react";
 
 import { useSidecar } from "../ipc/useSidecar";
 import type { Caption } from "../overlay/model";

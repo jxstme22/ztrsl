@@ -31,8 +31,12 @@ describe("control window", () => {
       screen.getByRole("navigation", { name: "Sections" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Live" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Diagnostics" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Diagnostics" }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
     expect(
       screen.getByText("Capture meter only · no playback · no recording"),
@@ -57,10 +61,7 @@ describe("control window", () => {
     });
     expect(start).toBeDisabled();
 
-    await chooseOption(
-      voiceInput,
-      "Generated voice signal (macOS simulator)",
-    );
+    await chooseOption(voiceInput, "Generated voice signal (macOS simulator)");
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "Start listening" }),
@@ -83,10 +84,7 @@ describe("control window", () => {
     const voiceInput = screen.getByRole("combobox", {
       name: /Voice-chat channel/,
     });
-    await chooseOption(
-      voiceInput,
-      "Generated voice signal (macOS simulator)",
-    );
+    await chooseOption(voiceInput, "Generated voice signal (macOS simulator)");
 
     const monitorToggle = screen.getByRole("checkbox", {
       name: /Monitor captured audio/,
@@ -99,10 +97,7 @@ describe("control window", () => {
     const start = screen.getByRole("button", { name: "Start listening" });
     expect(start).toBeDisabled();
 
-    await chooseOption(
-      monitoringOutput,
-      "Silent test sink (macOS simulator)",
-    );
+    await chooseOption(monitoringOutput, "Silent test sink (macOS simulator)");
     await waitFor(() => {
       expect(start).toBeEnabled();
     });
@@ -117,10 +112,7 @@ describe("control window", () => {
     const selector = screen.getByRole("combobox", {
       name: "Capture endpoint",
     });
-    await chooseOption(
-      selector,
-      "Generated voice signal (macOS simulator)",
-    );
+    await chooseOption(selector, "Generated voice signal (macOS simulator)");
     expect(start).toBeEnabled();
     fireEvent.click(start);
 

@@ -1,10 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-import {
-  clipResultSchema,
-  type ClipResult,
-  type SourceMode,
-} from "./model";
+import { clipResultSchema, type ClipResult, type SourceMode } from "./model";
 
 export async function analyzeMediaClip(
   path: string,

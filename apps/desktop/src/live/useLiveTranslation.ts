@@ -15,16 +15,11 @@ import {
 import { EMPTY_LIVE_SNAPSHOT, type LiveSnapshot } from "./model";
 
 export type LiveUiState =
-  | "idle"
-  | "starting"
-  | "listening"
-  | "stopping"
-  | "error";
+  "idle" | "starting" | "listening" | "stopping" | "error";
 
 export function useLiveTranslation(onCaption: (caption: Caption) => void) {
   const [state, setState] = useState<LiveUiState>("idle");
-  const [snapshot, setSnapshot] =
-    useState<LiveSnapshot>(EMPTY_LIVE_SNAPSHOT);
+  const [snapshot, setSnapshot] = useState<LiveSnapshot>(EMPTY_LIVE_SNAPSHOT);
   const [lastCaption, setLastCaption] = useState<CaptionPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);

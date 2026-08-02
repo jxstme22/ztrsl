@@ -74,7 +74,11 @@ export function ClipLabPanel() {
   };
 
   return (
-    <section className="audio-card clip-lab glass-panel" id="clips" aria-labelledby="clip-title">
+    <section
+      className="audio-card clip-lab glass-panel"
+      id="clips"
+      aria-labelledby="clip-title"
+    >
       <div className="section-heading">
         <div>
           <h2 id="clip-title">Test a friends’ comms clip</h2>

@@ -32,7 +32,12 @@ export function CaptionStack({
   }
 
   return (
-    <div className="caption-stack" data-mode={mode} style={style} aria-live="polite">
+    <div
+      className="caption-stack"
+      data-mode={mode}
+      style={style}
+      aria-live="polite"
+    >
       {captions.map((caption) => (
         <article
           className="caption-entry"

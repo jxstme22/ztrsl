@@ -93,10 +93,10 @@ export function Select({
   const moveHighlight = (delta: number) => {
     const position = enabledIndexes.indexOf(activeIndex);
     const start = position < 0 ? (delta > 0 ? -1 : 0) : position;
-    const next = enabledIndexes[Math.min(
-      enabledIndexes.length - 1,
-      Math.max(0, start + delta),
-    )];
+    const next =
+      enabledIndexes[
+        Math.min(enabledIndexes.length - 1, Math.max(0, start + delta))
+      ];
     if (next !== undefined) {
       setHighlighted(next);
     }
@@ -104,7 +104,12 @@ export function Select({
 
   const onButtonKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (disabled) return;
-    if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (
+      event.key === "Enter" ||
+      event.key === " " ||
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp"
+    ) {
       event.preventDefault();
       if (!open) {
         setOpen(true);
@@ -179,7 +184,11 @@ export function Select({
         <span className={selected === null ? "lst-select-placeholder" : ""}>
           {selected?.label ?? ""}
         </span>
-        <ChevronDown aria-hidden="true" size={14} className="lst-select-chevron" />
+        <ChevronDown
+          aria-hidden="true"
+          size={14}
+          className="lst-select-chevron"
+        />
       </button>
       {open && (
         <div

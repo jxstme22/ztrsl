@@ -10,6 +10,7 @@ assignees: ""
 A clear and concise description of what happens.
 
 **To reproduce**
+
 1. Steps… 2. … 3. …
 
 **Expected vs actual**
@@ -17,6 +18,7 @@ What you expected, and what actually happened (paste the caption/error text,
 e.g. the sidecar `CaptionPayload` validation message, if relevant).
 
 **Environment**
+
 - OS / build: Windows 11 (build #)? x86_64?
 - App version or commit hash:
 - Models installed (from the Models tab):

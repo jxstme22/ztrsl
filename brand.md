@@ -14,27 +14,27 @@ _Applied on 2026-07-30. This project uses custom CSS tokens rather than Tailwind
 
 ### Core tokens
 
-| Role | OKLCH | Hex |
-|---|---|---|
-| Background | `oklch(0.12 0.003 20)` | `#070607` |
-| Elevated | `oklch(0.17 0.009 20)` | `#100d0e` |
-| Surface | `oklch(0.21 0.014 20)` | `#171213` |
-| Primary | `oklch(0.61 0.19 19)` | `#dc4d5e` |
-| Primary deep | `oklch(0.43 0.17 20)` | `#941f31` |
-| Foreground | `oklch(0.96 0.008 12)` | `#f5eff0` |
+| Role         | OKLCH                  | Hex       |
+| ------------ | ---------------------- | --------- |
+| Background   | `oklch(0.12 0.003 20)` | `#070607` |
+| Elevated     | `oklch(0.17 0.009 20)` | `#100d0e` |
+| Surface      | `oklch(0.21 0.014 20)` | `#171213` |
+| Primary      | `oklch(0.61 0.19 19)`  | `#dc4d5e` |
+| Primary deep | `oklch(0.43 0.17 20)`  | `#941f31` |
+| Foreground   | `oklch(0.96 0.008 12)` | `#f5eff0` |
 
 Use the warmer red only for actions, status, focus, and active navigation. Large areas stay near-black. Raised surfaces use a faint top highlight and broad dark shadow; recessed controls use an inset shadow.
 
 ### Contrast
 
-| Pair | Ratio |
-|---|---:|
-| Foreground / background | 17.81:1 |
-| Muted foreground / background | 10.34:1 |
-| Subtle foreground / background | 6.11:1 |
-| Primary button text / darkest button stop | 8.02:1 |
-| Focus / background | 7.78:1 |
-| Border / background | 1.51:1 |
+| Pair                                      |   Ratio |
+| ----------------------------------------- | ------: |
+| Foreground / background                   | 17.81:1 |
+| Muted foreground / background             | 10.34:1 |
+| Subtle foreground / background            |  6.11:1 |
+| Primary button text / darkest button stop |  8.02:1 |
+| Focus / background                        |  7.78:1 |
+| Border / background                       |  1.51:1 |
 
 All text, focus, icon, and structural-border targets meet WCAG AA.
 

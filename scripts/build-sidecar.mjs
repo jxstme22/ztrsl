@@ -18,12 +18,11 @@ import { resolve } from "node:path";
 const ROOT = resolve(import.meta.dirname, "..");
 const VENV_PYTHON = resolve(ROOT, ".venv", "Scripts", "python.exe");
 const VENV_PYTHON_ALT = resolve(ROOT, ".venv", "bin", "python3");
-const PYTHON =
-  existsSync(VENV_PYTHON)
-    ? VENV_PYTHON
-    : existsSync(VENV_PYTHON_ALT)
-      ? VENV_PYTHON_ALT
-      : "python";
+const PYTHON = existsSync(VENV_PYTHON)
+  ? VENV_PYTHON
+  : existsSync(VENV_PYTHON_ALT)
+    ? VENV_PYTHON_ALT
+    : "python";
 
 const BUILD_ROOT = resolve(ROOT, "target", "sidecar-build");
 const DIST_DIR = resolve(BUILD_ROOT, "dist");
@@ -57,25 +56,43 @@ const args = [
   "--onedir",
   "--noconfirm",
   "--clean",
-  "--name", "local-squad-sidecar",
-  "--distpath", DIST_DIR,
-  "--workpath", WORK_DIR,
+  "--name",
+  "local-squad-sidecar",
+  "--distpath",
+  DIST_DIR,
+  "--workpath",
+  WORK_DIR,
   // Make `local_squad_inference` (under services/inference/src) importable.
-  "--paths", SOURCE_ROOT,
-  "--collect-submodules", "local_squad_inference",
-  "--hidden-import", "ctranslate2",
-  "--hidden-import", "faster_whisper",
-  "--hidden-import", "onnxruntime",
-  "--hidden-import", "sherpa_onnx",
-  "--hidden-import", "av",
-  "--hidden-import", "websockets",
-  "--hidden-import", "numpy",
-  "--collect-all", "ctranslate2",
-  "--collect-all", "onnxruntime",
-  "--collect-all", "sherpa_onnx",
-  "--collect-data", "faster_whisper", // includes the bundled silero_vad_v6.onnx
-  "--collect-binaries", "av", // PyAV FFmpeg DLLs
-  "--collect-binaries", "onnxruntime",
+  "--paths",
+  SOURCE_ROOT,
+  "--collect-submodules",
+  "local_squad_inference",
+  "--hidden-import",
+  "ctranslate2",
+  "--hidden-import",
+  "faster_whisper",
+  "--hidden-import",
+  "onnxruntime",
+  "--hidden-import",
+  "sherpa_onnx",
+  "--hidden-import",
+  "av",
+  "--hidden-import",
+  "websockets",
+  "--hidden-import",
+  "numpy",
+  "--collect-all",
+  "ctranslate2",
+  "--collect-all",
+  "onnxruntime",
+  "--collect-all",
+  "sherpa_onnx",
+  "--collect-data",
+  "faster_whisper", // includes the bundled silero_vad_v6.onnx
+  "--collect-binaries",
+  "av", // PyAV FFmpeg DLLs
+  "--collect-binaries",
+  "onnxruntime",
   ENTRY_POINT,
 ];
 

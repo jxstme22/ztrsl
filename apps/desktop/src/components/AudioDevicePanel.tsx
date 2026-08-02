@@ -42,8 +42,8 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
           <div>
             <strong>Simulator — not a real audio device</strong>
             <p>
-              Select the generated signal below to test the meter. Real
-              incoming voice-chat devices appear only in the Windows build.
+              Select the generated signal below to test the meter. Real incoming
+              voice-chat devices appear only in the Windows build.
             </p>
           </div>
         </div>

@@ -137,23 +137,24 @@ async function pushProviderEnv(
   await setTranslationEnv(pairs);
 }
 
-export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps) {
-  const [inputEndpointId, setInputEndpointId] = useState<string | null>(
-    () => loadStored(INPUT_ENDPOINT_KEY),
+export function LiveTranslationPanel({
+  audio,
+  live,
+}: LiveTranslationPanelProps) {
+  const [inputEndpointId, setInputEndpointId] = useState<string | null>(() =>
+    loadStored(INPUT_ENDPOINT_KEY),
   );
   const [playbackEndpointId, setPlaybackEndpointId] = useState<string | null>(
     () => loadStored(PLAYBACK_ENDPOINT_KEY),
   );
-  const [monitorEnabled, setMonitorEnabled] = useState<boolean>(
-    loadMonitorEnabled,
-  );
+  const [monitorEnabled, setMonitorEnabled] =
+    useState<boolean>(loadMonitorEnabled);
   const [sourceMode, setSourceMode] = useState<SourceMode>(loadSourceMode);
   const [targetLanguage, setTargetLanguage] =
     useState<TargetLanguage>(loadTargetLanguage);
   const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
-  const [vadSensitivity, setVadSensitivity] = useState<number>(
-    loadVadSensitivity,
-  );
+  const [vadSensitivity, setVadSensitivity] =
+    useState<number>(loadVadSensitivity);
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
@@ -187,8 +188,12 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
 
   const channelOptions = useMemo<SelectOption[]>(() => {
     const options: SelectOption[] = [];
-    const activeCapture = captureInputs.filter((endpoint) => endpoint.state === "active");
-    const activeLoopback = loopbackInputs.filter((endpoint) => endpoint.state === "active");
+    const activeCapture = captureInputs.filter(
+      (endpoint) => endpoint.state === "active",
+    );
+    const activeLoopback = loopbackInputs.filter(
+      (endpoint) => endpoint.state === "active",
+    );
     if (activeCapture.length > 0) {
       options.push(
         ...activeCapture.map((endpoint) => ({
@@ -212,12 +217,12 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
 
   const selectedInput =
     endpoints.find((endpoint) => endpoint.id === inputEndpointId) ?? null;
-  const inputReady =
-    selectedInput !== null && selectedInput.state === "active";
+  const inputReady = selectedInput !== null && selectedInput.state === "active";
 
   const playbackEndpoint =
     endpoints.find(
-      (endpoint) => endpoint.id === playbackEndpointId && endpoint.kind === "render",
+      (endpoint) =>
+        endpoint.id === playbackEndpointId && endpoint.kind === "render",
     ) ?? null;
   const playbackReady =
     playbackEndpoint !== null && playbackEndpoint.state === "active";
@@ -362,9 +367,11 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
                     inputEndpointId,
                     monitorEnabled ? playbackEndpointId : null,
                     asrProvider !== "groq-whisper" &&
-                    (translationProvider === "madlad" ||
-                      translationProvider === "nllb")
-                      ? (isSimulator ? "demo" : "local")
+                      (translationProvider === "madlad" ||
+                        translationProvider === "nllb")
+                      ? isSimulator
+                        ? "demo"
+                        : "local"
                       : "http",
                     monitorEnabled,
                     sourceMode,
@@ -391,7 +398,9 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
         <div className="inline-alert" role="status">
           <div>
             <strong>Simulator mode</strong>
-            <p>Generated signal — real capture activates in the Windows build.</p>
+            <p>
+              Generated signal — real capture activates in the Windows build.
+            </p>
           </div>
         </div>
       )}
@@ -467,10 +476,16 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
               changeAsrProvider(value as AsrProvider);
             }}
             options={[
-              { value: "whisper-turbo", label: "Local Whisper large-v3-turbo (fast)" },
+              {
+                value: "whisper-turbo",
+                label: "Local Whisper large-v3-turbo (fast)",
+              },
               { value: "whisper-full", label: "Local Whisper large-v3 (full)" },
               { value: "ncspeech", label: "NCSpeech FastConformer (Tagalog)" },
-              { value: "ncspeech-zh", label: "NCSpeech Citrinet-1024 (Mandarin)" },
+              {
+                value: "ncspeech-zh",
+                label: "NCSpeech Citrinet-1024 (Mandarin)",
+              },
               {
                 value: "ncspeech-zh-parakeet",
                 label: "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
@@ -524,7 +539,9 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
             disabled={listening || busy}
             aria-label="Microphone sensitivity"
             onChange={(event) => {
-              changeVadSensitivity(Number.parseInt(event.currentTarget.value, 10));
+              changeVadSensitivity(
+                Number.parseInt(event.currentTarget.value, 10),
+              );
             }}
           />
         </div>
@@ -608,10 +625,7 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
               disabled={listening || busy}
               onChange={(event) => {
                 setCustomTxApiKey(event.currentTarget.value);
-                setEnvVar(
-                  "LST_CUSTOM_TX_API_KEY",
-                  event.currentTarget.value,
-                );
+                setEnvVar("LST_CUSTOM_TX_API_KEY", event.currentTarget.value);
               }}
             />
           </div>

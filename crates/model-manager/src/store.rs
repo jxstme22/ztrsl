@@ -86,20 +86,16 @@ impl ModelStore {
             if manifest.id.is_empty() || manifest.artifacts.is_empty() {
                 continue;
             }
-            let total = manifest
-                .artifacts
-                .iter()
-                .try_fold(0u64, |acc, artifact| {
-                    let path = dir.join(&artifact.path);
-                    if path.is_file()
-                        && path.metadata().map(|meta| meta.len()).unwrap_or(0)
-                            == artifact.size_bytes
-                    {
-                        Ok(acc + artifact.size_bytes)
-                    } else {
-                        Err(())
-                    }
-                });
+            let total = manifest.artifacts.iter().try_fold(0u64, |acc, artifact| {
+                let path = dir.join(&artifact.path);
+                if path.is_file()
+                    && path.metadata().map(|meta| meta.len()).unwrap_or(0) == artifact.size_bytes
+                {
+                    Ok(acc + artifact.size_bytes)
+                } else {
+                    Err(())
+                }
+            });
             if total.is_err() {
                 continue;
             }
@@ -165,13 +161,17 @@ mod tests {
                 { "path": "payload.bin", "size_bytes": size, "sha256": "x" }
             ]
         });
-        std::fs::write(dir.join("manifest.json"), serde_json::to_vec(&manifest).unwrap())
-            .unwrap();
+        std::fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
     }
 
     #[test]
     fn installed_detects_valid_dirs_and_skips_junk() {
-        let root = std::env::temp_dir().join(format!("lst-model-store-detect-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("lst-model-store-detect-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("good")).unwrap();
         write_manifest(&root.join("good"), "good", 4);
@@ -190,7 +190,8 @@ mod tests {
 
     #[test]
     fn installed_rejects_corrupted_artifact_sizes() {
-        let root = std::env::temp_dir().join(format!("lst-model-store-corrupt-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("lst-model-store-corrupt-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         write_manifest(&root.join("bad"), "bad", 16);
         std::fs::write(root.join("bad").join("payload.bin"), b"short").unwrap();
@@ -202,7 +203,8 @@ mod tests {
 
     #[test]
     fn delete_refuses_when_in_use_and_for_unknown_dirs() {
-        let root = std::env::temp_dir().join(format!("lst-model-store-delete-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("lst-model-store-delete-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         write_manifest(&root.join("used"), "used", 4);
         std::fs::create_dir_all(root.join("mystery")).unwrap();

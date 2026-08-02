@@ -14,8 +14,7 @@ use windows::Win32::Media::Audio::{
     DEVICE_STATE, DEVICE_STATE_ACTIVE, DEVICE_STATE_DISABLED, DEVICE_STATE_NOTPRESENT,
     DEVICE_STATE_UNPLUGGED, EDataFlow, ERole, IAudioCaptureClient, IAudioClient, IMMDevice,
     IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
-    WAVEFORMATEX, WAVEFORMATEXTENSIBLE, eCapture, eCommunications, eConsole, eMultimedia,
-    eRender,
+    WAVEFORMATEX, WAVEFORMATEXTENSIBLE, eCapture, eCommunications, eConsole, eMultimedia, eRender,
 };
 use windows::Win32::System::Com::{
     CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
@@ -128,7 +127,10 @@ pub struct WindowsAudioCapture {
 enum CaptureHandle {
     #[allow(dead_code)]
     Cpal(Stream),
-    Loopback { stop: Sender<()>, worker: Option<JoinHandle<()>> },
+    Loopback {
+        stop: Sender<()>,
+        worker: Option<JoinHandle<()>>,
+    },
 }
 
 impl Drop for CaptureHandle {
@@ -769,9 +771,8 @@ fn parse_loopback_format(format: *const WAVEFORMATEX) -> (u32, u16) {
         // is valid when cbSize covers the SubFormat GUID, which we checked
         // above. The packed extensible struct is read unaligned to avoid UB.
         let extensible_ptr = format as *const WAVEFORMATEXTENSIBLE;
-        let sub_format = unsafe {
-            std::ptr::addr_of!((*extensible_ptr).SubFormat).read_unaligned()
-        };
+        let sub_format =
+            unsafe { std::ptr::addr_of!((*extensible_ptr).SubFormat).read_unaligned() };
         if sub_format != KSDATAFORMAT_SUBTYPE_IEEE_FLOAT || bits != 32 {
             return (0, 0);
         }
@@ -840,16 +841,15 @@ fn run_loopback_capture(
         unsafe { CoTaskMemFree(Some(format.cast())) };
         return;
     }
-    let capture_client: IAudioCaptureClient = match unsafe {
-        client.GetService::<IAudioCaptureClient>()
-    } {
-        Ok(capture) => capture,
-        Err(_) => {
-            // SAFETY: GetMixFormat documents CoTaskMemFree for the returned allocation.
-            unsafe { CoTaskMemFree(Some(format.cast())) };
-            return;
-        }
-    };
+    let capture_client: IAudioCaptureClient =
+        match unsafe { client.GetService::<IAudioCaptureClient>() } {
+            Ok(capture) => capture,
+            Err(_) => {
+                // SAFETY: GetMixFormat documents CoTaskMemFree for the returned allocation.
+                unsafe { CoTaskMemFree(Some(format.cast())) };
+                return;
+            }
+        };
     // SAFETY: The format pointer is no longer needed after Initialize succeeded.
     unsafe { CoTaskMemFree(Some(format.cast())) };
 
@@ -874,13 +874,7 @@ fn run_loopback_capture(
             // apartment; pointers are written by the OS and not stored beyond
             // the matching ReleaseBuffer call.
             let result = unsafe {
-                capture_client.GetBuffer(
-                    &mut data_ptr,
-                    &mut num_frames,
-                    &mut flags,
-                    None,
-                    None,
-                )
+                capture_client.GetBuffer(&mut data_ptr, &mut num_frames, &mut flags, None, None)
             };
             if result.is_err() {
                 break;

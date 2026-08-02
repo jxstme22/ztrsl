@@ -40,9 +40,13 @@ if (binaryIsFresh()) {
   process.exit(0);
 }
 
-const result = spawnSync("cargo", ["build", "--release", "-p", "translation-runner"], {
-  cwd: workspaceRoot,
-  stdio: "inherit",
-  shell: process.platform === "win32",
-});
+const result = spawnSync(
+  "cargo",
+  ["build", "--release", "-p", "translation-runner"],
+  {
+    cwd: workspaceRoot,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  },
+);
 process.exit(result.status ?? 1);

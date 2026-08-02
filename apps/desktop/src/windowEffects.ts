@@ -33,11 +33,7 @@ async function applyWindowShell(): Promise<void> {
 /** Resolves to the applied effect ("acrylic", "mica") or why none applied. */
 export function getLiquidGlassStatus(): Promise<string> {
   return Promise.resolve(
-    !isTauri()
-      ? "preview"
-      : isOverlayWindow()
-        ? "overlay"
-        : "acrylic",
+    !isTauri() ? "preview" : isOverlayWindow() ? "overlay" : "acrylic",
   );
 }
 

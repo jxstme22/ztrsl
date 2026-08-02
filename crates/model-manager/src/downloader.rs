@@ -1,11 +1,11 @@
 //! Downloads with streaming SHA-256 verification and cooperative cancel.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use futures_util::future::BoxFuture;
 use futures_util::FutureExt;
+use futures_util::future::BoxFuture;
 use sha2::{Digest, Sha256};
 
 use crate::Error;
