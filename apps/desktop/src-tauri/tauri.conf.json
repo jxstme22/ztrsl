@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm ensure:runner && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm ensure:runner && pnpm build",
+    "beforeBuildCommand": "pnpm ensure:runner && node ../../scripts/build-sidecar.mjs && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -59,6 +59,8 @@
     ],
     "macOS": {
       "signingIdentity": "-"
-    }
+    },
+    "resources": ["sidecars/"],
+    "externalBin": ["sidecars/translation-runner"]
   }
 }

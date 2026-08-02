@@ -35,6 +35,27 @@ pub struct SidecarConfig {
 }
 
 impl SidecarConfig {
+    /// Construct a config for a packaged (bundled-sidecar) build.
+    ///
+    /// `python_executable` points to the frozen sidecar exe (PyInstaller
+    /// onedir), `translation_runner` to the MADLAD candle runner, and
+    /// `model_root` to a writable per-user models directory
+    /// (e.g. `%LOCALAPPDATA%/xTRSNLTR/models`).
+    pub fn for_bundled(
+        python_executable: PathBuf,
+        translation_runner: PathBuf,
+        model_root: PathBuf,
+    ) -> Self {
+        Self {
+            python_executable,
+            python_source_root: PathBuf::new(), // not used by a frozen exe
+            model_root,
+            runtime_library_dir: None,
+            translation_runner,
+            extra_env: Vec::new(),
+        }
+    }
+
     pub fn for_workspace(workspace_root: &Path) -> Self {
         let virtualenv_python = if cfg!(windows) {
             workspace_root
@@ -69,7 +90,12 @@ impl SidecarConfig {
     }
 
     fn validate(&self) -> Result<(), SupervisorError> {
-        if !self.python_source_root.is_dir() {
+        if self.python_source_root.as_os_str().is_empty() {
+            // Bundled (PyInstaller) mode: the frozen exe must exist.
+            if !self.python_executable.is_file() {
+                return Err(SupervisorError::InvalidSidecarPath);
+            }
+        } else if !self.python_source_root.is_dir() {
             return Err(SupervisorError::InvalidSidecarPath);
         }
         Ok(())

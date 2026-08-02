@@ -1,0 +1,212 @@
+//! Model catalog: the pinned, verified list of downloadable model artifacts.
+//!
+//! The catalog is a single checked-in JSON file (`models/catalog.json`) that is
+//! embedded into the binary at compile time. Every download is pinned to an
+//! exact revision and per-file SHA-256; nothing is fetched from a non-pinned
+//! URL, and no API keys are ever part of the catalog.
+
+use serde::Deserialize;
+
+/// Embedded, verified catalog source.
+pub const CATALOG_JSON: &str = include_str!("../../../models/catalog.json");
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct ModelCatalog {
+    pub schema_version: u32,
+    pub models: Vec<CatalogEntry>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogEntry {
+    pub id: String,
+    pub name: String,
+    pub kind: ModelKind,
+    pub runtime: String,
+    #[serde(default)]
+    pub recommended: bool,
+    pub description: String,
+    pub license: CatalogLicense,
+    pub download_size_bytes: u64,
+    pub source: String,
+    pub revision: String,
+    /// Plain file artifacts (HuggingFace-style `source/resolve/revision/path`).
+    #[serde(default)]
+    pub files: Vec<CatalogFile>,
+    /// Optional single archive that is downloaded, verified and extracted.
+    #[serde(default)]
+    pub archive: Option<CatalogArchive>,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelKind {
+    Asr,
+    Translation,
+    Vad,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogLicense {
+    pub spdx: String,
+    #[serde(default)]
+    pub notice: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogFile {
+    pub path: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogArchive {
+    pub path: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub url: String,
+    /// Leading path components to drop when extracting (e.g. 1 for a single
+    /// top-level directory inside the archive).
+    pub strip_components: u32,
+    /// Only these relative paths are copied out of the archive. Empty means
+    /// "extract everything under the stripped root".
+    #[serde(default)]
+    pub extract_only: Vec<String>,
+}
+
+/// Serializable view of a catalog entry for the frontend (no secrets, only
+/// what the confirmation dialog needs).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CatalogEntryView {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub runtime: String,
+    pub recommended: bool,
+    pub description: String,
+    pub license_spdx: String,
+    pub license_notice: String,
+    pub download_size_bytes: u64,
+    pub source: String,
+    pub revision: String,
+    pub file_count: usize,
+}
+
+impl ModelCatalog {
+    pub fn embedded() -> Self {
+        serde_json::from_str(CATALOG_JSON)
+            .expect("embedded model catalog must parse (invalid models/catalog.json)")
+    }
+
+    pub fn entry(&self, id: &str) -> Option<&CatalogEntry> {
+        self.models.iter().find(|entry| entry.id == id)
+    }
+
+    pub fn view(&self) -> Vec<CatalogEntryView> {
+        self.models
+            .iter()
+            .map(|entry| CatalogEntryView {
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+                kind: format!("{:?}", entry.kind).to_lowercase(),
+                runtime: entry.runtime.clone(),
+                recommended: entry.recommended,
+                description: entry.description.clone(),
+                license_spdx: entry.license.spdx.clone(),
+                license_notice: entry.license.notice.clone(),
+                download_size_bytes: entry.download_size_bytes,
+                source: entry.source.clone(),
+                revision: entry.revision.clone(),
+                file_count: entry.files.len() + usize::from(entry.archive.is_some()),
+            })
+            .collect()
+    }
+
+    /// Derive the pinned download URL for a plain file artifact.
+    pub fn file_url(&self, entry: &CatalogEntry, file: &CatalogFile) -> String {
+        format!(
+            "{}/resolve/{}/{}",
+            entry.source.trim_end_matches('/'),
+            entry.revision,
+            file.path
+        )
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        let mut seen = std::collections::HashSet::new();
+        for entry in &self.models {
+            if !seen.insert(entry.id.clone()) {
+                return Err(format!("duplicate model id: {}", entry.id));
+            }
+            if entry.files.is_empty() && entry.archive.is_none() {
+                return Err(format!("model {} has no artifacts", entry.id));
+            }
+            if let Some(archive) = &entry.archive {
+                if archive.strip_components == 0 {
+                    return Err(format!("model {} archive must strip components", entry.id));
+                }
+            }
+            for file in &entry.files {
+                if file.path.contains("..") || file.path.starts_with('/') {
+                    return Err(format!("model {} has unsafe file path", entry.id));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embedded_catalog_parses_and_is_consistent() {
+        let catalog = ModelCatalog::embedded();
+        catalog.validate().expect("catalog must validate");
+        assert!(catalog.models.len() >= 4);
+        let turbo = catalog
+            .entry("whisper-large-v3-turbo")
+            .expect("turbo entry");
+        assert_eq!(turbo.kind, ModelKind::Asr);
+        assert_eq!(turbo.recommended, true);
+        let nllb = catalog.entry("nllb-200-distilled-600M-ct2-int8").expect("nllb");
+        assert_eq!(nllb.kind, ModelKind::Translation);
+        assert!(nllb.files.iter().all(|f| f.sha256.len() == 64));
+        assert_eq!(
+            nllb.files.iter().map(|f| f.size_bytes).sum::<u64>(),
+            nllb.download_size_bytes
+        );
+    }
+
+    #[test]
+    fn file_url_uses_pinned_revision() {
+        let catalog = ModelCatalog::embedded();
+        let entry = catalog.entry("whisper-large-v3-turbo").unwrap();
+        let url = catalog.file_url(entry, &entry.files[0]);
+        assert!(url.starts_with("https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo/resolve/0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf/"));
+        assert!(url.ends_with("/model.bin"));
+    }
+
+    #[test]
+    fn archive_entries_carry_full_url() {
+        let catalog = ModelCatalog::embedded();
+        let entry = catalog.entry("omni-ctc-300m-int8").unwrap();
+        let archive = entry.archive.as_ref().expect("archive entry");
+        assert!(archive.url.ends_with(".tar.bz2"));
+        assert!(archive.extract_only.contains(&"model.int8.onnx".to_string()));
+    }
+
+    #[test]
+    fn views_have_no_secret_fields() {
+        let catalog = ModelCatalog::embedded();
+        for view in catalog.view() {
+            assert!(!view.id.contains("key") && !view.source.contains("token="));
+        }
+    }
+}

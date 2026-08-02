@@ -1,5 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -15,6 +16,7 @@ use audio_core::{
 use ipc_protocol::{CaptionPayload, ClipResultPayload, Envelope};
 use serde::{Deserialize, Serialize};
 use sidecar_supervisor::{SidecarConfig, SidecarSupervisor, workspace_root_from_manifest};
+use tauri::{Emitter, Manager};
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +37,296 @@ struct AudioRuntimeState {
 #[derive(Default)]
 struct TranslationApiRuntime {
     env: Arc<Mutex<Vec<(String, String)>>>,
+}
+
+/// Model catalog + install state shared by the model management commands.
+struct ModelRuntime {
+    state: Arc<Mutex<ModelRuntimeState>>,
+}
+
+struct ModelRuntimeState {
+    store: model_manager::ModelStore,
+    catalog: model_manager::ModelCatalog,
+    installs: HashMap<String, model_manager::CancelHandle>,
+    /// Model ids loaded by the running live session; deletion is refused.
+    in_use: HashSet<String>,
+}
+
+impl ModelRuntime {
+    fn new(models_dir: std::path::PathBuf) -> Self {
+        Self {
+            state: Arc::new(Mutex::new(ModelRuntimeState {
+                store: model_manager::ModelStore::new(models_dir),
+                catalog: model_manager::ModelCatalog::embedded(),
+                installs: HashMap::new(),
+                in_use: HashSet::new(),
+            })),
+        }
+    }
+}
+
+/// Dev builds resolve the model store next to the workspace so existing
+/// checked-out artifacts keep working; packaged builds use the per-user app
+/// data directory (never `Program Files`, which is read-only for standard
+/// users).
+fn resolve_models_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+    let workspace = workspace_root_from_manifest();
+    if workspace.join("services").join("inference").join("src").is_dir() {
+        workspace.join("models")
+    } else {
+        app.path()
+            .app_data_dir()
+            .unwrap_or_else(|_| std::env::temp_dir().join("xTRSNLTR"))
+            .join("models")
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelsList {
+    models: Vec<ModelInfo>,
+    in_use: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelInfo {
+    #[serde(flatten)]
+    view: model_manager::CatalogEntryView,
+    /// "installed" | "installing" | "available".
+    status: String,
+    installed_size_bytes: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelProgressPayload {
+    model_id: String,
+    done: bool,
+    canceled: bool,
+    error: Option<String>,
+    phase: String,
+    file_index: usize,
+    file_count: usize,
+    file_bytes_done: u64,
+    file_bytes_total: u64,
+    total_bytes_done: u64,
+    total_bytes_total: u64,
+}
+
+fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'static str> {
+    let mut ids = Vec::new();
+    match asr_provider {
+        "whisper-turbo" => ids.push("whisper-large-v3-turbo"),
+        "whisper-full" => ids.push("whisper-large-v3"),
+        // "local" resolves to whichever Whisper artifact is installed.
+        "local" => {
+            ids.push("whisper-large-v3-turbo");
+            ids.push("whisper-large-v3");
+        }
+        "ncspeech" => ids.push("ncspeech-tl-fastconformer-hybrid-large"),
+        "ncspeech-zh" => ids.push("ncspeech-zh-citrinet-1024-gamma"),
+        "ncspeech-zh-parakeet" => ids.push("ncspeech-zh-parakeet-ctc-0.6b"),
+        _ => {}
+    }
+    match translation_provider {
+        "nllb" => ids.push("nllb-200-distilled-600M-ct2-int8"),
+        "madlad" => ids.push("madlad400-3b-mt"),
+        _ => {}
+    }
+    ids
+}
+
+#[tauri::command]
+async fn models_list(
+    models: tauri::State<'_, ModelRuntime>,
+) -> Result<ModelsList, String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    let installed = state.store.installed().map_err(|error| error.to_string())?;
+    let installed_sizes: HashMap<&str, u64> = installed
+        .iter()
+        .map(|model| (model.id.as_str(), model.total_size_bytes))
+        .collect();
+    let mut models_info = Vec::new();
+    for view in state.catalog.view() {
+        let installed_size = installed_sizes.get(view.id.as_str()).copied().unwrap_or(0);
+        let status = if state.installs.contains_key(&view.id) {
+            "installing".to_owned()
+        } else if installed_size > 0 {
+            "installed".to_owned()
+        } else {
+            "available".to_owned()
+        };
+        models_info.push(ModelInfo {
+            view,
+            status,
+            installed_size_bytes: installed_size,
+        });
+    }
+    Ok(ModelsList {
+        models: models_info,
+        in_use: state.in_use.iter().cloned().collect(),
+    })
+}
+
+#[tauri::command]
+async fn models_install(
+    app: tauri::AppHandle,
+    models: tauri::State<'_, ModelRuntime>,
+    id: String,
+) -> Result<(), String> {
+    let (entry, cancel) = {
+        let mut state = models.state.lock().map_err(lock_error)?;
+        let entry = state
+            .catalog
+            .entry(&id)
+            .cloned()
+            .ok_or_else(|| format!("unknown model: {id}"))?;
+        if state.installs.contains_key(&id) {
+            return Err("this model is already being installed".to_owned());
+        }
+        let handle = model_manager::CancelHandle::default();
+        state.installs.insert(id.clone(), handle.clone());
+        (entry, handle)
+    };
+    let models_dir = {
+        let state = models.state.lock().map_err(lock_error)?;
+        state.store.root().to_owned()
+    };
+    let state_arc = Arc::clone(&models.state);
+    tauri::async_runtime::spawn(async move {
+        let emit = |app: &tauri::AppHandle, payload: &ModelProgressPayload| {
+            let _ = app.emit("models://progress", payload);
+        };
+        let fetcher = match model_manager::ReqwestFetcher::new() {
+            Ok(fetcher) => std::sync::Arc::new(fetcher) as std::sync::Arc<dyn model_manager::Fetcher>,
+            Err(error) => {
+                let _ = app.emit(
+                    "models://progress",
+                    &ModelProgressPayload {
+                        model_id: id.clone(),
+                        done: true,
+                        canceled: false,
+                        error: Some(error.to_string()),
+                        phase: "download".to_owned(),
+                        file_index: 0,
+                        file_count: 0,
+                        file_bytes_done: 0,
+                        file_bytes_total: 0,
+                        total_bytes_done: 0,
+                        total_bytes_total: 0,
+                    },
+                );
+                return;
+            }
+        };
+        let installer = model_manager::ModelInstaller::new(
+            model_manager::ModelStore::new(models_dir),
+            fetcher,
+        );
+        let app_for_progress = app.clone();
+        let id_for_progress = id.clone();
+        let progress = std::sync::Arc::new(
+            move |event: model_manager::InstallProgress| {
+                emit(
+                    &app_for_progress,
+                    &ModelProgressPayload {
+                        model_id: id_for_progress.clone(),
+                        done: false,
+                        canceled: false,
+                        error: None,
+                        phase: match event.phase {
+                            model_manager::InstallPhase::Downloading => "download".to_owned(),
+                            model_manager::InstallPhase::Extracting => "extract".to_owned(),
+                            model_manager::InstallPhase::Installing => "install".to_owned(),
+                        },
+                        file_index: event.file_index,
+                        file_count: event.file_count,
+                        file_bytes_done: event.file_bytes_done,
+                        file_bytes_total: event.file_bytes_total,
+                        total_bytes_done: event.total_bytes_done,
+                        total_bytes_total: event.total_bytes_total,
+                    },
+                );
+            },
+        );
+        let result = installer.install(&entry, &cancel, progress).await;
+        if let Ok(mut state) = state_arc.lock() {
+            state.installs.remove(&id);
+        }
+        let payload = match result {
+            Ok(()) => ModelProgressPayload {
+                model_id: id.clone(),
+                done: true,
+                canceled: false,
+                error: None,
+                phase: "done".to_owned(),
+                file_index: 0,
+                file_count: 0,
+                file_bytes_done: 0,
+                file_bytes_total: 0,
+                total_bytes_done: 0,
+                total_bytes_total: 0,
+            },
+            Err(model_manager::Error::Canceled) => ModelProgressPayload {
+                model_id: id.clone(),
+                done: true,
+                canceled: true,
+                error: None,
+                phase: "done".to_owned(),
+                file_index: 0,
+                file_count: 0,
+                file_bytes_done: 0,
+                file_bytes_total: 0,
+                total_bytes_done: 0,
+                total_bytes_total: 0,
+            },
+            Err(error) => ModelProgressPayload {
+                model_id: id.clone(),
+                done: true,
+                canceled: false,
+                error: Some(error.to_string()),
+                phase: "done".to_owned(),
+                file_index: 0,
+                file_count: 0,
+                file_bytes_done: 0,
+                file_bytes_total: 0,
+                total_bytes_done: 0,
+                total_bytes_total: 0,
+            },
+        };
+        emit(&app, &payload);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn models_cancel_install(
+    models: tauri::State<'_, ModelRuntime>,
+    id: String,
+) -> Result<(), String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    let handle = state
+        .installs
+        .get(&id)
+        .ok_or_else(|| format!("no install in progress for {id}"))?;
+    handle.cancel();
+    Ok(())
+}
+
+#[tauri::command]
+async fn models_delete(
+    models: tauri::State<'_, ModelRuntime>,
+    id: String,
+) -> Result<(), String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    if state.installs.contains_key(&id) {
+        return Err("cannot delete a model while it is being installed".to_owned());
+    }
+    state
+        .store
+        .delete(&id, &state.in_use)
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Default)]
@@ -251,6 +543,7 @@ async fn start_live_translation(
     sidecar: tauri::State<'_, SidecarRuntime>,
     live: tauri::State<'_, LiveRuntime>,
     translation_api: tauri::State<'_, TranslationApiRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
 ) -> Result<LiveSnapshot, String> {
 let LiveStartRequest {
         endpoint_id,
@@ -346,6 +639,7 @@ let LiveStartRequest {
     let state = Arc::clone(&live.state);
     let sidecar = Arc::clone(&sidecar.supervisor);
     let translation_api = Arc::clone(&translation_api.env);
+    let live_models = Arc::clone(&models.state);
     let endpoint_name = endpoint.friendly_name.clone();
     let worker_config = LiveWorkerConfig {
         endpoint_name,
@@ -366,6 +660,7 @@ let LiveStartRequest {
             state,
             sidecar,
             translation_api,
+            live_models,
         )
     })
     .await
@@ -377,6 +672,7 @@ fn start_live_translation_blocking(
     live: Arc<Mutex<LiveRuntimeState>>,
     sidecar: Arc<Mutex<Option<SidecarSupervisor>>>,
     translation_api: Arc<Mutex<Vec<(String, String)>>>,
+    live_models: Arc<Mutex<ModelRuntimeState>>,
 ) -> Result<LiveSnapshot, String> {
     let mut state = live.lock().map_err(lock_error)?;
     if state.worker.is_some() && !state.stopped {
@@ -390,6 +686,8 @@ fn start_live_translation_blocking(
     let (stop_tx, stop_rx) = mpsc::sync_channel(1);
     let (event_tx, event_rx) = mpsc::sync_channel(64);
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let in_use_ids =
+        provider_model_ids(&worker_config.asr_provider, &worker_config.translation_provider);
     let worker = thread::Builder::new()
         .name("live-translation".to_owned())
         .spawn(move || {
@@ -421,6 +719,13 @@ fn start_live_translation_blocking(
     state.metrics = LiveMetrics::default();
     state.error = None;
     state.stopped = false;
+    // Mark the model artifacts this session loads so deletion is refused
+    // while they are on disk in use.
+    if let Ok(mut models) = live_models.lock() {
+        for id in in_use_ids {
+            models.in_use.insert(id.to_owned());
+        }
+    }
     Ok(live_snapshot(&mut state))
 }
 
@@ -433,15 +738,20 @@ fn live_translation_snapshot(live: tauri::State<'_, LiveRuntime>) -> Result<Live
 #[tauri::command]
 async fn stop_live_translation(
     live: tauri::State<'_, LiveRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
 ) -> Result<LiveSnapshot, String> {
     let state = Arc::clone(&live.state);
-    tauri::async_runtime::spawn_blocking(move || stop_live_translation_blocking(state))
-        .await
-        .map_err(|error| format!("live stop worker failed: {error}"))?
+    let live_models = Arc::clone(&models.state);
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_live_translation_blocking(state, live_models)
+    })
+    .await
+    .map_err(|error| format!("live stop worker failed: {error}"))?
 }
 
 fn stop_live_translation_blocking(
     live: Arc<Mutex<LiveRuntimeState>>,
+    live_models: Arc<Mutex<ModelRuntimeState>>,
 ) -> Result<LiveSnapshot, String> {
     let mut state = live.lock().map_err(lock_error)?;
     if let Some(stop) = state.stop.take() {
@@ -453,6 +763,10 @@ fn stop_live_translation_blocking(
             .map_err(|_| "live worker terminated unexpectedly".to_owned())?;
     }
     state.stopped = true;
+    // The session is over; every model it marked in use is free to delete.
+    if let Ok(mut models) = live_models.lock() {
+        models.in_use.clear();
+    }
     Ok(live_snapshot(&mut state))
 }
 
@@ -1269,6 +1583,11 @@ pub fn run() {
         .manage(SidecarRuntime::default())
         .manage(LiveRuntime::default())
         .manage(TranslationApiRuntime::default())
+        .setup(|app| {
+            let models_dir = resolve_models_dir(app.handle());
+            app.manage(ModelRuntime::new(models_dir));
+            Ok(())
+        })
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             app_status,
@@ -1288,7 +1607,11 @@ pub fn run() {
             stop_live_translation,
             set_translation_env,
             analyze_clip,
-            apply_window_shell
+            apply_window_shell,
+            models_list,
+            models_install,
+            models_cancel_install,
+            models_delete
         ])
         .run(tauri::generate_context!());
 

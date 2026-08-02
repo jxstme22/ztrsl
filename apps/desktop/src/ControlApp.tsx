@@ -1,5 +1,6 @@
 import {
   Activity,
+  Boxes,
   Gauge,
   Minus,
   Settings,
@@ -16,26 +17,32 @@ import { ClipLabPanel } from "./components/ClipLabPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
+import { ModelsPanel } from "./components/ModelsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
+import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
 import { useAudioMeter } from "./audio/useAudioMeter";
 import { useLiveTranslation } from "./live/useLiveTranslation";
+import { useModels } from "./models/useModels";
 import { isDesktopRuntime } from "./overlay/bridge";
 import { useOverlayController } from "./overlay/useOverlayController";
 
-type SectionId = "live" | "settings" | "diagnostics";
+type SectionId = "live" | "models" | "settings" | "diagnostics";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
 type LiveController = ReturnType<typeof useLiveTranslation>;
+type ModelsController = ReturnType<typeof useModels>;
 
 const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
   { id: "live", label: "Live" },
+  { id: "models", label: "Models" },
   { id: "settings", label: "Settings" },
   { id: "diagnostics", label: "Diagnostics" },
 ];
 
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
+  models: Boxes,
   settings: Settings,
   diagnostics: Gauge,
 };
@@ -44,6 +51,7 @@ export function ControlApp() {
   const controller = useOverlayController();
   const audio = useAudioMeter();
   const live = useLiveTranslation(controller.ingestCaption);
+  const models = useModels();
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
 
@@ -103,6 +111,7 @@ export function ControlApp() {
           {section === "live" && (
             <LivePage controller={controller} audio={audio} live={live} />
           )}
+          {section === "models" && <ModelsPage models={models} />}
           {section === "settings" && <SettingsPage controller={controller} />}
           {section === "diagnostics" && (
             <DiagnosticsPage
@@ -112,7 +121,23 @@ export function ControlApp() {
           )}
         </section>
       </div>
+
+      {desktop && !models.loading && !models.hasInstalledModels && (
+        <WelcomeModelsDialog
+          models={models}
+          error={models.error}
+          onInstall={(id) => void models.startInstall(id)}
+        />
+      )}
     </main>
+  );
+}
+
+function ModelsPage({ models }: { models: ModelsController }) {
+  return (
+    <div className="page-stack">
+      <ModelsPanel models={models} />
+    </div>
   );
 }
 

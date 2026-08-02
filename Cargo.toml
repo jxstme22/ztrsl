@@ -5,6 +5,7 @@ members = [
     "crates/audio-core",
     "crates/diagnostics",
     "crates/ipc-protocol",
+    "crates/model-manager",
     "crates/overlay-core",
     "crates/sidecar-supervisor",
     "crates/translation-runner",

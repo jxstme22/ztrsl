@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 audio-core = { path = "../../../crates/audio-core" }
 ipc-protocol = { path = "../../../crates/ipc-protocol" }
+model-manager = { path = "../../../crates/model-manager" }
 serde.workspace = true
 serde_json.workspace = true
 sidecar-supervisor = { path = "../../../crates/sidecar-supervisor" }

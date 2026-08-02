@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "whisper-large-v3-turbo",
+      "name": "Whisper Turbo (recommended)",
+      "kind": "asr",
+      "runtime": "faster-whisper",
+      "recommended": true,
+      "description": "Fast, accurate multilingual speech recognition (~1.6 GB). Handles Tagalog/Cebuano/English; best balance of latency and quality for live captions.",
+      "license": {
+        "spdx": "MIT",
+        "notice": "OpenAI Whisper model weights, MIT license, modified to faster-whisper format."
+      },
+      "download_size_bytes": 1621665983,
+      "source": "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "files": [
+        { "path": "model.bin", "size_bytes": 1617884929, "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da" },
+        { "path": "vocabulary.json", "size_bytes": 1068114, "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1" },
+        { "path": "config.json", "size_bytes": 2263, "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e" },
+        { "path": "tokenizer.json", "size_bytes": 2710337, "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd" },
+        { "path": "preprocessor_config.json", "size_bytes": 340, "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711" }
+      ]
+    },
+    {
+      "id": "whisper-large-v3",
+      "name": "Whisper Full",
+      "kind": "asr",
+      "runtime": "faster-whisper",
+      "recommended": false,
+      "description": "The full-size Whisper large-v3 (~3.1 GB). Slightly better accuracy than Turbo, noticeably slower; only needed if Turbo is not accurate enough.",
+      "license": {
+        "spdx": "MIT",
+        "notice": "OpenAI Whisper model weights, MIT license, modified to faster-whisper format."
+      },
+      "download_size_bytes": 3093723702,
+      "source": "https://huggingface.co/Systran/faster-whisper-large-v3",
+      "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+      "files": [
+        { "path": "model.bin", "size_bytes": 3087284237, "sha256": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1" },
+        { "path": "vocabulary.json", "size_bytes": 1068114, "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1" },
+        { "path": "config.json", "size_bytes": 2394, "sha256": "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9" },
+        { "path": "tokenizer.json", "size_bytes": 2480617, "sha256": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca" },
+        { "path": "preprocessor_config.json", "size_bytes": 340, "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711" }
+      ]
+    },
+    {
+      "id": "omni-ctc-300m-int8",
+      "name": "OmniLingual CTC 300M",
+      "kind": "asr",
+      "runtime": "sherpa-onnx",
+      "recommended": false,
+      "description": "Compact 1600-language CTC model (~280 MB archive). Research candidate for Cebuano; quality is not yet benchmarked against Whisper.",
+      "license": {
+        "spdx": "Apache-2.0"
+      },
+      "download_size_bytes": 292571207,
+      "source": "https://github.com/k2-fsa/sherpa-onnx",
+      "revision": "2025-11-12",
+      "archive": {
+        "path": "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
+        "size_bytes": 292571207,
+        "sha256": "cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
+        "strip_components": 1,
+        "extract_only": ["model.int8.onnx", "tokens.txt", "LICENSE"]
+      }
+    },
+    {
+      "id": "nllb-200-distilled-600M-ct2-int8",
+      "name": "NLLB-200 Distilled 600M (recommended)",
+      "kind": "translation",
+      "runtime": "ctranslate2",
+      "recommended": true,
+      "description": "Near-real-time Tagalog/Cebuano/Chinese-to-English translation (~600 MB, tens of ms on CUDA). CC-BY-NC-4.0: non-commercial use only.",
+      "license": {
+        "spdx": "CC-BY-NC-4.0",
+        "notice": "Non-commercial license. Commercial use requires a different translation model."
+      },
+      "download_size_bytes": 645849522,
+      "source": "https://huggingface.co/mijuanlo/nllb-200-distilled-600M-ct2-int8",
+      "revision": "16bc5ff0482f9f1c0d35bdef950721ce58640789",
+      "files": [
+        { "path": "model.bin", "size_bytes": 622596105, "sha256": "398726640cc2a02cc6a35277fa3cf2159ce8a1a66b48aa1b6c8837a47e3dd00c" },
+        { "path": "tokenizer.json", "size_bytes": 17331176, "sha256": "e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665" },
+        { "path": "shared_vocabulary.json", "size_bytes": 5921176, "sha256": "af53bfd0e6f726209e7325e45b87ab3b14e5856f7d42d7b9be91de3287c45267" },
+        { "path": "config.json", "size_bytes": 1065, "sha256": "bf8ade7c3f1683e5f13001bab18b04a1ccd1a6801208efd227ed13b2ff6f15e7" }
+      ]
+    },
+    {
+      "id": "madlad400-3b-mt",
+      "name": "MADLAD-400 3B",
+      "kind": "translation",
+      "runtime": "candle",
+      "recommended": false,
+      "description": "Google's 3B multilingual translation model (~1.7 GB). Apache-2.0. Runs on CPU only via the bundled Rust runner: ~50 s per caption — too slow for live use, kept for offline batch/reference.",
+      "license": {
+        "spdx": "Apache-2.0"
+      },
+      "download_size_bytes": 1671229060,
+      "source": "https://huggingface.co/google/madlad400-3b-mt",
+      "revision": "fa184c6",
+      "files": [
+        { "path": "config.json", "size_bytes": 749, "sha256": "cad399cab799b99409a6ec2d90d72552257c2bb752861261d2016691e0643e7c" },
+        { "path": "model-q4k.gguf", "size_bytes": 1654597280, "sha256": "ea6e5531a3e95213c7f0635988d119e078a655c09306e47851e15d4c0c3f9c37" },
+        { "path": "tokenizer.json", "size_bytes": 16629031, "sha256": "a2799ccc696b752ba00c34f58726bfe253a04921ceb6cfc620400f560474790b" }
+      ]
+    }
+  ]
+}

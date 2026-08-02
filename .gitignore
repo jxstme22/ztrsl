@@ -26,3 +26,6 @@ diagnostics/
 *.wav
 *.flac
 *.pcm
+
+# Environment files (never commit API keys or tokens to the repo)
+.env*
