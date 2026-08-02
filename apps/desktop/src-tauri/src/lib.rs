@@ -9,11 +9,12 @@ use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
 use audio_core::StreamingLinearResampler;
+#[cfg(not(target_os = "windows"))]
+use audio_core::synthetic_monitor_endpoint;
 use audio_core::{
     AtomicLevelMeter, AudioEndpoint, AudioError, AudioFormat, AudioMonitor, AudioRouter,
     AudioSource, EndpointKind, EndpointState, LevelSnapshot, RoutingMetrics, SYNTHETIC_ENDPOINT_ID,
-    SYNTHETIC_MONITOR_ENDPOINT_ID, SyntheticAudioMonitor, SyntheticAudioSource,
-    synthetic_monitor_endpoint, validate_route,
+    SYNTHETIC_MONITOR_ENDPOINT_ID, SyntheticAudioMonitor, SyntheticAudioSource, validate_route,
 };
 use ipc_protocol::{CaptionPayload, ClipResultPayload, Envelope};
 use serde::{Deserialize, Serialize};

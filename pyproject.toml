@@ -51,3 +51,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 files = ["services/inference/src", "services/inference/tests"]
+
+[[tool.mypy.overrides]]
+# Optional heavyweight model dependencies: absent from the CI dev-only
+# environment and untyped where installed.
+module = ["numpy", "onnxruntime", "faster_whisper", "faster_whisper.*"]
+ignore_missing_imports = true

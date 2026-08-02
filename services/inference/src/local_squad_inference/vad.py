@@ -79,8 +79,8 @@ class SileroSpeechDetector:
 
     def __init__(self, *, threshold: float = 0.5, model_path: Path | None = None) -> None:
         import numpy
-        import onnxruntime  # type: ignore[import-untyped]
-        from faster_whisper.utils import get_assets_path  # type: ignore[import-untyped]
+        import onnxruntime
+        from faster_whisper.utils import get_assets_path
 
         path = model_path or Path(get_assets_path()) / "silero_vad_v6.onnx"
         options = onnxruntime.SessionOptions()
