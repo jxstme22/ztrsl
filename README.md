@@ -12,6 +12,8 @@ and no telemetry**.
 - **Does not** inject into, read the memory of, automate, or modify VALORANT —
   see [Safety boundaries](#safety-boundaries).
 
+> **Download the Windows installer**: [`xTRSNLTR_0.1.0_x64-setup.exe`](./xTRSNLTR_0.1.0_x64-setup.exe) (NSIS, ~72 MB)
+
 > **Status: beta.** It works end-to-end on Windows, but production hardening
 > (code signing, auto-update, keychain, native-speaker benchmarks) is
 > still in progress. See the [roadmap](#roadmap-and-release-state).
@@ -184,15 +186,35 @@ build plan, phase acceptance evidence, and architecture decision records
 
 Current release state: **beta** (functional end-to-end; not yet production).
 
+### Installer
+
+A Windows installer is built from `main` and can be downloaded directly:
+
+- **`xTRSNLTR_0.1.0_x64-setup.exe`** (NSIS, ~72 MB) — at the repo root → or
+  build it yourself with `pnpm --filter desktop tauri build`
+  (outputs under `target/release/bundle/`; an MSI is produced alongside).
+
+The installer bundles everything a user needs to run the app:
+
+- the desktop app and overlay (Rust + WebView2, no system dependencies);
+- the **Python inference sidecar frozen into a standalone executable** via
+  PyInstaller (only the app is bundled, ~266 MB before compression — no
+  Python or `.venv` is required on the target machine);
+- the `translation-runner` (MADLAD candle) binary.
+
+Models are **not** bundled — the app downloads them on first run through the
+welcome dialog (see [Models](#features)).
+
+> Signed builds are coming for 1.0; the current installer is unsigned, so
+> Windows SmartScreen will show a warning until then.
+
 Remaining for a 1.0 release:
 
-- [ ] code signing (Windows SmartScreen) and a tested NSIS/MSI installer;
-- [ ] package the Python sidecar via PyInstaller into the installer
-      (script: `scripts/build-sidecar.mjs`, see `docs/adr/ADR-012-packaging.md`);
+- [ ] code signing (Windows SmartScreen) — in progress;
+- [ ] clean-machine install tests of the packaged installer;
 - [ ] native-speaker benchmarks for Tagalog/Cebuano accuracy;
 - [ ] move opt-in API keys to the OS keychain;
 - [ ] auto-update pipeline;
-- [ ] clean-machine install tests.
 
 The on-disk model manager, in-app picker with confirmation modal, delete
 support, and the embedded download catalog are already in place
