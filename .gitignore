@@ -20,10 +20,11 @@ __pycache__/
 .idea/
 .vscode/
 
-# Local application data and sensitive diagnostics
+# Local application data and sensitive diagnostics (repo root only; the
+# crates/diagnostics workspace crate must stay tracked)
 models/artifacts/
 models/staging/
-diagnostics/
+/diagnostics/
 *.wav
 *.flac
 *.pcm
