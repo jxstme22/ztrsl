@@ -3,13 +3,13 @@ import { isTauri } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 // Native window look for the control window. The window is transparent
-// (tauri.conf.json). Tauri's `Effect::Acrylic` must NOT be used: on Win11 it
-// maps to `DWMSBT_TRANSIENTWINDOW`, a light DWM backdrop that ignores window
-// regions and paints the window as a white square. Instead `apply_window_shell`
-// enables the dark Mica backdrop (`DWMSBT_MAINWINDOW`) and asks DWM for native
-// corner rounding, so the OS window looks like any native app, blurred even
-// while unfocused. Re-applied once after creation because DWM may reset the
-// attributes while the surface settles. Harmless no-op in the browser preview.
+// (tauri.conf.json). `apply_window_shell` enables the acrylic system
+// backdrop (`DWMSBT_TRANSIENTWINDOW`), which really blurs the desktop behind
+// the window — unlike Mica, which renders a static opaque light sheet — and
+// asks DWM for native corner rounding. Dark theme tints the acrylic to dark
+// frosted glass, which the CSS surface layers on top of. Re-applied once
+// after creation because DWM may reset the attributes while the surface
+// settles. Harmless no-op in the browser preview.
 
 let overlayWindowPromise: Promise<WebviewWindow | null> | null | undefined;
 
@@ -37,7 +37,7 @@ export function getLiquidGlassStatus(): Promise<string> {
       ? "preview"
       : isOverlayWindow()
         ? "overlay"
-        : "mica",
+        : "acrylic",
   );
 }
 

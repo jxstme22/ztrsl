@@ -112,6 +112,10 @@ pub struct LiveStartPayload {
     pub provider: String,
     pub asr_provider: String,
     pub translation_provider: String,
+    /// Translation output language: "en" (English) or "zh" (simplified
+    /// Chinese); applies to the local NLLB provider.
+    #[serde(default = "default_target_language")]
+    pub target_language: String,
     pub resource_profile: String,
     /// 0..100 VAD sensitivity slider. 50 is the baseline. Higher means
     /// quieter speech is treated as speech and utterances close sooner.
@@ -121,6 +125,10 @@ pub struct LiveStartPayload {
 
 pub fn default_vad_sensitivity() -> u8 {
     50
+}
+
+pub fn default_target_language() -> String {
+    "en".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

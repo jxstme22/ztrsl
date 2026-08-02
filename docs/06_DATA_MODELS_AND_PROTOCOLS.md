@@ -177,6 +177,7 @@ Version settings with migrations.
   },
   "language": {
     "source_mode": "mixed",
+    "target_language": "en",
     "show_source": true
   },
   "models": {

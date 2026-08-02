@@ -75,6 +75,22 @@ def test_live_pipeline_emits_final_tagalog_caption_after_conversation_pause() ->
     assert pipeline.metrics.captions_emitted == 1
 
 
+def test_live_pipeline_accepts_english_source_mode() -> None:
+    pipeline = LivePipeline(
+        FakeAsr("Push A site now"),
+        FakeTranslation(),
+        source_mode="english",
+        vad_config=VadConfig(min_speech_ms=30, min_silence_ms=30),
+        use_silero=False,
+    )
+
+    pipeline.feed(packet(1, (0.1,) * 960))
+    captions = pipeline.feed(packet(2, (0.0,) * 960))
+
+    assert len(captions) == 1
+    assert captions[0].source_mode == "english"
+
+
 def test_live_pipeline_marks_unexpected_script_as_low_confidence() -> None:
     pipeline = LivePipeline(
         FakeAsr("مرحبا"),

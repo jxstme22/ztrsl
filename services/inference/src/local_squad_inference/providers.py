@@ -73,12 +73,14 @@ def keep_asr_segment(segment: object) -> bool:
 # Maps the app's source_mode identifiers to Whisper ISO-639-1 language tokens
 # used by faster-whisper's `language` parameter. Filipino ("tl") is the safest
 # Latin-script decoder constraint for Tagalog/Cebuano; Chinese ("zh") covers
-# Mandarin and Cantonese transcription in simplified/traditional script.
+# Mandarin and Cantonese transcription in simplified/traditional script;
+# English ("en") feeds the en->target translation path.
 WHISPER_LANGUAGE_CODES: dict[str, str] = {
     "filipino": "tl",
     "cebuano": "tl",
     "mixed": "tl",
     "chinese": "zh",
+    "english": "en",
 }
 
 
@@ -242,6 +244,16 @@ class NemoCtcProvider:
     """
 
     def __init__(self, model_dir: Path, num_threads: int = 4) -> None:
+        if not (model_dir / "manifest.json").is_file():
+            if "parakeet" in model_dir.name:
+                variant = "zh-parakeet"
+            else:
+                variant = "zh" if "zh" in model_dir.name else "tl"
+            raise ModelUnavailableError(
+                f"NCSpeech {variant} model not installed ({model_dir}). "
+                f"Run `python scripts/export_ncspeech_onnx.py --variant {variant}` "
+                "to download and export it."
+            )
         manifest = verify_manifest(model_dir, model_dir / "manifest.json")
         self._model_id = cast(str, manifest["id"])
         artifacts = cast(list[dict[str, object]], manifest["artifacts"])
@@ -533,20 +545,30 @@ class NllbCTranslate2Provider:
     """
 
     MODEL_ID = "nllb-200-distilled-600M-ct2-int8"
-    TARGET_LANG = "eng_Latn"
     MAX_SOURCE_CHARS = 2000
+
+    # NLLB-200 output language tokens keyed by the app's target_language.
+    TARGET_LANGS: ClassVar[dict[str, str]] = {
+        "en": "eng_Latn",
+        "zh": "zho_Hans",
+    }
 
     # NLLB-200 source language tokens per app source_mode. Mandarin is
     # injected as simplified-script `zho_Hans` (AISHELL-2 transcripts are
-    # simplified); the Latin-script tokens cover Tagalog/Cebuano.
+    # simplified); the Latin-script tokens cover Tagalog/Cebuano; English
+    # uses the standard `eng_Latn` token.
     SOURCE_LANGS: ClassVar[dict[str, str]] = {
         "filipino": "tgl_Latn",
         "cebuano": "tgl_Latn",
         "mixed": "tgl_Latn",
         "chinese": "zho_Hans",
+        "english": "eng_Latn",
     }
 
-    def __init__(self, model_dir: Path) -> None:
+    def __init__(self, model_dir: Path, target_language: str = "en") -> None:
+        if target_language not in self.TARGET_LANGS:
+            raise ValueError(f"unsupported NLLB target language: {target_language}")
+        self._target_lang = self.TARGET_LANGS[target_language]
         verify_manifest(model_dir, model_dir / "manifest.json")
         try:
             ctranslate2 = importlib.import_module("ctranslate2")
@@ -610,14 +632,14 @@ class NllbCTranslate2Provider:
         try:
             outputs = self._translator.translate_batch(
                 [source],
-                target_prefix=[[self.TARGET_LANG]],
+                target_prefix=[[self._target_lang]],
                 max_batch_size=1,
             )
         except (OSError, RuntimeError, ValueError) as error:
             raise ModelUnavailableError("NLLB translation failed") from error
         elapsed_ms = (time.perf_counter() - started) * 1_000
         hypothesis = outputs[0].hypotheses[0]
-        if hypothesis and hypothesis[0] == self.TARGET_LANG:
+        if hypothesis and hypothesis[0] == self._target_lang:
             hypothesis = hypothesis[1:]
         ids = [
             token_id
@@ -652,6 +674,7 @@ def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:
     full_ready = verified("whisper-large-v3")
     ncspeech_ready = verified("ncspeech-tl-fastconformer-hybrid-large")
     ncspeech_zh_ready = verified("ncspeech-zh-citrinet-1024-gamma")
+    ncspeech_zh_parakeet_ready = verified("ncspeech-zh-parakeet-ctc-0.6b")
     nllb_ready = verified("nllb-200-distilled-600M-ct2-int8")
     translation_ready = (
         verified("madlad400-3b-mt")
@@ -691,6 +714,11 @@ def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:
             "ready": ncspeech_zh_ready,
             "provider": "ncspeech-zh-citrinet-1024-gamma",
             "detail": "verified" if ncspeech_zh_ready else "not installed",
+        },
+        "asr_ncspeech_zh_parakeet": {
+            "ready": ncspeech_zh_parakeet_ready,
+            "provider": "ncspeech-zh-parakeet-ctc-0.6b",
+            "detail": "verified" if ncspeech_zh_parakeet_ready else "not installed",
         },
         "translation_nllb": {
             "ready": nllb_ready,

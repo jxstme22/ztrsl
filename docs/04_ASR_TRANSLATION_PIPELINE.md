@@ -67,7 +67,9 @@ Served locally via CTranslate2 (`mijuanlo/nllb-200-distilled-600M-ct2-int8`,
 pinned revision, int8; CUDA when available, CPU fallback). ~600 MB, tens of ms
 per caption on CUDA. Language tokens are injected manually because CTranslate2
 `translate_batch` has no `source_lang_code`/`target_lang_code` kwargs: source is
-prefixed with `tgl_Latn` and the target prefix is `eng_Latn`. The HF fast
+prefixed with `tgl_Latn` (or `zho_Hans` for Chinese, `eng_Latn` for English)
+and the target prefix is `eng_Latn` (English) or `zho_Hans` (simplified
+Chinese when the session's `target_language` is `zh`). The HF fast
 tokenizer (`tokenizer.json`) must be used instead of raw SentencePiece — the
 fast tokenizer appends `</s>` to encoder input, which SentencePiece does not.
 License CC-BY-NC-4.0 (non-commercial).
@@ -89,6 +91,15 @@ Target English token (MADLAD path only):
 ```
 
 The exact source-language prompting and model behavior must be verified with the pinned checkpoint and fixtures. Never infer language tags from memory when wiring production code.
+
+### Opt-in HTTP translation providers
+
+Besides local NLLB/MADLAD, the session may use an opt-in remote provider
+(`google-translate`, `mymemory`, `libretranslate`, `custom-http`) that sends
+only the recognized text — never audio — to the configured endpoint. These
+honor the session's `target_language`: `en` maps to `en` and `zh` maps to
+`zh-CN` (Google/MyMemory) or `zh` (LibreTranslate/custom). The `custom-http`
+body template may reference a `{target}` placeholder.
 
 ## 3. Source Modes
 

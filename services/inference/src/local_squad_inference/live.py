@@ -39,12 +39,12 @@ class LivePipeline:
         asr: AsrProvider,
         translation: TranslationProvider,
         *,
-        source_mode: Literal["filipino", "chinese"] = "filipino",
+        source_mode: Literal["filipino", "chinese", "english"] = "filipino",
         vad_config: VadConfig | None = None,
         use_silero: bool = True,
     ) -> None:
-        if source_mode not in {"filipino", "chinese"}:
-            raise ValueError("V1 live mode supports Filipino or Chinese only")
+        if source_mode not in {"filipino", "chinese", "english"}:
+            raise ValueError("V1 live mode supports Filipino, Chinese or English only")
         self._asr = asr
         self._translation = translation
         self._source_mode = source_mode

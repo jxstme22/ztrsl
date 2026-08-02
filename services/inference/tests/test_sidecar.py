@@ -246,6 +246,7 @@ def test_live_demo_session_segments_audio_and_stops_with_metrics() -> None:
                         "sent_monotonic_ns": 2,
                         "payload": {
                             "source_mode": "filipino",
+                            "target_language": "zh",
                             "provider": "demo",
                             "resource_profile": "quality",
                             "vad_sensitivity": 30,
@@ -255,6 +256,7 @@ def test_live_demo_session_segments_audio_and_stops_with_metrics() -> None:
             )
             started: dict[str, Any] = json.loads(await websocket.recv())
             assert started["type"] == "live.started"
+            assert started["payload"]["target_language"] == "zh"
 
             for sequence, amplitude in enumerate((0.1, 0.1, 0.0, 0.0, 0.0), start=1):
                 packet = AudioPacket(

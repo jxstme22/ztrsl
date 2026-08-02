@@ -8,6 +8,8 @@ import {
   startLiveTranslation,
   stopLiveTranslation,
   type AsrProvider,
+  type SourceMode,
+  type TargetLanguage,
   type TranslationProvider,
 } from "./bridge";
 import { EMPTY_LIVE_SNAPSHOT, type LiveSnapshot } from "./model";
@@ -104,7 +106,8 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       playbackEndpointId: string | null,
       provider: "demo" | "local" | "http",
       monitorEnabled: boolean,
-      sourceMode: "filipino" | "chinese",
+      sourceMode: SourceMode,
+      targetLanguage: TargetLanguage,
       asrProvider: AsrProvider,
       translationProvider: TranslationProvider,
       vadSensitivity = 50,
@@ -120,6 +123,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
             provider,
             monitorEnabled,
             sourceMode,
+            targetLanguage,
             asrProvider,
             translationProvider,
             vadSensitivity,

@@ -63,7 +63,7 @@ export function OverlayApp() {
           </button>
         </div>
       )}
-      <CaptionStack snapshot={snapshot} />
+      <CaptionStack snapshot={snapshot} mode="latest" />
     </main>
   );
 }

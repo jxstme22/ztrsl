@@ -86,7 +86,10 @@ One-time, from the workspace root:
    Variants: `--variant tl` (default; NCSpeech FastConformer Tagalog,
    `ncspeech` provider) and `--variant zh` (Citrinet-1024 Mandarin from
    `nvidia/stt_zh_citrinet_1024_gamma_0_25`, AISHELL-2 character vocab,
-   `ncspeech-zh` provider, ~555 MB archive). Both are CC-BY-4.0.
+   `ncspeech-zh` provider, ~555 MB archive) and `--variant zh-parakeet`
+   (Parakeet-CTC 0.6B Mandarin from `nvidia/parakeet-ctc-0.6b-zh-cn`,
+   gated repo — run `huggingface-cli login` first; 17k hours zh-CN,
+   `ncspeech-zh-parakeet` provider, ~2.5 GB archive). All are CC-BY-4.0.
 4. The `translation-runner` Rust binary is rebuilt automatically by the Tauri
    `beforeDev`/`beforeBuild` hooks via `scripts/ensure-translation-runner.mjs`.
    After a manual `cargo clean`, the first `pnpm tauri dev`/`pnpm tauri build`

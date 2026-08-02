@@ -3,15 +3,26 @@ import type { OverlaySnapshot } from "../overlay/model";
 type CaptionStackProps = {
   snapshot: OverlaySnapshot;
   preview?: boolean;
+  /** "stack" shows every caption as a row; "latest" renders only the newest
+      caption so each subtitle replaces the previous one. */
+  mode?: "stack" | "latest";
 };
 
-export function CaptionStack({ snapshot, preview = false }: CaptionStackProps) {
+export function CaptionStack({
+  snapshot,
+  preview = false,
+  mode = "stack",
+}: CaptionStackProps) {
   const style = {
     "--caption-scale": snapshot.settings.fontScale,
     "--caption-opacity": snapshot.settings.backgroundOpacity,
   } as React.CSSProperties;
 
-  if (snapshot.captions.length === 0) {
+  const last = snapshot.captions[snapshot.captions.length - 1];
+  const captions =
+    mode === "latest" && last !== undefined ? [last] : snapshot.captions;
+
+  if (captions.length === 0) {
     return preview ? (
       <div className="caption-empty">
         <strong>No captions yet</strong>
@@ -21,8 +32,8 @@ export function CaptionStack({ snapshot, preview = false }: CaptionStackProps) {
   }
 
   return (
-    <div className="caption-stack" style={style} aria-live="polite">
-      {snapshot.captions.map((caption) => (
+    <div className="caption-stack" data-mode={mode} style={style} aria-live="polite">
+      {captions.map((caption) => (
         <article
           className="caption-entry"
           data-status={caption.status}

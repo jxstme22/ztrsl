@@ -16,6 +16,7 @@ export const liveSnapshotSchema = z.object({
   provider: z.string().nullable(),
   asrModel: z.string().nullable(),
   sourceMode: z.string().nullable(),
+  targetLanguage: z.string().nullable(),
   resourceProfile: z.string().nullable(),
   metrics: liveMetricsSchema,
   captions: z.array(captionPayloadSchema).max(64),
@@ -29,6 +30,7 @@ export const EMPTY_LIVE_SNAPSHOT: LiveSnapshot = {
   provider: null,
   asrModel: null,
   sourceMode: null,
+  targetLanguage: null,
   resourceProfile: null,
   metrics: {
     capturedFrames: 0,

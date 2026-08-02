@@ -56,7 +56,7 @@ def process_clip(
     translation: TranslationProvider | None = None,
     mode: str = "demo",
 ) -> ClipResult:
-    if source_mode not in {"filipino", "cebuano", "chinese", "mixed"}:
+    if source_mode not in {"filipino", "cebuano", "chinese", "mixed", "english"}:
         raise ValueError("unsupported source mode")
     media = decoder or FfmpegDecoder()
     metadata = media.inspect(source)

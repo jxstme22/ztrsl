@@ -210,6 +210,7 @@ impl SidecarSupervisor {
         provider: &str,
         asr_provider: &str,
         translation_provider: &str,
+        target_language: &str,
         resource_profile: &str,
         vad_sensitivity: u8,
     ) -> Result<serde_json::Value, SupervisorError> {
@@ -225,6 +226,7 @@ impl SidecarSupervisor {
                 provider: provider.to_owned(),
                 asr_provider: asr_provider.to_owned(),
                 translation_provider: translation_provider.to_owned(),
+                target_language: target_language.to_owned(),
                 resource_profile: resource_profile.to_owned(),
                 vad_sensitivity,
             },

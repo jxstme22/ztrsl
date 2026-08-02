@@ -25,6 +25,14 @@ class HttpTranslationError(RuntimeError):
     pass
 
 
+HTTP_TARGET_CODES: dict[str, dict[str, str]] = {
+    "libretranslate": {"en": "en", "zh": "zh"},
+    "google-translate": {"en": "en", "zh": "zh-CN"},
+    "mymemory": {"en": "en", "zh": "zh-CN"},
+    "custom-http": {"en": "en", "zh": "zh"},
+}
+
+
 @dataclass(frozen=True)
 class HttpProviderConfig:
     endpoint: str
@@ -121,7 +129,7 @@ class LibreTranslateProvider(TranslationProvider):
 
     PROVIDER_ID = "libretranslate"
 
-    def __init__(self) -> None:
+    def __init__(self, target_language: str = "en") -> None:
         endpoint = os.environ.get("LST_LT_ENDPOINT", "").strip()
         if not endpoint:
             raise HttpTranslationError(
@@ -130,6 +138,9 @@ class LibreTranslateProvider(TranslationProvider):
         self._endpoint = endpoint
         self._api_key = os.environ.get("LST_LT_API_KEY") or None
         self._source = os.environ.get("LST_LT_SOURCE", "auto")
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
+            target_language, target_language
+        )
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
@@ -137,7 +148,7 @@ class LibreTranslateProvider(TranslationProvider):
         body = {
             "q": result.text,
             "source": self._source,
-            "target": "en",
+            "target": self._target,
             "format": "text",
         }
         if self._api_key:
@@ -183,12 +194,15 @@ class GoogleTranslateProvider(TranslationProvider):
     ENDPOINT = "https://translate.googleapis.com/translate_a/single"
     DEFAULT_SOURCE = "auto"
 
-    def __init__(self) -> None:
+    def __init__(self, target_language: str = "en") -> None:
         # Allow overriding endpoint for testing or self-hosted Google-compatible proxies.
         self._endpoint = os.environ.get(
             "LST_GOOGLE_TX_ENDPOINT", self.ENDPOINT
         )
         self._source = os.environ.get("LST_GOOGLE_TX_SOURCE", self.DEFAULT_SOURCE)
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
+            target_language, target_language
+        )
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
@@ -197,7 +211,7 @@ class GoogleTranslateProvider(TranslationProvider):
             {
                 "client": "gtx",
                 "sl": self._source,
-                "tl": "en",
+                "tl": self._target,
                 "dt": "t",
                 "q": result.text,
             },
@@ -247,17 +261,20 @@ class MyMemoryProvider(TranslationProvider):
     PROVIDER_ID = "mymemory"
     ENDPOINT = "https://api.mymemory.translated.net/get"
 
-    def __init__(self) -> None:
+    def __init__(self, target_language: str = "en") -> None:
         self._endpoint = os.environ.get("LST_MYMEMORY_ENDPOINT", self.ENDPOINT)
         self._source = os.environ.get("LST_MYMEMORY_SOURCE", "autodetect")
         self._de = os.environ.get("LST_MYMEMORY_EMAIL") or None
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
+            target_language, target_language
+        )
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
             return _ok(result, "", inference_ms=0.0, provider_id=self.PROVIDER_ID)
         params = {
             "q": result.text,
-            "langpair": f"{self._source}|en",
+            "langpair": f"{self._source}|{self._target}",
         }
         if self._de:
             params["de"] = self._de
@@ -299,7 +316,7 @@ class CustomHttpProvider(TranslationProvider):
 
     PROVIDER_ID = "custom-http"
 
-    def __init__(self) -> None:
+    def __init__(self, target_language: str = "en") -> None:
         endpoint = os.environ.get("LST_CUSTOM_TX_ENDPOINT", "").strip()
         if not endpoint:
             raise HttpTranslationError(
@@ -308,6 +325,9 @@ class CustomHttpProvider(TranslationProvider):
         self._endpoint = endpoint
         self._api_key = os.environ.get("LST_CUSTOM_TX_API_KEY") or None
         self._template = os.environ.get("LST_CUSTOM_TX_BODY_TEMPLATE")
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
+            target_language, target_language
+        )
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
@@ -315,7 +335,7 @@ class CustomHttpProvider(TranslationProvider):
         if self._template:
             body_str = self._template.replace(
                 "{text}", result.text.replace("\\", "\\\\").replace('"', '\\"')
-            ).replace("{source}", "auto")
+            ).replace("{source}", "auto").replace("{target}", self._target)
             try:
                 body = json.loads(body_str)
             except json.JSONDecodeError as error:
@@ -328,7 +348,7 @@ class CustomHttpProvider(TranslationProvider):
             body = {
                 "text": result.text,
                 "source": "auto",
-                "target": "en",
+                "target": self._target,
             }
         started = time.perf_counter()
         try:
@@ -378,8 +398,8 @@ HTTP_PROVIDER_FACTORIES: dict[str, type[TranslationProvider]] = {
 }
 
 
-def http_translation_provider(name: str) -> TranslationProvider:
+def http_translation_provider(name: str, target_language: str = "en") -> TranslationProvider:
     factory = HTTP_PROVIDER_FACTORIES.get(name)
     if factory is None:
         raise HttpTranslationError(f"unknown HTTP translation provider: {name}")
-    return factory()
+    return factory(target_language=target_language)

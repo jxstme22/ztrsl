@@ -51,6 +51,8 @@ class CaptionPayload(StrictModel):
     status: Literal["provisional", "final"]
     source_mode: SourceMode
     source_text: str = Field(max_length=500)
+    # Carries the translation output; the language is the session's
+    # target_language (English by default, Chinese when selected).
     english_text: str = Field(max_length=500)
     started_monotonic_ns: int = Field(ge=0)
     ended_monotonic_ns: int | None = Field(default=None, ge=0)
@@ -68,14 +70,17 @@ class ClipProcessPayload(StrictModel):
 
 
 class LiveStartPayload(StrictModel):
-    source_mode: Literal["filipino", "chinese"] = "filipino"
+    source_mode: Literal["filipino", "chinese", "english"] = "filipino"
     provider: Literal["demo", "local", "http"] = "local"
+    # Translation output language; applies to the local NLLB provider.
+    target_language: Literal["en", "zh"] = "en"
     asr_provider: Literal[
         "local",
         "whisper-turbo",
         "whisper-full",
         "ncspeech",
         "ncspeech-zh",
+        "ncspeech-zh-parakeet",
         "groq-whisper",
     ] = "local"
     translation_provider: Literal[

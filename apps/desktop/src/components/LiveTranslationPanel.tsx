@@ -4,7 +4,12 @@ import { useMemo, useState } from "react";
 import type { useAudioMeter } from "../audio/useAudioMeter";
 import { useLiveTranslation } from "../live/useLiveTranslation";
 import { setTranslationEnv } from "../live/bridge";
-import type { AsrProvider, TranslationProvider } from "../live/bridge";
+import type {
+  AsrProvider,
+  SourceMode,
+  TargetLanguage,
+  TranslationProvider,
+} from "../live/bridge";
 import { Select } from "./Select";
 import type { SelectOption } from "./Select";
 
@@ -20,6 +25,7 @@ const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
 const PLAYBACK_ENDPOINT_KEY = "lst.live.playback-endpoint";
 const MONITOR_ENABLED_KEY = "lst.live.monitor";
 const SOURCE_MODE_KEY = "lst.live.source-mode";
+const TARGET_LANGUAGE_KEY = "lst.live.target-language";
 const ASR_PROVIDER_KEY = "lst.live.asr-provider";
 const VAD_SENSITIVITY_KEY = "lst.live.vad-sensitivity";
 const GROQ_API_KEY_KEY = "lst.live.groq-api-key";
@@ -37,10 +43,18 @@ function loadMonitorEnabled(): boolean {
   return window.localStorage.getItem(MONITOR_ENABLED_KEY) === "true";
 }
 
-function loadSourceMode(): "filipino" | "chinese" {
-  return window.localStorage.getItem(SOURCE_MODE_KEY) === "chinese"
-    ? "chinese"
-    : "filipino";
+function loadSourceMode(): SourceMode {
+  const stored = window.localStorage.getItem(SOURCE_MODE_KEY);
+  if (stored === "chinese" || stored === "english") {
+    return stored;
+  }
+  return "filipino";
+}
+
+function loadTargetLanguage(): TargetLanguage {
+  return window.localStorage.getItem(TARGET_LANGUAGE_KEY) === "zh"
+    ? "zh"
+    : "en";
 }
 
 function loadAsrProvider(): AsrProvider {
@@ -50,6 +64,7 @@ function loadAsrProvider(): AsrProvider {
     stored === "whisper-full" ||
     stored === "ncspeech" ||
     stored === "ncspeech-zh" ||
+    stored === "ncspeech-zh-parakeet" ||
     stored === "groq-whisper"
   ) {
     return stored;
@@ -132,9 +147,9 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
   const [monitorEnabled, setMonitorEnabled] = useState<boolean>(
     loadMonitorEnabled,
   );
-  const [sourceMode, setSourceMode] = useState<"filipino" | "chinese">(
-    loadSourceMode,
-  );
+  const [sourceMode, setSourceMode] = useState<SourceMode>(loadSourceMode);
+  const [targetLanguage, setTargetLanguage] =
+    useState<TargetLanguage>(loadTargetLanguage);
   const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
   const [vadSensitivity, setVadSensitivity] = useState<number>(
     loadVadSensitivity,
@@ -254,9 +269,14 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
     });
   };
 
-  const changeSourceMode = (value: "filipino" | "chinese") => {
+  const changeSourceMode = (value: SourceMode) => {
     setSourceMode(value);
     window.localStorage.setItem(SOURCE_MODE_KEY, value);
+  };
+
+  const changeTargetLanguage = (value: TargetLanguage) => {
+    setTargetLanguage(value);
+    window.localStorage.setItem(TARGET_LANGUAGE_KEY, value);
   };
 
   const changeAsrProvider = (value: AsrProvider) => {
@@ -348,6 +368,7 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
                       : "http",
                     monitorEnabled,
                     sourceMode,
+                    targetLanguage,
                     asrProvider,
                     translationProvider,
                     vadSensitivity,
@@ -408,11 +429,29 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
             value={sourceMode}
             disabled={listening || busy}
             onChange={(value) => {
-              changeSourceMode(value as "filipino" | "chinese");
+              changeSourceMode(value as SourceMode);
             }}
             options={[
               { value: "filipino", label: "Filipino / Taglish" },
               { value: "chinese", label: "Chinese (Mandarin/Cantonese)" },
+              { value: "english", label: "English" },
+            ]}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-target-language">Output language</label>
+          <Select
+            id="live-target-language"
+            label="Output language"
+            value={targetLanguage}
+            disabled={listening || busy}
+            onChange={(value) => {
+              changeTargetLanguage(value as TargetLanguage);
+            }}
+            options={[
+              { value: "en", label: "English" },
+              { value: "zh", label: "Chinese (simplified)" },
             ]}
           />
         </div>
@@ -432,6 +471,10 @@ export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps)
               { value: "whisper-full", label: "Local Whisper large-v3 (full)" },
               { value: "ncspeech", label: "NCSpeech FastConformer (Tagalog)" },
               { value: "ncspeech-zh", label: "NCSpeech Citrinet-1024 (Mandarin)" },
+              {
+                value: "ncspeech-zh-parakeet",
+                label: "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
+              },
               { value: "groq-whisper", label: "Groq Whisper (free API)" },
             ]}
           />

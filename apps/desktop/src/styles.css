@@ -36,14 +36,17 @@
   --fg-strong: #ffffff;
   --muted: rgba(255, 255, 255, 0.55);
   --faint: rgba(255, 255, 255, 0.34);
-  --glass: rgba(255, 255, 255, 0.055);
-  --glass-strong: rgba(255, 255, 255, 0.1);
-  --glass-hover: rgba(255, 255, 255, 0.15);
-  --stroke: rgba(255, 255, 255, 0.13);
-  --stroke-strong: rgba(255, 255, 255, 0.24);
-  --field: rgba(255, 255, 255, 0.07);
+  /* Dark glass surfaces: the window frame is light liquid glass, so panels,
+     buttons, and fields carry a dark translucent tint to keep white text
+     readable. */
+  --glass: rgba(12, 16, 26, 0.18);
+  --glass-strong: rgba(12, 16, 26, 0.28);
+  --glass-hover: rgba(12, 16, 26, 0.38);
+  --stroke: rgba(12, 16, 26, 0.18);
+  --stroke-strong: rgba(12, 16, 26, 0.32);
+  --field: rgba(12, 16, 26, 0.16);
   --danger: #ff9d9d;
-  --focus-ring: rgba(255, 255, 255, 0.3);
+  --focus-ring: rgba(12, 16, 26, 0.45);
   --radius-sm: 10px;
   --radius: 14px;
   --radius-lg: 22px;
@@ -118,16 +121,18 @@ select:disabled {
   height: 100vh;
   overflow: hidden;
   border-radius: 10px;
-  /* Translucent dark surface over the Mica backdrop applied natively
-     (`apply_window_shell` in lib.rs). Mica provides the frosted blur — which
-     stays rendered while the window is unfocused — so the surface itself only
-     tints it. No border: the window shape is DWM's native rounded corners,
-     and this radius tracks the native ~8px corner rounding. */
+  /* Liquid glass: a translucent dark frost over the acrylic backdrop
+     (`apply_window_shell` in lib.rs). The acrylic blurs the desktop behind
+     the window and the tint lets that blur show through; panels layer their
+     own dark glass on top. No border: the window shape is DWM's native
+     rounded corners, and this radius tracks the native ~8px rounding. */
   background: linear-gradient(
     180deg,
-    rgba(24, 26, 34, 0.55),
-    rgba(10, 12, 18, 0.5)
+    rgba(24, 28, 40, 0.5),
+    rgba(12, 15, 24, 0.44)
   );
+  backdrop-filter: blur(42px) saturate(170%);
+  -webkit-backdrop-filter: blur(42px) saturate(170%);
   box-shadow: 0 12px 44px rgba(0, 0, 0, 0.45);
 }
 
@@ -148,7 +153,10 @@ select:disabled {
   align-items: center;
   height: 34px;
   padding: 0 10px 0 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 14, 22, 0.42);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   user-select: none;
 }
 
@@ -196,13 +204,7 @@ select:disabled {
   flex: 0 0 60px;
   padding: 12px 8px;
   border-right: 1px solid var(--stroke);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.09),
-    rgba(255, 255, 255, 0.035)
-  );
-  backdrop-filter: blur(36px) saturate(170%);
-  -webkit-backdrop-filter: blur(36px) saturate(170%);
+  background: transparent;
 }
 
 .sidebar-nav {
@@ -262,18 +264,15 @@ select:disabled {
 /* Cards (liquid glass)                                              */
 /* ---------------------------------------------------------------- */
 
+/* Cards (liquid glass): match the diagnostics page panels — a single flat
+   translucent tint with no inner blur, so the acrylic frost shows through
+   uniformly on every page. */
+
 .card,
 .glass-panel {
   border: 1px solid var(--stroke);
   border-radius: var(--radius-lg);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.045)
-  );
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(36px) saturate(170%);
-  -webkit-backdrop-filter: blur(36px) saturate(170%);
+  background: rgba(10, 14, 22, 0.28);
 }
 
 .card {
@@ -689,7 +688,7 @@ input[type="range"]::-moz-range-thumb {
   -webkit-appearance: none;
   border: 1px solid var(--stroke-strong);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(12, 16, 26, 0.22);
   cursor: pointer;
   transition: background 120ms ease;
 }
@@ -954,8 +953,8 @@ input[type="range"]::-moz-range-thumb {
   background:
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.03),
-      rgba(255, 255, 255, 0.012)
+      rgba(12, 16, 26, 0.32),
+      rgba(12, 16, 26, 0.18)
     ),
     rgba(0, 0, 0, 0.3);
   align-content: center;
@@ -1125,7 +1124,7 @@ input[type="range"]::-moz-range-thumb {
   padding: 18px 20px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(10, 14, 22, 0.28);
 }
 
 /* Capture meter */
@@ -1143,7 +1142,7 @@ input[type="range"]::-moz-range-thumb {
   padding: 14px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(10, 14, 22, 0.22);
 }
 
 .meter-label {
@@ -1224,7 +1223,7 @@ input[type="range"]::-moz-range-thumb {
   padding: 14px;
   border: 1px dashed var(--stroke-strong);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(10, 14, 22, 0.22);
   color: var(--fg);
   text-align: left;
 }
@@ -1388,7 +1387,7 @@ input[type="range"]::-moz-range-thumb {
   padding: 12px 14px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(10, 14, 22, 0.22);
 }
 
 .ipc-summary svg {
@@ -1445,6 +1444,10 @@ input[type="range"]::-moz-range-thumb {
   width: 100%;
   gap: 10px;
   font-size: calc(1rem * var(--caption-scale, 1));
+}
+
+.caption-stack[data-mode="latest"] {
+  font-size: calc(1.12rem * var(--caption-scale, 1));
 }
 
 .caption-entry {

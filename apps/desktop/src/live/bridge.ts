@@ -22,6 +22,7 @@ export type AsrProvider =
   | "whisper-full"
   | "ncspeech"
   | "ncspeech-zh"
+  | "ncspeech-zh-parakeet"
   | "groq-whisper";
 
 export async function setTranslationEnv(
@@ -35,12 +36,17 @@ export async function setTranslationEnv(
   });
 }
 
+export type SourceMode = "filipino" | "chinese" | "english";
+
+export type TargetLanguage = "en" | "zh";
+
 export async function startLiveTranslation(
   endpointId: string,
   playbackEndpointId: string | null,
   provider: "demo" | "local" | "http",
   monitorEnabled: boolean,
-  sourceMode: "filipino" | "chinese",
+  sourceMode: SourceMode,
+  targetLanguage: TargetLanguage,
   asrProvider: AsrProvider,
   translationProvider: TranslationProvider,
   vadSensitivity = 50,
@@ -53,6 +59,7 @@ export async function startLiveTranslation(
       provider: "demo",
       asrModel: "browser-preview",
       sourceMode,
+      targetLanguage,
       resourceProfile: "quality",
     };
   }
@@ -62,6 +69,7 @@ export async function startLiveTranslation(
         endpointId,
         playbackEndpointId: playbackEndpointId ?? "",
         sourceMode,
+        targetLanguage,
         provider,
         asrProvider,
         translationProvider,

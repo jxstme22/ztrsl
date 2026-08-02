@@ -27,6 +27,7 @@ def test_build_asr_provider_aliases(monkeypatch) -> None:
     assert isinstance(build_asr_provider("whisper-full"), FakeWhisper)
     assert isinstance(build_asr_provider("ncspeech"), FakeNemo)
     assert isinstance(build_asr_provider("ncspeech-zh"), FakeNemo)
+    assert isinstance(build_asr_provider("ncspeech-zh-parakeet"), FakeNemo)
     assert isinstance(build_asr_provider("demo"), DemoAsrProvider)
     assert isinstance(build_asr_provider("groq-whisper"), GroqWhisperProvider)
 

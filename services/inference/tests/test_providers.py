@@ -208,6 +208,35 @@ def test_nllb_provider_injects_chinese_source_token(
     assert call["target_prefix"] == [["eng_Latn"]]
 
 
+def test_nllb_provider_english_to_chinese_target(
+    nllb_env: tuple[dict[str, Any], Path],
+) -> None:
+    modules, model_dir = nllb_env
+    provider = NllbCTranslate2Provider(model_dir, target_language="zh")
+    provider.translate(
+        AsrResult(
+            utterance_id="u1",
+            text="Push A site",
+            source_mode="english",
+            is_final=True,
+            inference_ms=5.0,
+            model_id="whisper-large-v3-turbo",
+            confidence=0.9,
+        )
+    )
+    call = modules["ct2"].translator.calls[0]
+    assert call["source"] == [["eng_Latn", "▁Push", "▁na"]]
+    assert call["target_prefix"] == [["zho_Hans"]]
+
+
+def test_nllb_provider_rejects_unknown_target_language(
+    nllb_env: tuple[dict[str, Any], Path],
+) -> None:
+    _, model_dir = nllb_env
+    with pytest.raises(ValueError):
+        NllbCTranslate2Provider(model_dir, target_language="de")
+
+
 def test_nllb_provider_passthrough_empty_and_long_text(
     nllb_env: tuple[dict[str, Any], Path],
 ) -> None:

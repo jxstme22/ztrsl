@@ -11,6 +11,13 @@ Supported variants:
   ``NCSpeech/stt_tl_fastconformer_hybrid_large``
 - ``zh``: Citrinet-1024 CTC (Mandarin, AISHELL-2 character vocab)
   ``nvidia/stt_zh_citrinet_1024_gamma_0_25``
+- ``zh-parakeet``: Parakeet CTC-XL 0.6B (Mandarin, 17k hours zh-CN/en-US,
+  7000-token SentencePiece vocab). Published on NGC under Riva:
+  ``nvidia/riva/parakeet-ctc-riva-0-6b-unified-zh-cn`` (NVIDIA Community
+  Model License). Fetch it with the NGC CLI:
+  ``ngc registry model download-version
+  nvidia/riva/parakeet-ctc-riva-0-6b-unified-zh-cn:trainable_v3.0``
+  then pass the extracted ``.nemo`` via ``--nemo``.
 
 Requirements (one-time, heavy):
 
@@ -40,6 +47,8 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -53,6 +62,7 @@ VARIANTS: dict[str, dict[str, str]] = {
         "revision": "main",
         "nemo_filename": "stt_tl_fastconformer_hybrid_large.nemo",
         "model_type": "EncDecHybridRNNTCTCBPEModel",
+        "license": "CC-BY-4.0",
     },
     "zh": {
         "model_id": "ncspeech-zh-citrinet-1024-gamma",
@@ -60,6 +70,16 @@ VARIANTS: dict[str, dict[str, str]] = {
         "revision": "main",
         "nemo_filename": "stt_zh_citrinet_1024_gamma_0_25.nemo",
         "model_type": "EncDecCTCModel",
+        "license": "CC-BY-4.0",
+    },
+    "zh-parakeet": {
+        "model_id": "ncspeech-zh-parakeet-ctc-0.6b",
+        "repo_id": "nvidia/riva/parakeet-ctc-riva-0-6b-unified-zh-cn",
+        "revision": "trainable_v3.0",
+        "nemo_filename": "Parakeet-Hybrid-XL-unified-0.6b_spe7k_zh-en-CN_3.0.nemo",
+        "model_type": "EncDecHybridRNNTCTCBPEModel",
+        "license": "NVIDIA Community Model License",
+        "source_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/models/parakeet-ctc-riva-0-6b-unified-zh-cn",
     },
 }
 
@@ -92,9 +112,9 @@ def write_manifest(target: Path, roles: dict[str, str], variant: dict[str, str])
         "schema_version": 1,
         "id": variant["model_id"],
         "kind": "asr",
-        "source": f"https://huggingface.co/{variant['repo_id']}",
+        "source": variant.get("source_url", f"https://huggingface.co/{variant['repo_id']}"),
         "revision": variant["revision"],
-        "license": {"spdx": "CC-BY-4.0"},
+        "license": {"spdx": variant["license"]},
         "artifacts": artifacts,
     }
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -102,13 +122,21 @@ def write_manifest(target: Path, roles: dict[str, str], variant: dict[str, str])
 
 def download_nemo(staging: Path, variant: dict[str, str]) -> Path:
     try:
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, list_repo_files
     except ImportError as error:
         raise ExportError("install the 'models' Python extra first") from error
+    filename = variant["nemo_filename"]
+    if not filename:
+        files = list_repo_files(repo_id=variant["repo_id"], revision=variant["revision"])
+        candidates = [candidate for candidate in files if candidate.endswith(".nemo")]
+        if not candidates:
+            raise ExportError(f"no .nemo archive found in {variant['repo_id']}")
+        filename = candidates[0]
+        print(f"Discovered archive in repo: {filename}")
     return Path(
         hf_hub_download(
             repo_id=variant["repo_id"],
-            filename=variant["nemo_filename"],
+            filename=filename,
             revision=variant["revision"],
             local_dir=staging / "download",
             cache_dir=staging / ".hf-cache",
@@ -119,9 +147,7 @@ def download_nemo(staging: Path, variant: dict[str, str]) -> Path:
 def export_ctc(nemo_path: Path, staging: Path, variant: dict[str, str]) -> Path:
     try:
         import nemo.collections.asr as nemo_asr
-        import onnx
         import torch
-        from onnxruntime.quantization import QuantType, quantize_dynamic
     except ImportError as error:
         raise ExportError(
             "NeMo export requires 'nemo_toolkit[asr]' and 'torch' in a build venv. "
@@ -138,7 +164,12 @@ def export_ctc(nemo_path: Path, staging: Path, variant: dict[str, str]) -> Path:
         else:
             asr_model = nemo_asr.models.ASRModel.from_pretrained(model_name=str(nemo_path))
         decoder_type = "ctc"
-        asr_model.change_decoding_strategy(decoder_type=decoder_type)
+        try:
+            asr_model.change_decoding_strategy(decoder_type=decoder_type)
+        except TypeError:
+            # Pure-CTC models (Citrinet) in NeMo >= 2.7 take a decoding config
+            # instead of a decoder_type keyword; their decoding is already CTC.
+            asr_model.change_decoding_strategy(decoding_cfg={"decoding_type": "greedy"})
         asr_model.eval()
         asr_model.set_export_config({"decoder_type": "ctc"})
         asr_model.export(str(output / "model.onnx"))
@@ -160,27 +191,41 @@ def export_ctc(nemo_path: Path, staging: Path, variant: dict[str, str]) -> Path:
     if normalize_type == "NA":
         normalize_type = ""
     metadata = {
-        "vocab_size": asr_model.decoder.vocab_size,
+        "vocab_size": len(vocabulary),
         "normalize_type": normalize_type,
         "subsampling_factor": 8,
         "model_type": variant["model_type"],
         "version": "1",
         "model_author": "NeMo",
-        "url": f"https://huggingface.co/{variant['repo_id']}",
+        "url": variant.get("source_url", f"https://huggingface.co/{variant['repo_id']}"),
         "comment": "Only the CTC branch is exported",
     }
-    onnx_model = onnx.load(model_onnx)
-    del onnx_model.metadata_props[:]
-    for key, value in metadata.items():
-        prop = onnx_model.metadata_props.add()
-        prop.key = key
-        prop.value = str(value)
-    onnx.save(onnx_model, model_onnx)
+    quant_onnx = output / "model.int8.onnx"
+    # Quantization must run in a fresh interpreter: NeMo's fp32 export uses
+    # external-data tensors and torch/nemo stay resident here, so a same-
+    # process quantize_dynamic of large checkpoints can exhaust memory and
+    # crash with an access violation. A helper subprocess loads only onnx/
+    # onnxruntime and also attaches metadata to the small int8 model (the
+    # fp32 graph exceeds protobuf's 2 GB serialization limit).
+    helper = r"""
+import json, sys
+import onnx
+from onnxruntime.quantization import QuantType, quantize_dynamic
 
-    quantize_dynamic(
-        model_input=str(model_onnx),
-        model_output=str(output / "model.int8.onnx"),
-        weight_type=QuantType.QUInt8,
+src, dst, metadata_json = sys.argv[1], sys.argv[2], sys.argv[3]
+quantize_dynamic(model_input=src, model_output=dst, weight_type=QuantType.QUInt8)
+model = onnx.load(dst)
+del model.metadata_props[:]
+for key, value in json.loads(metadata_json).items():
+    prop = model.metadata_props.add()
+    prop.key = key
+    prop.value = str(value)
+onnx.save(model, dst)
+print(f"quantized {src} -> {dst}")
+"""
+    subprocess.run(
+        [sys.executable, "-c", helper, str(model_onnx), str(quant_onnx), json.dumps(metadata)],
+        check=True,
     )
     return output
 

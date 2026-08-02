@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import hmac
 import json
+import logging
 import os
 import queue
 import threading
@@ -51,6 +52,31 @@ from local_squad_inference.vad import AudioUtterance, vad_config_from_sensitivit
 
 SendJson = Callable[[dict[str, object]], Awaitable[None]]
 
+logger = logging.getLogger("local_squad_inference.sidecar")
+
+
+def _configure_file_logging() -> None:
+    """Persist sidecar diagnostics to a local file so mid-session failures
+    are traceable. The desktop supervisor captures neither stdout nor stderr,
+    so without this, a worker exception mid-session would be invisible."""
+    local_app_data = os.environ.get("LOCALAPPDATA") or str(Path.home())
+    log_dir = Path(local_app_data) / "xTRSNLTR"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(
+        log_dir / "sidecar.log",
+        encoding="utf-8",
+        delay=True,
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+
+
+_configure_file_logging()
+
 # Provisional captions: do not decode before this much speech has accumulated,
 # then decode once per cadence while the utterance stays open. Both are VAD
 # thread clocks (monotonic).
@@ -58,10 +84,13 @@ PROVISIONAL_MIN_SPEECH_NS = 800_000_000
 PROVISIONAL_CADENCE_NS = 600_000_000
 
 
-@lru_cache(maxsize=1)
-def local_translation_provider() -> NllbCTranslate2Provider:
+@lru_cache(maxsize=4)
+def local_translation_provider(target_language: str = "en") -> NllbCTranslate2Provider:
     model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
-    return NllbCTranslate2Provider(model_root / "nllb-200-distilled-600M-ct2-int8")
+    return NllbCTranslate2Provider(
+        model_root / "nllb-200-distilled-600M-ct2-int8",
+        target_language=target_language,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -93,6 +122,7 @@ def local_whisper_provider(requested_model_id: str) -> FasterWhisperProvider:
 NCSpeech_MODEL_DIRS: dict[str, str] = {
     "ncspeech": "ncspeech-tl-fastconformer-hybrid-large",
     "ncspeech-zh": "ncspeech-zh-citrinet-1024-gamma",
+    "ncspeech-zh-parakeet": "ncspeech-zh-parakeet-ctc-0.6b",
 }
 
 
@@ -102,17 +132,19 @@ def local_ncspeech_provider(name: str) -> NemoCtcProvider:
     return NemoCtcProvider(model_root / NCSpeech_MODEL_DIRS[name])
 
 
-def build_translation_provider(name: str) -> TranslationProvider:
+def build_translation_provider(name: str, target_language: str = "en") -> TranslationProvider:
     """Return the configured translation provider. Defaults to local NLLB.
 
     NLLB-200-distilled-600M via CTranslate2 is the near-real-time default
-    (tens of milliseconds on CUDA); the heavier MADLAD candle runner remains
-    selectable. HTTP providers are opt-in: when selected, the recognized
-    source transcript (text only — never raw audio) is sent over HTTP to the
-    configured endpoint.
+    (tens of milliseconds on CUDA); target_language selects the output
+    language ("en" -> English, "zh" -> simplified Chinese) and applies to the
+    local NLLB provider and to the opt-in HTTP providers. The heavier MADLAD
+    candle runner remains selectable.
+    HTTP providers are opt-in: when selected, the recognized source transcript
+    (text only — never raw audio) is sent over HTTP to the configured endpoint.
     """
     if name in {"nllb", "local", ""}:
-        return local_translation_provider()
+        return local_translation_provider(target_language)
     if name in {"madlad"}:
         return madlad_translation_provider()
     if name in {"demo"}:
@@ -120,7 +152,7 @@ def build_translation_provider(name: str) -> TranslationProvider:
     factory = HTTP_PROVIDER_FACTORIES.get(name)
     if factory is None:
         raise HttpTranslationError(f"unknown HTTP translation provider: {name}")
-    return factory()
+    return factory(target_language=target_language)
 
 
 def build_asr_provider(name: str) -> AsrProvider:
@@ -138,7 +170,7 @@ def build_asr_provider(name: str) -> AsrProvider:
         return local_whisper_provider(requested)
     if name == "whisper-full":
         return local_whisper_provider("whisper-large-v3")
-    if name in {"ncspeech", "ncspeech-zh"}:
+    if name in {"ncspeech", "ncspeech-zh", "ncspeech-zh-parakeet"}:
         return local_ncspeech_provider(name)
     if name == "groq-whisper":
         return GroqWhisperProvider()
@@ -351,6 +383,7 @@ class LivePipelineWorker:
             try:
                 utterances = self._pipeline.feed_utterances(packet)
             except Exception as error:  # surfaced to the client as live.error
+                logger.exception("VAD feed failed: %s", error)
                 self._results.put(error)
                 continue
             for utterance in utterances:
@@ -358,6 +391,7 @@ class LivePipelineWorker:
             try:
                 snapshot = self._pipeline.provisional_utterance()
             except Exception as error:  # surfaced to the client as live.error
+                logger.exception("VAD provisional snapshot failed: %s", error)
                 self._results.put(error)
                 continue
             now_ns = time.monotonic_ns()
@@ -411,6 +445,7 @@ class LivePipelineWorker:
                 captions = self._pipeline.infer_utterances([job])
                 self._results.put(captions)
             except Exception as error:  # surfaced to the client as live.error
+                logger.exception("live inference failed: %s", error)
                 self._results.put(error)
 
 
@@ -639,6 +674,7 @@ async def handle_connection(
                         translation_provider = await asyncio.to_thread(
                             build_translation_provider,
                             live_request.translation_provider,
+                            live_request.target_language,
                         )
                     live_pipeline = LivePipeline(
                         asr_provider,
@@ -659,6 +695,7 @@ async def handle_connection(
                         )
                     )
                 except Exception as error:
+                    logger.exception("live start failed: %s", error)
                     await connection.send(
                         json.dumps(
                             envelope(
@@ -682,6 +719,7 @@ async def handle_connection(
                             control.session_id,
                             {
                                 "source_mode": live_request.source_mode,
+                                "target_language": live_request.target_language,
                                 "provider": live_request.provider,
                                 "resource_profile": live_request.resource_profile,
                                 "asr_model": getattr(asr_provider, "model_id", "demo-asr"),

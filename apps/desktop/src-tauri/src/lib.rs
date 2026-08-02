@@ -107,6 +107,7 @@ struct LiveStarted {
     provider: String,
     asr_model: String,
     source_mode: String,
+    target_language: String,
     resource_profile: String,
 }
 
@@ -118,9 +119,14 @@ struct LiveStartRequest {
     playback_endpoint_id: Option<String>,
     source_mode: String,
     provider: String,
+    /// Translation output language: "en" (English) or "zh" (simplified
+    /// Chinese); applies to the local NLLB provider.
+    #[serde(default = "default_target_language")]
+    target_language: String,
     /// ASR backend: "local"/"whisper-turbo" (large-v3-turbo), "whisper-full"
     /// (large-v3), "ncspeech" (NVIDIA FastConformer Tagalog), "ncspeech-zh"
-    /// (NVIDIA Citrinet-1024 Mandarin), or "groq-whisper".
+    /// (NVIDIA Citrinet-1024 Mandarin), "ncspeech-zh-parakeet" (NVIDIA
+    /// Parakeet-CTC 0.6B Mandarin), or "groq-whisper".
     #[serde(default)]
     asr_provider: String,
     /// Translation backend: "nllb" (local, near-real-time), "madlad" (local),
@@ -142,6 +148,10 @@ fn default_vad_sensitivity() -> u8 {
     50
 }
 
+fn default_target_language() -> String {
+    "en".to_string()
+}
+
 struct LiveWorkerConfig {
     endpoint_name: String,
     /// `Some(name)` when monitoring is enabled, otherwise `None`.
@@ -150,6 +160,7 @@ struct LiveWorkerConfig {
     provider: String,
     asr_provider: String,
     translation_provider: String,
+    target_language: String,
     resource_profile: String,
     /// True when the selected endpoint is a Render endpoint captured via WASAPI
     /// shared-mode loopback rather than a microphone capture stream.
@@ -176,6 +187,7 @@ struct LiveSnapshot {
     provider: Option<String>,
     asr_model: Option<String>,
     source_mode: Option<String>,
+    target_language: Option<String>,
     resource_profile: Option<String>,
     metrics: LiveMetrics,
     captions: Vec<CaptionPayload>,
@@ -247,19 +259,24 @@ let LiveStartRequest {
         provider,
         asr_provider,
         translation_provider,
+        target_language,
         resource_profile,
         monitor_enabled,
         vad_sensitivity,
     } = request;
-    if source_mode != "filipino" && source_mode != "chinese" {
-        return Err("V1 live mode supports Filipino or Chinese only".to_owned());
+    if source_mode != "filipino" && source_mode != "chinese" && source_mode != "english" {
+        return Err("V1 live mode supports Filipino, Chinese or English only".to_owned());
+    }
+    if target_language != "en" && target_language != "zh" {
+        return Err("target language must be en or zh".to_owned());
     }
     if !matches!(provider.as_str(), "demo" | "local" | "http") {
         return Err("live provider must be demo, local, or http".to_string());
     }
     if !matches!(
         asr_provider.as_str(),
-        "local" | "whisper-turbo" | "whisper-full" | "ncspeech" | "ncspeech-zh" | "groq-whisper"
+        "local" | "whisper-turbo" | "whisper-full" | "ncspeech" | "ncspeech-zh"
+            | "ncspeech-zh-parakeet" | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
     }
@@ -337,6 +354,7 @@ let LiveStartRequest {
         provider,
         asr_provider,
         translation_provider,
+        target_language,
         resource_profile,
         loopback,
         monitor_enabled,
@@ -828,11 +846,13 @@ fn audio_error_to_string(error: AudioError) -> String {
 }
 
 /// Applies the native window look for the control window on Windows 11:
-/// 1. Enables the Mica system backdrop (`DWMSBT_MAINWINDOW`). Unlike the
-///    acrylic `DWMSBT_TRANSIENTWINDOW` backdrop (a light surface that
-///    ignores window regions and painted the window as a white square),
-///    Mica is a dark frosted layer that follows the dark theme, stays
-///    rendered while the window is unfocused, and needs no region to clip.
+/// 1. Enables the acrylic system backdrop (`DWMSBT_TRANSIENTWINDOW`). Unlike
+///    Mica (`DWMSBT_MAINWINDOW`), which renders a static opaque light sheet,
+///    acrylic actually blurs the desktop behind the window. In dark theme it
+///    is dark frosted glass — the liquid-glass surface the UI tints over.
+///    It ignores window regions (hence the old white-square bug when a
+///    `SetWindowRgn` region was combined with it), but it respects native
+///    corner rounding.
 /// 2. Requests native corner rounding (`DWMWA_WINDOW_CORNER_PREFERENCE`), so
 ///    DWM rounds the window itself like any native app.
 /// Must be re-applied after window creation (DWM may reset attributes while
@@ -843,12 +863,13 @@ fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
         DwmSetWindowAttribute, DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE,
-        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMSBT_MAINWINDOW, DWMWCP_ROUND,
+        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMSBT_TRANSIENTWINDOW,
+        DWMWCP_ROUND,
     };
 
     let hwnd = HWND(window.hwnd().map_err(|error| error.to_string())?.0);
     unsafe {
-        let backdrop = DWMSBT_MAINWINDOW;
+        let backdrop = DWMSBT_TRANSIENTWINDOW;
         DwmSetWindowAttribute(
             hwnd,
             DWMWA_SYSTEMBACKDROP_TYPE,
@@ -903,6 +924,7 @@ fn run_live_worker(
         provider,
         asr_provider,
         translation_provider,
+        target_language,
         resource_profile,
         loopback,
         monitor_enabled,
@@ -921,6 +943,7 @@ fn run_live_worker(
         &provider,
         &asr_provider,
         &translation_provider,
+        &target_language,
         &resource_profile,
         vad_sensitivity,
     ) {
@@ -942,6 +965,7 @@ fn run_live_worker(
             .unwrap_or("unknown")
             .to_owned(),
         source_mode,
+        target_language,
         resource_profile,
     };
     if ready.send(Ok(started)).is_err() {
@@ -1018,12 +1042,14 @@ fn run_windows_live_loop(
         .map_err(audio_error_to_string)?;
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
+    let mut last_frame_at = Instant::now();
     loop {
         if stop.try_recv().is_ok() {
             return Ok(());
         }
         match capture.try_next().map_err(audio_error_to_string)? {
             Some(frame) => {
+                last_frame_at = Instant::now();
                 metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                 metrics.capture_drops = capture.dropped_frames();
                 if let Some(playback) = playback.as_mut() {
@@ -1045,10 +1071,21 @@ fn run_windows_live_loop(
                         .send_live_audio(frame.capture_monotonic_ns, samples)
                         .map_err(|error| error.to_string())?;
                     metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
-                    drain_live_captions(supervisor, events, &mut metrics)?;
                 }
             }
             None => thread::sleep(Duration::from_millis(4)),
+        }
+        // Always drain captions/errors, even while capture is quiet: a
+        // `live.error` from the sidecar must not sit unread inside the
+        // stalled-capture branch, or the session would hang "listening" with
+        // no visible failure.
+        drain_live_captions(supervisor, events, &mut metrics)?;
+        if last_frame_at.elapsed() >= Duration::from_millis(1500) {
+            return Err(format!(
+                "audio capture stalled: no frames for {:.1}s — the endpoint may have been \
+                 disconnected or disabled",
+                last_frame_at.elapsed().as_secs_f32()
+            ));
         }
         if last_metrics.elapsed() >= Duration::from_millis(500) {
             let _ = events.try_send(LiveWorkerEvent::Metrics(metrics.clone()));
@@ -1145,6 +1182,7 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         provider: started.map(|item| item.provider.clone()),
         asr_model: started.map(|item| item.asr_model.clone()),
         source_mode: started.map(|item| item.source_mode.clone()),
+        target_language: started.map(|item| item.target_language.clone()),
         resource_profile: started.map(|item| item.resource_profile.clone()),
         metrics: state.metrics.clone(),
         captions,

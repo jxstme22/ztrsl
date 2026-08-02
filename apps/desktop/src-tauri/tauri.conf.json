@@ -22,6 +22,7 @@
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
+        "theme": "Dark",
         "shadow": false
       },
       {
