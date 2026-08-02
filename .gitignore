@@ -22,6 +22,7 @@ __pycache__/
 
 # Local application data and sensitive diagnostics
 models/artifacts/
+models/staging/
 diagnostics/
 *.wav
 *.flac
