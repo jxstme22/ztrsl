@@ -303,7 +303,6 @@ class NemoCtcProvider:
 
 
 class FasterWhisperProvider:
-
     def __init__(self, model_dir: Path, *, model_id: str | None = None) -> None:
         manifest = verify_manifest(model_dir, model_dir / "manifest.json")
         try:

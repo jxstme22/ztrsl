@@ -144,9 +144,7 @@ class GroqWhisperProvider(AsrProvider):
     def __init__(self, config: GroqConfig | None = None) -> None:
         api_key = os.environ.get("LST_GROQ_API_KEY", "").strip()
         if not api_key:
-            raise HttpAsrError(
-                "Groq API key is missing (set LST_GROQ_API_KEY)"
-            )
+            raise HttpAsrError("Groq API key is missing (set LST_GROQ_API_KEY)")
         self._api_key = api_key
         self._config = config or GroqConfig()
 

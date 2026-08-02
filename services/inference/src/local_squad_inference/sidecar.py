@@ -67,9 +67,7 @@ def _configure_file_logging() -> None:
         encoding="utf-8",
         delay=True,
     )
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     root.addHandler(handler)
@@ -259,9 +257,7 @@ class LivePipelineWorker:
     ) -> None:
         self._pipeline = pipeline
         self._input: queue.Queue[AudioPacket | None] = queue.Queue(maxsize=max_pending)
-        self._jobs: queue.Queue[AudioUtterance | None] = queue.Queue(
-            maxsize=max_pending_utterances
-        )
+        self._jobs: queue.Queue[AudioUtterance | None] = queue.Queue(maxsize=max_pending_utterances)
         # Provisional decodes use a single latest-wins slot: a newer snapshot
         # of the same utterance supersedes an older pending one, and workers
         # drain this queue before the finals queue because provisionals are
@@ -344,9 +340,7 @@ class LivePipelineWorker:
                 # Final captions only: a pending provisional that never got a
                 # final must not surface as a dangling "Listening" entry.
                 captions.extend(
-                    caption
-                    for caption in result
-                    if getattr(caption, "status", "final") == "final"
+                    caption for caption in result if getattr(caption, "status", "final") == "final"
                 )
         return tuple(captions), self._dropped_packets
 
@@ -680,9 +674,7 @@ async def handle_connection(
                         asr_provider,
                         translation_provider,
                         source_mode=live_request.source_mode,
-                        vad_config=vad_config_from_sensitivity(
-                            live_request.vad_sensitivity
-                        ),
+                        vad_config=vad_config_from_sensitivity(live_request.vad_sensitivity),
                         use_silero=live_request.provider != "demo",
                     )
                     live_worker = LivePipelineWorker(live_pipeline)
@@ -741,14 +733,18 @@ async def handle_connection(
                         drain_task = None
                     captions, dropped_packets = live_worker.stop()
                     live_worker = None
-                    metrics = asdict(live_pipeline.metrics) if live_pipeline is not None else {
-                        "packets_received": 0,
-                        "utterances_completed": 0,
-                        "captions_emitted": 0,
-                        "low_confidence_captions": 0,
-                        "packets_dropped": 0,
-                        "utterances_dropped": 0,
-                    }
+                    metrics = (
+                        asdict(live_pipeline.metrics)
+                        if live_pipeline is not None
+                        else {
+                            "packets_received": 0,
+                            "utterances_completed": 0,
+                            "captions_emitted": 0,
+                            "low_confidence_captions": 0,
+                            "packets_dropped": 0,
+                            "utterances_dropped": 0,
+                        }
+                    )
                     metrics["packets_dropped"] = dropped_packets
                     live_pipeline = None
                 else:

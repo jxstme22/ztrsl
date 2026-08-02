@@ -81,9 +81,7 @@ def test_libretranslate_uses_zh_target(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["body"] = body
         return {"translatedText": "我们需要推进A点"}
 
-    monkeypatch.setattr(
-        "local_squad_inference.http_translation._http_post_json", fake_post
-    )
+    monkeypatch.setattr("local_squad_inference.http_translation._http_post_json", fake_post)
     monkeypatch.setenv("LST_LT_ENDPOINT", "https://example.test/translate")
     provider = LibreTranslateProvider(target_language="zh")
     result = provider.translate(_result())
@@ -100,9 +98,7 @@ def test_custom_http_uses_zh_target(monkeypatch: pytest.MonkeyPatch) -> None:
         captured["body"] = body
         return {"translatedText": "我们需要推进A点"}
 
-    monkeypatch.setattr(
-        "local_squad_inference.http_translation._http_post_json", fake_post
-    )
+    monkeypatch.setattr("local_squad_inference.http_translation._http_post_json", fake_post)
     monkeypatch.setenv("LST_CUSTOM_TX_ENDPOINT", "https://example.test/tx")
     provider = CustomHttpProvider(target_language="zh")
     result = provider.translate(_result())
@@ -119,22 +115,18 @@ def test_custom_http_template_gets_target_placeholder(monkeypatch: pytest.Monkey
         captured["body"] = body
         return {"translatedText": "我们需要推进A点"}
 
-    monkeypatch.setattr(
-        "local_squad_inference.http_translation._http_post_json", fake_post
-    )
+    monkeypatch.setattr("local_squad_inference.http_translation._http_post_json", fake_post)
     monkeypatch.setenv("LST_CUSTOM_TX_ENDPOINT", "https://example.test/tx")
-    monkeypatch.setenv(
-        "LST_CUSTOM_TX_BODY_TEMPLATE", '{"q": "{text}", "lang": "{target}"}'
-    )
+    monkeypatch.setenv("LST_CUSTOM_TX_BODY_TEMPLATE", '{"q": "{text}", "lang": "{target}"}')
     provider = CustomHttpProvider(target_language="zh")
     provider.translate(_result())
     assert captured["body"] == {"q": "Push A site now", "lang": "zh"}
 
 
 def test_factory_passes_target_language() -> None:
-    assert http_translation_provider("google-translate", "zh")._target == "zh-CN"
-    assert http_translation_provider("mymemory", "zh")._target == "zh-CN"
-    assert http_translation_provider("mymemory")._target == "en"
+    assert http_translation_provider("google-translate", "zh")._target == "zh-CN"  # type: ignore[attr-defined]
+    assert http_translation_provider("mymemory", "zh")._target == "zh-CN"  # type: ignore[attr-defined]
+    assert http_translation_provider("mymemory")._target == "en"  # type: ignore[attr-defined]
     with pytest.raises(HttpTranslationError):
         http_translation_provider("does-not-exist", "zh")
 

@@ -62,9 +62,7 @@ class LivePipeline:
         )
         self._manager = EnergyUtteranceManager(
             config,
-            SileroSpeechDetector(threshold=config.silero_threshold)
-            if use_silero
-            else None,
+            SileroSpeechDetector(threshold=config.silero_threshold) if use_silero else None,
         )
         self._stream_origin_ns: int | None = None
         self._clock_origin_ns: int | None = None
@@ -106,9 +104,7 @@ class LivePipeline:
             self._packets_received += 1
         return self._manager.feed(packet.samples)
 
-    def infer_utterances(
-        self, utterances: list[AudioUtterance]
-    ) -> tuple[CaptionPayload, ...]:
+    def infer_utterances(self, utterances: list[AudioUtterance]) -> tuple[CaptionPayload, ...]:
         """ASR + translation for completed utterances. Safe to call from
         several inference threads concurrently."""
         return tuple(
@@ -133,9 +129,7 @@ class LivePipeline:
     def flush(self) -> tuple[CaptionPayload, ...]:
         return self.infer_utterances(self._manager.flush())
 
-    def _transcribe_utterance(
-        self, utterance: AudioUtterance
-    ) -> CaptionPayload | None:
+    def _transcribe_utterance(self, utterance: AudioUtterance) -> CaptionPayload | None:
         provisional = not utterance.is_final
         transcript = self._asr.transcribe(utterance, self._source_mode)
         with self._metrics_lock:
@@ -182,7 +176,7 @@ class LivePipeline:
 
         MAX_CAPTION_LENGTH = 7990
 
-# … (the function stays the same, unchanged code above)
+        # … (the function stays the same, unchanged code above)
 
         origin_ns = self._clock_origin_ns or time.monotonic_ns()
         ended_ns = origin_ns + utterance.ended_ns

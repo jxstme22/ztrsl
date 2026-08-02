@@ -1,4 +1,5 @@
 import json
+import platform
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,9 +50,7 @@ class FakeTranslator:
 
     def translate_batch(self, source: list[list[str]], **kwargs: Any) -> list[Any]:
         self.calls.append({"source": source, **kwargs})
-        return [
-            SimpleNamespace(hypotheses=[["eng_Latn", "▁They", "▁are", "▁on", "▁A", "."]])
-        ]
+        return [SimpleNamespace(hypotheses=[["eng_Latn", "▁They", "▁are", "▁on", "▁A", "."]])]
 
 
 class FakeCTranslate2Module:
@@ -146,6 +145,10 @@ def nllb_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str,
     return {"ct2": ct2, "tok": tok}, model_dir
 
 
+@pytest.mark.skipif(
+    platform.system() != "Windows",
+    reason="CUDA is deliberately enabled only on Windows in this codebase",
+)
 def test_nllb_provider_uses_cuda_when_available(nllb_env: tuple[dict[str, Any], Path]) -> None:
     modules, model_dir = nllb_env
     provider = NllbCTranslate2Provider(model_dir)

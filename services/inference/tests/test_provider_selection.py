@@ -1,3 +1,4 @@
+import pytest
 
 from local_squad_inference.http_asr import GroqWhisperProvider
 from local_squad_inference.providers import (
@@ -6,13 +7,13 @@ from local_squad_inference.providers import (
 from local_squad_inference.sidecar import build_asr_provider
 
 
-def test_build_asr_provider_aliases(monkeypatch) -> None:
+def test_build_asr_provider_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeWhisper:
-        def __init__(self, model_dir, **kwargs) -> None:
+        def __init__(self, model_dir: object, **kwargs: object) -> None:
             pass
 
     class FakeNemo:
-        def __init__(self, model_dir, **kwargs) -> None:
+        def __init__(self, model_dir: object, **kwargs: object) -> None:
             pass
 
     import local_squad_inference.sidecar as sidecar

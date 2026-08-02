@@ -15,9 +15,7 @@ from local_squad_inference.vad import AudioUtterance
 
 
 def make_utterance() -> AudioUtterance:
-    samples = tuple(
-        0.8 * math.sin(2 * math.pi * 1000 * i / 16_000) for i in range(5_120)
-    )
+    samples = tuple(0.8 * math.sin(2 * math.pi * 1000 * i / 16_000) for i in range(5_120))
     return AudioUtterance(
         utterance_id="u-groq-1",
         pcm_f32=samples,

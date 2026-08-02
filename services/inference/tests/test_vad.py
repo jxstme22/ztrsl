@@ -98,12 +98,14 @@ def test_higher_sensitivity_lowers_gates_and_silence() -> None:
 
 
 def test_sensitivity_clamps_out_of_range() -> None:
-    assert vad_config_from_sensitivity(1000).silero_threshold == vad_config_from_sensitivity(
-        100
-    ).silero_threshold
-    assert vad_config_from_sensitivity(-20).min_silence_ms == vad_config_from_sensitivity(
-        0
-    ).min_silence_ms
+    assert (
+        vad_config_from_sensitivity(1000).silero_threshold
+        == vad_config_from_sensitivity(100).silero_threshold
+    )
+    assert (
+        vad_config_from_sensitivity(-20).min_silence_ms
+        == vad_config_from_sensitivity(0).min_silence_ms
+    )
 
 
 def test_energy_detector_rejects_non_finite_frames() -> None:
@@ -118,7 +120,7 @@ def test_silero_detector_recovers_from_poisoned_state(monkeypatch: pytest.Monkey
     """A NaN hidden/cell state would permanently silence the VAD; the
     detector must reset instead so the next frame can recover."""
     import numpy
-    import onnxruntime
+    import onnxruntime  # type: ignore[import-untyped]
 
     class FakeSession:
         def __init__(self, _path: str, **_: object) -> None:

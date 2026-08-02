@@ -15,6 +15,7 @@ import os
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -132,15 +133,11 @@ class LibreTranslateProvider(TranslationProvider):
     def __init__(self, target_language: str = "en") -> None:
         endpoint = os.environ.get("LST_LT_ENDPOINT", "").strip()
         if not endpoint:
-            raise HttpTranslationError(
-                "LibreTranslate endpoint is missing (set LST_LT_ENDPOINT)"
-            )
+            raise HttpTranslationError("LibreTranslate endpoint is missing (set LST_LT_ENDPOINT)")
         self._endpoint = endpoint
         self._api_key = os.environ.get("LST_LT_API_KEY") or None
         self._source = os.environ.get("LST_LT_SOURCE", "auto")
-        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
-            target_language, target_language
-        )
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(target_language, target_language)
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
@@ -196,13 +193,9 @@ class GoogleTranslateProvider(TranslationProvider):
 
     def __init__(self, target_language: str = "en") -> None:
         # Allow overriding endpoint for testing or self-hosted Google-compatible proxies.
-        self._endpoint = os.environ.get(
-            "LST_GOOGLE_TX_ENDPOINT", self.ENDPOINT
-        )
+        self._endpoint = os.environ.get("LST_GOOGLE_TX_ENDPOINT", self.ENDPOINT)
         self._source = os.environ.get("LST_GOOGLE_TX_SOURCE", self.DEFAULT_SOURCE)
-        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
-            target_language, target_language
-        )
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(target_language, target_language)
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
@@ -225,9 +218,7 @@ class GoogleTranslateProvider(TranslationProvider):
             # Google returns nested arrays: [["<translated chunk>","<source chunk>",...],...].
             chunks = parsed[0] if isinstance(parsed, list) and parsed else []
             parts = [
-                str(chunk[0])
-                for chunk in chunks
-                if isinstance(chunk, list) and chunk and chunk[0]
+                str(chunk[0]) for chunk in chunks if isinstance(chunk, list) and chunk and chunk[0]
             ]
             english_text = "".join(parts).strip()
             if not english_text:
@@ -242,8 +233,15 @@ class GoogleTranslateProvider(TranslationProvider):
                 inference_ms=(time.perf_counter() - started) * 1_000.0,
                 provider_id=self.PROVIDER_ID,
             )
-        except (HttpTranslationError, OSError, ValueError, KeyError,
-                json.JSONDecodeError, IndexError, TypeError) as error:
+        except (
+            HttpTranslationError,
+            OSError,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+            IndexError,
+            TypeError,
+        ) as error:
             return _placeholder(
                 result,
                 f"[Google Translate unavailable: {error}]",
@@ -265,9 +263,7 @@ class MyMemoryProvider(TranslationProvider):
         self._endpoint = os.environ.get("LST_MYMEMORY_ENDPOINT", self.ENDPOINT)
         self._source = os.environ.get("LST_MYMEMORY_SOURCE", "autodetect")
         self._de = os.environ.get("LST_MYMEMORY_EMAIL") or None
-        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
-            target_language, target_language
-        )
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(target_language, target_language)
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
@@ -319,23 +315,23 @@ class CustomHttpProvider(TranslationProvider):
     def __init__(self, target_language: str = "en") -> None:
         endpoint = os.environ.get("LST_CUSTOM_TX_ENDPOINT", "").strip()
         if not endpoint:
-            raise HttpTranslationError(
-                "custom HTTP endpoint missing (set LST_CUSTOM_TX_ENDPOINT)"
-            )
+            raise HttpTranslationError("custom HTTP endpoint missing (set LST_CUSTOM_TX_ENDPOINT)")
         self._endpoint = endpoint
         self._api_key = os.environ.get("LST_CUSTOM_TX_API_KEY") or None
         self._template = os.environ.get("LST_CUSTOM_TX_BODY_TEMPLATE")
-        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(
-            target_language, target_language
-        )
+        self._target = HTTP_TARGET_CODES[self.PROVIDER_ID].get(target_language, target_language)
 
     def translate(self, result: AsrResult) -> TranslationResult:
         if not result.text:
             return _ok(result, "", inference_ms=0.0, provider_id=self.PROVIDER_ID)
         if self._template:
-            body_str = self._template.replace(
-                "{text}", result.text.replace("\\", "\\\\").replace('"', '\\"')
-            ).replace("{source}", "auto").replace("{target}", self._target)
+            body_str = (
+                self._template.replace(
+                    "{text}", result.text.replace("\\", "\\\\").replace('"', '\\"')
+                )
+                .replace("{source}", "auto")
+                .replace("{target}", self._target)
+            )
             try:
                 body = json.loads(body_str)
             except json.JSONDecodeError as error:
@@ -359,9 +355,7 @@ class CustomHttpProvider(TranslationProvider):
                 api_key=self._api_key,
             )
             english_text = (
-                data.get("translatedText")
-                or data.get("translation")
-                or data.get("englishText")
+                data.get("translatedText") or data.get("translation") or data.get("englishText")
             )
             if not isinstance(english_text, str):
                 # Fall back to any string value present under common keys.
@@ -390,7 +384,7 @@ class CustomHttpProvider(TranslationProvider):
             )
 
 
-HTTP_PROVIDER_FACTORIES: dict[str, type[TranslationProvider]] = {
+HTTP_PROVIDER_FACTORIES: dict[str, Callable[..., TranslationProvider]] = {
     "libretranslate": LibreTranslateProvider,
     "google-translate": GoogleTranslateProvider,
     "mymemory": MyMemoryProvider,

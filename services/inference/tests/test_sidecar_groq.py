@@ -128,9 +128,7 @@ def test_groq_live_session_produces_caption(
                 )
             assert started["type"] == "live.started"
 
-            for sequence, amplitude in enumerate(
-                (0.3, 0.3, 0.3, 0.0, 0.0, 0.0), start=1
-            ):
+            for sequence, amplitude in enumerate((0.3, 0.3, 0.3, 0.0, 0.0, 0.0), start=1):
                 packet = AudioPacket(
                     session_id=b"0123456789abcdef",
                     sequence=sequence,

@@ -126,7 +126,7 @@ def test_worker_survives_slow_inference_with_bounded_drops() -> None:
         )
 
     pipeline = SlowPipeline()
-    worker = LivePipelineWorker(pipeline, max_pending=2)
+    worker = LivePipelineWorker(pipeline, max_pending=2)  # type: ignore[arg-type]
     for sequence in range(1, 13):
         worker.submit(packet(sequence))
     time.sleep(0.3)
@@ -141,13 +141,13 @@ def test_worker_delivers_results_in_order_and_never_blocks() -> None:
         def feed_utterances(self, packet: AudioPacket) -> list[tuple[int]]:
             return [(packet.sequence,)]
 
-        def infer_utterances(self, utterances: list[tuple[int]]) -> tuple[int]:
+        def infer_utterances(self, utterances: list[tuple[int]]) -> tuple[int, ...]:
             return tuple(utterance[0] for utterance in utterances)
 
-        def flush_utterances(self) -> list[()]:
+        def flush_utterances(self) -> list[tuple[int, ...]]:
             return []
 
-        def flush(self) -> list[()]:
+        def flush(self) -> list[tuple[int, ...]]:
             return []
 
         def note_utterances_dropped(self, count: int) -> None:
@@ -156,7 +156,7 @@ def test_worker_delivers_results_in_order_and_never_blocks() -> None:
         def provisional_utterance(self) -> None:
             return None
 
-    worker = LivePipelineWorker(EmittingPipeline(), max_pending=4, num_inference=1)
+    worker = LivePipelineWorker(EmittingPipeline(), max_pending=4, num_inference=1)  # type: ignore[arg-type]
     for sequence in range(1, 4):
         worker.submit(
             AudioPacket(
@@ -169,7 +169,7 @@ def test_worker_delivers_results_in_order_and_never_blocks() -> None:
                 samples=(0.1,) * 5120,
             )
         )
-    results: list[int] = []
+    results: list[object] = []
     deadline = time.monotonic() + 2.0
     while len(results) < 3 and time.monotonic() < deadline:
         result = worker.poll()
@@ -190,15 +190,15 @@ def test_worker_vad_stays_realtime_while_inference_is_slow() -> None:
             self.fed += 1
             return [(packet.sequence,)]
 
-        def infer_utterances(self, utterances: list[tuple[int]]) -> tuple[tuple[int]]:
+        def infer_utterances(self, utterances: list[tuple[int]]) -> tuple[tuple[int, ...], ...]:
             self.inferred += len(utterances)
             time.sleep(0.25)
             return tuple(utterances)
 
-        def flush_utterances(self) -> list[()]:
+        def flush_utterances(self) -> list[tuple[int, ...]]:
             return []
 
-        def flush(self) -> list[()]:
+        def flush(self) -> list[tuple[int, ...]]:
             return []
 
         def note_utterances_dropped(self, count: int) -> None:
@@ -208,7 +208,7 @@ def test_worker_vad_stays_realtime_while_inference_is_slow() -> None:
             return None
 
     pipeline = SlowInferPipeline()
-    worker = LivePipelineWorker(pipeline, max_pending=8, num_inference=2)
+    worker = LivePipelineWorker(pipeline, max_pending=8, num_inference=2)  # type: ignore[arg-type]
     for sequence in range(1, 7):
         worker.submit(
             AudioPacket(
@@ -355,9 +355,7 @@ def test_live_second_burst_still_detected_while_first_is_inferring() -> None:
 
             finals: list[dict[str, Any]] = []
             while len(finals) < 2:
-                message = json.loads(
-                    await asyncio.wait_for(websocket.recv(), timeout=5.0)
-                )
+                message = json.loads(await asyncio.wait_for(websocket.recv(), timeout=5.0))
                 # Provisional captions stream while each burst is still
                 # open; only the finals are collected here.
                 assert message["type"] in ("caption.provisional", "caption.final")

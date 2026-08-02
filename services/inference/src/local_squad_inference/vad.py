@@ -119,9 +119,11 @@ class SileroSpeechDetector:
         self._hidden = hidden
         self._cell = cell
         self._context = audio[:, -self.context_samples :]
-        if not math.isfinite(probability) or not bool(
-            self._numpy.isfinite(hidden).all()
-        ) or not bool(self._numpy.isfinite(cell).all()):
+        if (
+            not math.isfinite(probability)
+            or not bool(self._numpy.isfinite(hidden).all())
+            or not bool(self._numpy.isfinite(cell).all())
+        ):
             # A poisoned recurrent state never recovers on its own: NaN
             # propagates through every later frame and turns all speech into
             # silence, so the session silently goes deaf mid-conversation.
@@ -133,9 +135,7 @@ class SileroSpeechDetector:
     def _reset_state(self) -> None:
         self._hidden = self._numpy.zeros((1, 1, 128), dtype=self._numpy.float32)
         self._cell = self._numpy.zeros((1, 1, 128), dtype=self._numpy.float32)
-        self._context = self._numpy.zeros(
-            (1, self.context_samples), dtype=self._numpy.float32
-        )
+        self._context = self._numpy.zeros((1, self.context_samples), dtype=self._numpy.float32)
 
 
 class EnergyUtteranceManager:
@@ -197,9 +197,7 @@ class EnergyUtteranceManager:
             return None
         samples = tuple(self._active)
         started_ns = self._active_started_sample * 1_000_000_000 // SAMPLE_RATE
-        ended_ns = (
-            self._active_started_sample + len(samples)
-        ) * 1_000_000_000 // SAMPLE_RATE
+        ended_ns = (self._active_started_sample + len(samples)) * 1_000_000_000 // SAMPLE_RATE
         return AudioUtterance(
             utterance_id=f"clip-utterance-{self._utterance_sequence + 1}",
             pcm_f32=samples,
