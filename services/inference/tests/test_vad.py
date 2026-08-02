@@ -119,6 +119,8 @@ def test_energy_detector_rejects_non_finite_frames() -> None:
 def test_silero_detector_recovers_from_poisoned_state(monkeypatch: pytest.MonkeyPatch) -> None:
     """A NaN hidden/cell state would permanently silence the VAD; the
     detector must reset instead so the next frame can recover."""
+    pytest.importorskip("numpy")
+    pytest.importorskip("onnxruntime")
     import numpy
     import onnxruntime
 
@@ -150,6 +152,7 @@ def test_silero_detector_recovers_from_poisoned_state(monkeypatch: pytest.Monkey
 
 
 def test_silero_detector_rejects_non_finite_samples(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("onnxruntime")
     import onnxruntime
 
     class NeverCalled:
