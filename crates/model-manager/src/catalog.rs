@@ -80,8 +80,10 @@ pub struct CatalogArchive {
 }
 
 /// Serializable view of a catalog entry for the frontend (no secrets, only
-/// what the confirmation dialog needs).
+/// what the confirmation dialog needs). Keys are camelCase to match the
+/// TypeScript Zod schemas consumed by the Tauri webview.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogEntryView {
     pub id: String,
     pub name: String,
@@ -207,6 +209,29 @@ mod tests {
         let catalog = ModelCatalog::embedded();
         for view in catalog.view() {
             assert!(!view.id.contains("key") && !view.source.contains("token="));
+        }
+    }
+
+    #[test]
+    fn view_serializes_camel_case_keys_for_the_webview() {
+        let catalog = ModelCatalog::embedded();
+        let serialized = serde_json::to_value(catalog.view()).expect("view serializes");
+        let models = serialized.as_array().expect("view is an array");
+        assert!(!models.is_empty());
+        for model in models {
+            let object = model.as_object().expect("model is an object");
+            for key in [
+                "licenseSpdx",
+                "licenseNotice",
+                "downloadSizeBytes",
+                "fileCount",
+            ] {
+                assert!(
+                    object.contains_key(key),
+                    "view must expose {key} (camelCase), got keys: {keys}",
+                    keys = object.keys().cloned().collect::<Vec<_>>().join(", ")
+                );
+            }
         }
     }
 }
