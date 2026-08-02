@@ -36,6 +36,17 @@ WHISPER_TURBO_ID = "whisper-large-v3-turbo"
 WHISPER_TURBO_REPO = "dropbox-dash/faster-whisper-large-v3-turbo"
 WHISPER_TURBO_REVISION = "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
 
+NLLB_ID = "nllb-200-distilled-600M-ct2-int8"
+NLLB_REPO = "mijuanlo/nllb-200-distilled-600M-ct2-int8"
+NLLB_REVISION = "16bc5ff0482f9f1c0d35bdef950721ce58640789"
+NLLB_MANIFEST = "nllb-200-distilled-600M-ct2-int8.json"
+NLLB_FILES = (
+    "config.json",
+    "model.bin",
+    "shared_vocabulary.json",
+    "tokenizer.json",
+)
+
 WHISPER_SPECS: dict[str, dict[str, str]] = {
     WHISPER_ID: {
         "repo": WHISPER_REPO,
@@ -245,17 +256,58 @@ def install_whisper(model_id: str = WHISPER_ID) -> None:
     print(f"Installed and verified {model_id}")
 
 
+def install_nllb() -> None:
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as error:
+        raise InstallError("install the 'models' Python extra first") from error
+    ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as temporary:
+        staging = Path(temporary)
+        target_staging = staging / NLLB_ID
+        snapshot_download(
+            repo_id=NLLB_REPO,
+            revision=NLLB_REVISION,
+            allow_patterns=list(NLLB_FILES),
+            local_dir=target_staging,
+            cache_dir=staging / ".hf-cache",
+        )
+        for filename in NLLB_FILES:
+            if not (target_staging / filename).is_file():
+                raise InstallError(f"NLLB snapshot is missing {filename}")
+        verify_committed_manifest(target_staging, NLLB_MANIFEST)
+        write_manifest(
+            target_staging,
+            model_id=NLLB_ID,
+            kind="translation",
+            source=f"https://huggingface.co/{NLLB_REPO}",
+            revision=NLLB_REVISION,
+            license_spdx="CC-BY-NC-4.0",
+            roles={
+                "model": "model.bin",
+                "tokenizer": "tokenizer.json",
+                "vocabulary": "shared_vocabulary.json",
+                "config": "config.json",
+            },
+        )
+        destination = ARTIFACT_ROOT / NLLB_ID
+        if destination.exists():
+            shutil.rmtree(destination)
+        target_staging.replace(destination)
+    print(f"Installed and verified {NLLB_ID}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Explicit verified local model installer")
     parser.add_argument(
         "model",
-        choices=("asr", "whisper", "whisper-turbo", "madlad", "all"),
+        choices=("asr", "whisper", "whisper-turbo", "madlad", "nllb", "all"),
     )
     parser.add_argument("--archive", type=Path, help="verified ASR archive already on disk")
     parser.add_argument(
         "--accept-license",
         action="store_true",
-        help="confirm the Apache-2.0 model licenses have been reviewed",
+        help="confirm the model licenses have been reviewed",
     )
     arguments = parser.parse_args()
     if not arguments.accept_license:
@@ -268,6 +320,8 @@ def main() -> None:
         install_whisper(WHISPER_TURBO_ID)
     if arguments.model in {"madlad", "all"}:
         install_madlad()
+    if arguments.model in {"nllb", "all"}:
+        install_nllb()
 
 
 if __name__ == "__main__":

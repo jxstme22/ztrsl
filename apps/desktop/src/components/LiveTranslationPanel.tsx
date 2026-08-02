@@ -2,16 +2,18 @@ import { LoaderCircle, Play, Square } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
-import type { Caption } from "../overlay/model";
 import { useLiveTranslation } from "../live/useLiveTranslation";
 import { setTranslationEnv } from "../live/bridge";
 import type { AsrProvider, TranslationProvider } from "../live/bridge";
+import { Select } from "./Select";
+import type { SelectOption } from "./Select";
 
 type AudioController = ReturnType<typeof useAudioMeter>;
+type LiveController = ReturnType<typeof useLiveTranslation>;
 
 type LiveTranslationPanelProps = {
   audio: AudioController;
-  onCaption: (caption: Caption) => void;
+  live: LiveController;
 };
 
 const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
@@ -47,6 +49,7 @@ function loadAsrProvider(): AsrProvider {
     stored === "whisper-turbo" ||
     stored === "whisper-full" ||
     stored === "ncspeech" ||
+    stored === "ncspeech-zh" ||
     stored === "groq-whisper"
   ) {
     return stored;
@@ -69,6 +72,7 @@ function loadVadSensitivity(): number {
 function loadTranslationProvider(): TranslationProvider {
   const stored = window.localStorage.getItem(TRANSLATION_PROVIDER_KEY);
   if (
+    stored === "nllb" ||
     stored === "madlad" ||
     stored === "libretranslate" ||
     stored === "google-translate" ||
@@ -77,7 +81,7 @@ function loadTranslationProvider(): TranslationProvider {
   ) {
     return stored;
   }
-  return "madlad";
+  return "nllb";
 }
 
 function setEnvVar(name: string, value: string) {
@@ -118,11 +122,7 @@ async function pushProviderEnv(
   await setTranslationEnv(pairs);
 }
 
-export function LiveTranslationPanel({
-  audio,
-  onCaption,
-}: LiveTranslationPanelProps) {
-  const live = useLiveTranslation(onCaption);
+export function LiveTranslationPanel({ audio, live }: LiveTranslationPanelProps) {
   const [inputEndpointId, setInputEndpointId] = useState<string | null>(
     () => loadStored(INPUT_ENDPOINT_KEY),
   );
@@ -169,6 +169,31 @@ export function LiveTranslationPanel({
     () => endpoints.filter((endpoint) => endpoint.kind === "render"),
     [endpoints],
   );
+
+  const channelOptions = useMemo<SelectOption[]>(() => {
+    const options: SelectOption[] = [];
+    const activeCapture = captureInputs.filter((endpoint) => endpoint.state === "active");
+    const activeLoopback = loopbackInputs.filter((endpoint) => endpoint.state === "active");
+    if (activeCapture.length > 0) {
+      options.push(
+        ...activeCapture.map((endpoint) => ({
+          value: endpoint.id,
+          label: endpoint.friendlyName,
+          group: "Microphones (your voice)",
+        })),
+      );
+    }
+    if (activeLoopback.length > 0) {
+      options.push(
+        ...activeLoopback.map((endpoint) => ({
+          value: endpoint.id,
+          label: `${endpoint.friendlyName} · loopback`,
+          group: "Loopback (game / teammate mix — no mic)",
+        })),
+      );
+    }
+    return options;
+  }, [captureInputs, loopbackInputs]);
 
   const selectedInput =
     endpoints.find((endpoint) => endpoint.id === inputEndpointId) ?? null;
@@ -317,7 +342,8 @@ export function LiveTranslationPanel({
                     inputEndpointId,
                     monitorEnabled ? playbackEndpointId : null,
                     asrProvider !== "groq-whisper" &&
-                      translationProvider === "madlad"
+                    (translationProvider === "madlad" ||
+                      translationProvider === "nllb")
                       ? (isSimulator ? "demo" : "local")
                       : "http",
                     monitorEnabled,
@@ -361,106 +387,84 @@ export function LiveTranslationPanel({
       <div className="live-grid">
         <div className="field span-2">
           <label htmlFor="live-input">Voice-chat channel</label>
-          <select
+          <Select
             id="live-input"
-            aria-label="Voice-chat channel"
+            label="Voice-chat channel"
             value={inputEndpointId ?? ""}
+            options={channelOptions}
             disabled={listening || busy}
-            onChange={(event) => {
-              setInput(event.currentTarget.value || null);
+            placeholder="Choose incoming communications…"
+            onChange={(value) => {
+              setInput(value || null);
             }}
-          >
-            <option value="">Choose incoming communications…</option>
-            {captureInputs.length > 0 && (
-              <optgroup label="Microphones (your voice)">
-                {captureInputs.map((endpoint) => (
-                  <option
-                    key={endpoint.id}
-                    value={endpoint.id}
-                    disabled={endpoint.state !== "active"}
-                  >
-                    {endpoint.friendlyName}
-                    {endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {loopbackInputs.length > 0 && (
-              <optgroup label="Loopback (game / teammate mix — no mic)">
-                {loopbackInputs.map((endpoint) => (
-                  <option
-                    key={endpoint.id}
-                    value={endpoint.id}
-                    disabled={endpoint.state !== "active"}
-                  >
-                    {`${endpoint.friendlyName} · loopback`}
-                    {endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+          />
         </div>
 
         <div className="field">
           <label htmlFor="live-language">Source language</label>
-          <select
+          <Select
             id="live-language"
-            aria-label="Source language"
+            label="Source language"
             value={sourceMode}
             disabled={listening || busy}
-            onChange={(event) => {
-              changeSourceMode(
-                event.currentTarget.value as "filipino" | "chinese",
-              );
+            onChange={(value) => {
+              changeSourceMode(value as "filipino" | "chinese");
             }}
-          >
-            <option value="filipino">Filipino / Taglish</option>
-            <option value="chinese">Chinese (Mandarin/Cantonese)</option>
-          </select>
+            options={[
+              { value: "filipino", label: "Filipino / Taglish" },
+              { value: "chinese", label: "Chinese (Mandarin/Cantonese)" },
+            ]}
+          />
         </div>
 
         <div className="field">
           <label htmlFor="live-asr">Speech recognition</label>
-          <select
+          <Select
             id="live-asr"
-            aria-label="Speech recognition source"
+            label="Speech recognition source"
             value={asrProvider}
             disabled={listening || busy}
-            onChange={(event) => {
-              changeAsrProvider(event.currentTarget.value as AsrProvider);
+            onChange={(value) => {
+              changeAsrProvider(value as AsrProvider);
             }}
-          >
-            <option value="whisper-turbo">Local Whisper large-v3-turbo (fast)</option>
-            <option value="whisper-full">Local Whisper large-v3 (full)</option>
-            <option value="ncspeech">NCSpeech FastConformer (Tagalog)</option>
-            <option value="groq-whisper">Groq Whisper (free API)</option>
-          </select>
+            options={[
+              { value: "whisper-turbo", label: "Local Whisper large-v3-turbo (fast)" },
+              { value: "whisper-full", label: "Local Whisper large-v3 (full)" },
+              { value: "ncspeech", label: "NCSpeech FastConformer (Tagalog)" },
+              { value: "ncspeech-zh", label: "NCSpeech Citrinet-1024 (Mandarin)" },
+              { value: "groq-whisper", label: "Groq Whisper (free API)" },
+            ]}
+          />
         </div>
 
         <div className="field">
           <label htmlFor="live-translation">Translation source</label>
-          <select
+          <Select
             id="live-translation"
-            aria-label="Translation source"
+            label="Translation source"
             value={translationProvider}
             disabled={listening || busy}
-            onChange={(event) => {
-              changeTranslationProvider(
-                event.currentTarget.value as TranslationProvider,
-              );
+            onChange={(value) => {
+              changeTranslationProvider(value as TranslationProvider);
             }}
-          >
-            <option value="madlad">Local MADLAD (offline, private)</option>
-            <option value="google-translate">
-              Google Translate (free, unofficial endpoint)
-            </option>
-            <option value="libretranslate">
-              LibreTranslate (any instance URL)
-            </option>
-            <option value="mymemory">MyMemory (free, daily quota)</option>
-            <option value="custom-http">Custom HTTP endpoint</option>
-          </select>
+            options={[
+              {
+                value: "nllb",
+                label: "Local NLLB (offline, near-real-time, GPU)",
+              },
+              { value: "madlad", label: "Local MADLAD (offline, slower)" },
+              {
+                value: "google-translate",
+                label: "Google Translate (free, unofficial endpoint)",
+              },
+              {
+                value: "libretranslate",
+                label: "LibreTranslate (any instance URL)",
+              },
+              { value: "mymemory", label: "MyMemory (free, daily quota)" },
+              { value: "custom-http", label: "Custom HTTP endpoint" },
+            ]}
+          />
         </div>
 
         <div className="field">
@@ -605,27 +609,22 @@ export function LiveTranslationPanel({
       {monitorEnabled && (
         <div className="field">
           <label htmlFor="live-playback">Monitoring output</label>
-          <select
+          <Select
             id="live-playback"
-            aria-label="Monitoring output"
+            label="Monitoring output"
             value={playbackEndpointId ?? ""}
             disabled={listening || busy}
-            onChange={(event) => {
-              setPlayback(event.currentTarget.value || null);
+            placeholder="Choose where to hear friends…"
+            onChange={(value) => {
+              setPlayback(value || null);
             }}
-          >
-            <option value="">Choose where to hear friends…</option>
-            {audio.renderEndpoints.map((endpoint) => (
-              <option
-                key={endpoint.id}
-                value={endpoint.id}
-                disabled={endpoint.state !== "active"}
-              >
-                {endpoint.friendlyName}
-                {endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}
-              </option>
-            ))}
-          </select>
+            options={audio.renderEndpoints
+              .filter((endpoint) => endpoint.state === "active")
+              .map((endpoint) => ({
+                value: endpoint.id,
+                label: endpoint.friendlyName,
+              }))}
+          />
         </div>
       )}
 

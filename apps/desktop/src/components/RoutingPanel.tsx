@@ -1,6 +1,7 @@
 import { AudioLines, Headphones, Square } from "lucide-react";
 
 import { useRoutingTest } from "../routing/useRoutingTest";
+import { Select } from "./Select";
 
 export function RoutingPanel() {
   const routing = useRoutingTest();
@@ -37,20 +38,19 @@ export function RoutingPanel() {
           <label htmlFor="routing-capture">
             {isSimulator ? "Generated input" : "Capture source"}
           </label>
-          <select
+          <Select
             id="routing-capture"
+            label={isSimulator ? "Generated input" : "Capture source"}
             value={routing.captureId}
-            onChange={(event) => {
-              routing.setCaptureId(event.currentTarget.value);
+            placeholder="Choose capture…"
+            onChange={(value) => {
+              routing.setCaptureId(value);
             }}
-          >
-            <option value="">Choose capture…</option>
-            {routing.captures.map((endpoint) => (
-              <option key={endpoint.id} value={endpoint.id}>
-                {endpoint.friendlyName}
-              </option>
-            ))}
-          </select>
+            options={routing.captures.map((endpoint) => ({
+              value: endpoint.id,
+              label: endpoint.friendlyName,
+            }))}
+          />
         </div>
         <div className="route-arrow" aria-hidden="true">
           →
@@ -59,20 +59,19 @@ export function RoutingPanel() {
           <label htmlFor="routing-playback">
             {isSimulator ? "Silent output sink" : "Monitoring output"}
           </label>
-          <select
+          <Select
             id="routing-playback"
+            label={isSimulator ? "Silent output sink" : "Monitoring output"}
             value={routing.playbackId}
-            onChange={(event) => {
-              routing.setPlaybackId(event.currentTarget.value);
+            placeholder="Choose headphones…"
+            onChange={(value) => {
+              routing.setPlaybackId(value);
             }}
-          >
-            <option value="">Choose headphones…</option>
-            {routing.playbacks.map((endpoint) => (
-              <option key={endpoint.id} value={endpoint.id}>
-                {endpoint.friendlyName}
-              </option>
-            ))}
-          </select>
+            options={routing.playbacks.map((endpoint) => ({
+              value: endpoint.id,
+              label: endpoint.friendlyName,
+            }))}
+          />
         </div>
       </div>
 

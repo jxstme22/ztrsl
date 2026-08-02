@@ -9,6 +9,7 @@ import {
   type SourceMode,
 } from "../clip/model";
 import { isDesktopRuntime } from "../overlay/bridge";
+import { Select } from "./Select";
 
 const ACCEPTED_EXTENSIONS = /\.(aac|flac|m4a|mkv|mov|mp3|mp4|ogg|wav|webm)$/i;
 
@@ -97,34 +98,38 @@ export function ClipLabPanel() {
             <strong>{displayName}</strong>
           </span>
         </button>
-        <label className="field" htmlFor="clip-language">
-          Source speech
-          <select
+        <div className="field">
+          <label htmlFor="clip-language">Source speech</label>
+          <Select
             id="clip-language"
+            label="Source speech"
             value={sourceMode}
-            onChange={(event) => {
-              setSourceMode(event.currentTarget.value as SourceMode);
+            onChange={(value) => {
+              setSourceMode(value as SourceMode);
             }}
-          >
-            <option value="mixed">Tagalog-first mixed / code-switched</option>
-            <option value="filipino">Filipino / Taglish</option>
-            <option value="cebuano">Cebuano / Bislish</option>
-            <option value="chinese">Chinese (Mandarin/Cantonese)</option>
-          </select>
-        </label>
-        <label className="field" htmlFor="clip-provider">
-          Inference
-          <select
+            options={[
+              { value: "mixed", label: "Tagalog-first mixed / code-switched" },
+              { value: "filipino", label: "Filipino / Taglish" },
+              { value: "cebuano", label: "Cebuano / Bislish" },
+              { value: "chinese", label: "Chinese (Mandarin/Cantonese)" },
+            ]}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="clip-provider">Inference</label>
+          <Select
             id="clip-provider"
+            label="Inference"
             value={provider}
-            onChange={(event) => {
-              setProvider(event.currentTarget.value as "demo" | "local");
+            onChange={(value) => {
+              setProvider(value as "demo" | "local");
             }}
-          >
-            <option value="demo">Demo plumbing</option>
-            <option value="local">Verified local models</option>
-          </select>
-        </label>
+            options={[
+              { value: "demo", label: "Demo plumbing" },
+              { value: "local", label: "Verified local models" },
+            ]}
+          />
+        </div>
       </div>
 
       {error !== null && (

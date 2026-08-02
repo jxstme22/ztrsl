@@ -14,6 +14,10 @@ one inference runtime into the desktop process.
 Start with a local Python 3.11+ sidecar behind typed provider interfaces. IPC will bind to loopback,
 authenticate with a random per-launch token, enforce limits, and shut down deterministically.
 
+Translation runs in-process inside the sidecar via CTranslate2 (NLLB-200-distilled-600M, int8, CUDA
+when available, CPU fallback). The native Rust candle `translation-runner` (MADLAD-400-3B) remains
+selectable as a CPU-only reference path but is no longer the default.
+
 ## Consequences
 
 Packaging is larger and IPC increases attack surface. Tests retain fake providers and must never

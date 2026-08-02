@@ -1,27 +1,37 @@
-"""One-time NCSpeech FastConformer (Tagalog) -> CTC ONNX export.
+"""One-time NVIDIA NeMo ASR -> CTC ONNX export (NCSpeech Tagalog / Mandarin).
 
-NCSpeech ships only as a PyTorch ``.nemo`` archive, so before the local
-provider can decode it with sherpa-onnx we must export the CTC branch to ONNX
-once. This tool performs that export and writes a verified manifest.
+NVIDIA's ASR checkpoints ship only as PyTorch ``.nemo`` archives, so before
+the local provider can decode them with sherpa-onnx we must export the CTC
+branch to ONNX once. This tool performs that export and writes a verified
+manifest for each supported variant.
+
+Supported variants:
+
+- ``tl`` (default): NCSpeech FastConformer hybrid (Tagalog)
+  ``NCSpeech/stt_tl_fastconformer_hybrid_large``
+- ``zh``: Citrinet-1024 CTC (Mandarin, AISHELL-2 character vocab)
+  ``nvidia/stt_zh_citrinet_1024_gamma_0_25``
 
 Requirements (one-time, heavy):
 
 - ``pip install "nemo_toolkit[asr]>=2.0.0" torch`` into a build venv
   (NOT the runtime inference venv; see AGENTS.md dependency pinning).
-- ~2-3 GB free disk for torch/nemo plus the ~460 MB model archive.
+- ~2-3 GB free disk for torch/nemo plus the ~460-560 MB model archive.
 
 Usage:
 
-    .venv-build\\Scripts\\python scripts\\export_ncspeech_onnx.py
+    .venv-build\\Scripts\\python scripts\\export_ncspeech_onnx.py --variant tl
+    .venv-build\\Scripts\\python scripts\\export_ncspeech_onnx.py --variant zh
 
-Outputs into ``models/artifacts/ncspeech-tl-fastconformer-hybrid-large/``:
+Outputs into ``models/artifacts/<model-id>/``:
 
 - ``model.int8.onnx``  (quantized CTC branch, consumed by sherpa-onnx)
 - ``tokens.txt``       (CTC vocabulary)
 - ``manifest.json``    (checksummed artifact manifest)
 
-License: CC-BY-4.0 (NVIDIA NCSpeech speech models). Verify at
-https://huggingface.co/NCSpeech/stt_tl_fastconformer_hybrid_large
+License: CC-BY-4.0 (NVIDIA speech models). Verify at
+https://huggingface.co/NCSpeech/stt_tl_fastconformer_hybrid_large and
+https://huggingface.co/nvidia/stt_zh_citrinet_1024_gamma_0_25
 """
 
 from __future__ import annotations
@@ -35,11 +45,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = ROOT / "models" / "artifacts"
-MODEL_ID = "ncspeech-tl-fastconformer-hybrid-large"
-REPO_ID = "NCSpeech/stt_tl_fastconformer_hybrid_large"
-REVISION = "main"
-NEMO_FILENAME = "stt_tl_fastconformer_hybrid_large.nemo"
-SOURCE = f"https://huggingface.co/{REPO_ID}"
+
+VARIANTS: dict[str, dict[str, str]] = {
+    "tl": {
+        "model_id": "ncspeech-tl-fastconformer-hybrid-large",
+        "repo_id": "NCSpeech/stt_tl_fastconformer_hybrid_large",
+        "revision": "main",
+        "nemo_filename": "stt_tl_fastconformer_hybrid_large.nemo",
+        "model_type": "EncDecHybridRNNTCTCBPEModel",
+    },
+    "zh": {
+        "model_id": "ncspeech-zh-citrinet-1024-gamma",
+        "repo_id": "nvidia/stt_zh_citrinet_1024_gamma_0_25",
+        "revision": "main",
+        "nemo_filename": "stt_zh_citrinet_1024_gamma_0_25.nemo",
+        "model_type": "EncDecCTCModel",
+    },
+}
 
 
 class ExportError(RuntimeError):
@@ -54,7 +76,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def write_manifest(target: Path, roles: dict[str, str]) -> None:
+def write_manifest(target: Path, roles: dict[str, str], variant: dict[str, str]) -> None:
     artifacts = []
     for role, relative in roles.items():
         artifact = target / relative
@@ -68,33 +90,33 @@ def write_manifest(target: Path, roles: dict[str, str]) -> None:
         )
     manifest = {
         "schema_version": 1,
-        "id": MODEL_ID,
+        "id": variant["model_id"],
         "kind": "asr",
-        "source": SOURCE,
-        "revision": REVISION,
+        "source": f"https://huggingface.co/{variant['repo_id']}",
+        "revision": variant["revision"],
         "license": {"spdx": "CC-BY-4.0"},
         "artifacts": artifacts,
     }
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
-def download_nemo(staging: Path) -> Path:
+def download_nemo(staging: Path, variant: dict[str, str]) -> Path:
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as error:
         raise ExportError("install the 'models' Python extra first") from error
     return Path(
         hf_hub_download(
-            repo_id=REPO_ID,
-            filename=NEMO_FILENAME,
-            revision=REVISION,
+            repo_id=variant["repo_id"],
+            filename=variant["nemo_filename"],
+            revision=variant["revision"],
             local_dir=staging / "download",
             cache_dir=staging / ".hf-cache",
         )
     )
 
 
-def export_ctc(nemo_path: Path, staging: Path) -> Path:
+def export_ctc(nemo_path: Path, staging: Path, variant: dict[str, str]) -> Path:
     try:
         import nemo.collections.asr as nemo_asr
         import onnx
@@ -121,11 +143,18 @@ def export_ctc(nemo_path: Path, staging: Path) -> Path:
         asr_model.set_export_config({"decoder_type": "ctc"})
         asr_model.export(str(output / "model.onnx"))
 
+        # Hybrid models expose the CTC vocabulary on `joint`; pure-CTC models
+        # (Citrinet) expose it on `decoder`.
+        if hasattr(asr_model, "joint"):
+            vocabulary = asr_model.joint.vocabulary
+        else:
+            vocabulary = asr_model.decoder.vocabulary
+
     model_onnx = output / "model.onnx"
     with open(output / "tokens.txt", "w", encoding="utf-8") as tokens:
-        for i, symbol in enumerate(asr_model.joint.vocabulary):
+        for i, symbol in enumerate(vocabulary):
             tokens.write(f"{symbol} {i}\n")
-        tokens.write(f"<blk> {len(asr_model.joint.vocabulary)}\n")
+        tokens.write(f"<blk> {len(vocabulary)}\n")
 
     normalize_type = asr_model.cfg.preprocessor.normalize
     if normalize_type == "NA":
@@ -134,10 +163,10 @@ def export_ctc(nemo_path: Path, staging: Path) -> Path:
         "vocab_size": asr_model.decoder.vocab_size,
         "normalize_type": normalize_type,
         "subsampling_factor": 8,
-        "model_type": "EncDecHybridRNNTCTCBPEModel",
+        "model_type": variant["model_type"],
         "version": "1",
         "model_author": "NeMo",
-        "url": SOURCE,
+        "url": f"https://huggingface.co/{variant['repo_id']}",
         "comment": "Only the CTC branch is exported",
     }
     onnx_model = onnx.load(model_onnx)
@@ -159,9 +188,15 @@ def export_ctc(nemo_path: Path, staging: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--variant",
+        choices=sorted(VARIANTS),
+        default="tl",
+        help="which NeMo checkpoint to export (default: tl)",
+    )
+    parser.add_argument(
         "--accept-license",
         action="store_true",
-        help="confirm the CC-BY-4.0 NCSpeech model license has been reviewed",
+        help="confirm the CC-BY-4.0 NVIDIA model license has been reviewed",
     )
     parser.add_argument(
         "--nemo",
@@ -173,14 +208,16 @@ def main() -> None:
         raise SystemExit("Pass --accept-license after reviewing the CC-BY-4.0 license.")
     if shutil.which("ffmpeg") is None:
         raise ExportError("ffmpeg is required by NeMo audio decoding")
+    variant = VARIANTS[args.variant]
+    model_id = variant["model_id"]
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as temporary:
         staging = Path(temporary)
-        nemo_path = args.nemo or download_nemo(staging)
+        nemo_path = args.nemo or download_nemo(staging, variant)
         if not nemo_path.is_file():
             raise ExportError(f"Nemo archive not found: {nemo_path}")
-        output = export_ctc(nemo_path, staging)
-        target_staging = staging / MODEL_ID
+        output = export_ctc(nemo_path, staging, variant)
+        target_staging = staging / model_id
         target_staging.mkdir()
         for filename in ("model.int8.onnx", "tokens.txt"):
             candidate = output / filename
@@ -190,12 +227,13 @@ def main() -> None:
         write_manifest(
             target_staging,
             roles={"model": "model.int8.onnx", "tokens": "tokens.txt"},
+            variant=variant,
         )
-        destination = ARTIFACT_ROOT / MODEL_ID
+        destination = ARTIFACT_ROOT / model_id
         if destination.exists():
             shutil.rmtree(destination)
         target_staging.replace(destination)
-    print(f"Installed and verified {MODEL_ID}")
+    print(f"Installed and verified {model_id}")
 
 
 if __name__ == "__main__":

@@ -4,11 +4,16 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+
+async function chooseOption(combobox: HTMLElement, optionName: string) {
+  fireEvent.click(combobox);
+  const option = await screen.findByRole("option", { name: optionName });
+  fireEvent.click(option);
+}
 
 describe("control window", () => {
   beforeEach(() => {
@@ -23,14 +28,11 @@ describe("control window", () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: "Translation console" }),
+      screen.getByRole("navigation", { name: "Sections" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Private by default")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "No cloud processing, recording, transcript history, telemetry, or game-process access.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Live" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Diagnostics" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
     expect(
       screen.getByText("Capture meter only · no playback · no recording"),
@@ -53,14 +55,12 @@ describe("control window", () => {
     const voiceInput = screen.getByRole("combobox", {
       name: /Voice-chat channel/,
     });
-    await within(voiceInput).findByRole("option", {
-      name: "Generated voice signal (macOS simulator)",
-    });
     expect(start).toBeDisabled();
 
-    fireEvent.change(voiceInput, {
-      target: { value: "synthetic://phase-2-meter" },
-    });
+    await chooseOption(
+      voiceInput,
+      "Generated voice signal (macOS simulator)",
+    );
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: "Start listening" }),
@@ -83,12 +83,10 @@ describe("control window", () => {
     const voiceInput = screen.getByRole("combobox", {
       name: /Voice-chat channel/,
     });
-    await within(voiceInput).findByRole("option", {
-      name: "Generated voice signal (macOS simulator)",
-    });
-    fireEvent.change(voiceInput, {
-      target: { value: "synthetic://phase-2-meter" },
-    });
+    await chooseOption(
+      voiceInput,
+      "Generated voice signal (macOS simulator)",
+    );
 
     const monitorToggle = screen.getByRole("checkbox", {
       name: /Monitor captured audio/,
@@ -101,9 +99,10 @@ describe("control window", () => {
     const start = screen.getByRole("button", { name: "Start listening" });
     expect(start).toBeDisabled();
 
-    fireEvent.change(monitoringOutput, {
-      target: { value: "synthetic://phase-3-headphones" },
-    });
+    await chooseOption(
+      monitoringOutput,
+      "Silent test sink (macOS simulator)",
+    );
     await waitFor(() => {
       expect(start).toBeEnabled();
     });
@@ -118,12 +117,10 @@ describe("control window", () => {
     const selector = screen.getByRole("combobox", {
       name: "Capture endpoint",
     });
-    await within(selector).findByRole("option", {
-      name: "Generated voice signal (macOS simulator)",
-    });
-    fireEvent.change(selector, {
-      target: { value: "synthetic://phase-2-meter" },
-    });
+    await chooseOption(
+      selector,
+      "Generated voice signal (macOS simulator)",
+    );
     expect(start).toBeEnabled();
     fireEvent.click(start);
 
@@ -166,18 +163,8 @@ describe("control window", () => {
     const playback = screen.getByRole("combobox", {
       name: "Silent output sink",
     });
-    await within(capture).findByRole("option", {
-      name: "Generated voice signal (macOS simulator)",
-    });
-    await within(playback).findByRole("option", {
-      name: "Silent test sink (macOS simulator)",
-    });
-    fireEvent.change(capture, {
-      target: { value: "synthetic://phase-2-meter" },
-    });
-    fireEvent.change(playback, {
-      target: { value: "synthetic://phase-3-headphones" },
-    });
+    await chooseOption(capture, "Generated voice signal (macOS simulator)");
+    await chooseOption(playback, "Silent test sink (macOS simulator)");
     expect(start).toBeEnabled();
     fireEvent.click(start);
 
@@ -208,7 +195,7 @@ describe("control window", () => {
 
   it("keeps clip inference honestly labeled in browser demo mode", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "Clip Lab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
     fireEvent.click(
       screen.getByRole("button", {

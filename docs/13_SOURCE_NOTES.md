@@ -47,6 +47,31 @@ At research time:
 - examples use target tokens such as `<2pt>`;
 - exact language support and English target behavior must be validated with the pinned model and fixtures;
 - Transformers version compatibility must be pinned because APIs evolve.
+- In this app it is served by the Rust candle `translation-runner` (CPU only,
+  ~50 s per caption) and is selectable, not the default.
+
+## NLLB-200 (default translation)
+
+Official/model documentation:
+
+- upstream: https://huggingface.co/facebook/nllb-200-distilled-600M
+- CTranslate2 conversion used in production:
+  https://huggingface.co/mijuanlo/nllb-200-distilled-600M-ct2-int8
+  (pinned revision `16bc5ff0482f9f1c0d35bdef950721ce58640789`)
+
+Notes:
+
+- license CC-BY-NC-4.0 (non-commercial); acceptance via
+  `install_models.py nllb --accept-license`;
+- the official `ctranslate2/nllb-200-distilled-600M` repo is gated (HTTP 401);
+- community conversion `osa911/nllb-200-distilled-600M-ct2-int8` was rejected:
+  its SentencePiece vocabulary contains placeholder tokens (`madeupword0/1`)
+  and produced garbage translations;
+- lang tokens are injected manually (`tgl_Latn` source prefix, `eng_Latn`
+  target prefix); without the source token the model defaults to French;
+- use the HF fast tokenizer (`tokenizer.json`), not raw SentencePiece: the
+  fast tokenizer appends `</s>` to encoder input, which is required for
+  correct output.
 
 ## Silero VAD
 

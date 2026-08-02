@@ -153,6 +153,92 @@ def test_live_pipeline_skips_silent_empty_transcript_without_error() -> None:
     assert pipeline.metrics.captions_emitted == 0
 
 
+def test_live_pipeline_emits_provisional_then_final_with_increasing_revisions() -> None:
+    pipeline = LivePipeline(
+        FakeAsr(),
+        FakeTranslation(),
+        vad_config=VadConfig(
+            frame_ms=30,
+            min_speech_ms=60,
+            pre_roll_ms=60,
+            min_silence_ms=90,
+            max_utterance_ms=1_000,
+        ),
+        use_silero=False,
+    )
+
+    pipeline.feed(packet(1, (0.1,) * 4_800))
+    snapshot = pipeline.provisional_utterance()
+    assert snapshot is not None
+    assert snapshot.is_final is False
+
+    provisionals = pipeline.infer_utterances([snapshot])
+    assert len(provisionals) == 1
+    first = provisionals[0]
+    assert first.status == "provisional"
+    assert first.revision == 1
+    assert first.ended_monotonic_ns is None
+    assert pipeline.metrics.captions_emitted == 0
+
+    later = pipeline.provisional_utterance()
+    assert later is not None
+    second = pipeline.infer_utterances([later])[0]
+    assert second.status == "provisional"
+    assert second.revision == 2
+    assert second.utterance_id == first.utterance_id
+
+    finals = pipeline.feed(packet(2, (0.0,) * 4_800))
+    assert len(finals) == 1
+    final = finals[0]
+    assert final.status == "final"
+    assert final.utterance_id == first.utterance_id
+    # The final always outranks the last provisional so the UI replaces it.
+    assert final.revision > second.revision
+    assert final.ended_monotonic_ns is not None
+    assert pipeline.metrics.captions_emitted == 1
+    assert pipeline.metrics.utterances_completed == 1
+    assert pipeline.provisional_utterance() is None
+
+
+def test_live_pipeline_drops_silent_provisional_without_emitting_failure() -> None:
+    class EmptyAsr:
+        model_id = "fake-asr"
+
+        def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
+            return AsrResult(
+                utterance_id=utterance.utterance_id,
+                text="",
+                source_mode=source_mode,
+                is_final=False,
+                inference_ms=0.0,
+                model_id=self.model_id,
+                confidence=None,
+            )
+
+    pipeline = LivePipeline(
+        EmptyAsr(),
+        FakeTranslation(),
+        vad_config=VadConfig(
+            frame_ms=30,
+            min_speech_ms=60,
+            pre_roll_ms=60,
+            min_silence_ms=90,
+            max_utterance_ms=1_000,
+        ),
+        use_silero=False,
+    )
+
+    pipeline.feed(packet(1, (0.1,) * 4_800))
+    snapshot = pipeline.provisional_utterance()
+    assert snapshot is not None
+    assert pipeline.infer_utterances([snapshot]) == ()
+
+    finals = pipeline.feed(packet(2, (0.0,) * 4_800))
+    assert finals == ()
+    assert pipeline.metrics.captions_emitted == 0
+    assert pipeline.metrics.utterances_completed == 1
+
+
 def test_live_pipeline_rejects_wrong_audio_format() -> None:
     pipeline = LivePipeline(FakeAsr(), FakeTranslation(), use_silero=False)
     invalid = packet(1, (0.0,) * 320).model_copy(update={"sample_rate": 48_000})

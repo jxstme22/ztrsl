@@ -57,13 +57,32 @@ remain research candidates for Cebuano and comparison benchmarks.
 
 ### Translation
 
-Default family:
+Default family (ADR-002, updated with near-real-time default):
+
+```text
+facebook/nllb-200-distilled-600M
+```
+
+Served locally via CTranslate2 (`mijuanlo/nllb-200-distilled-600M-ct2-int8`,
+pinned revision, int8; CUDA when available, CPU fallback). ~600 MB, tens of ms
+per caption on CUDA. Language tokens are injected manually because CTranslate2
+`translate_batch` has no `source_lang_code`/`target_lang_code` kwargs: source is
+prefixed with `tgl_Latn` and the target prefix is `eng_Latn`. The HF fast
+tokenizer (`tokenizer.json`) must be used instead of raw SentencePiece — the
+fast tokenizer appends `</s>` to encoder input, which SentencePiece does not.
+License CC-BY-NC-4.0 (non-commercial).
+
+Selectable legacy default:
 
 ```text
 google/madlad400-3b-mt
 ```
 
-Target English token:
+Served by the Rust candle translation-runner on CPU only, ~50 s per caption.
+Kept selectable for offline use without a local translation model or as a
+reference benchmark.
+
+Target English token (MADLAD path only):
 
 ```text
 <2en>

@@ -68,7 +68,7 @@ Sidecar → desktop:
     "models": {
       "vad": "silero-vad",
       "asr": "omni-ctc-300m-int8",
-      "translation": "madlad-400-3b"
+      "translation": "nllb-200-distilled-600M-ct2-int8"
     }
   }
 }
@@ -182,7 +182,7 @@ Version settings with migrations.
   "models": {
     "profile": "balanced",
     "asr_model": "omni-ctc-300m-int8",
-    "translation_model": "madlad-400-3b-q4"
+    "translation_model": "nllb-200-distilled-600M-ct2-int8"
   },
   "overlay": {
     "enabled": true,

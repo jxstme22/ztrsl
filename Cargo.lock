@@ -2370,6 +2370,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-global-shortcut",
  "tracing",
+ "windows 0.61.3",
 ]
 
 [[package]]

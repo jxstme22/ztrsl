@@ -9,6 +9,7 @@ import {
 let browserListening = false;
 
 export type TranslationProvider =
+  | "nllb"
   | "madlad"
   | "libretranslate"
   | "google-translate"
@@ -20,6 +21,7 @@ export type AsrProvider =
   | "whisper-turbo"
   | "whisper-full"
   | "ncspeech"
+  | "ncspeech-zh"
   | "groq-whisper";
 
 export async function setTranslationEnv(

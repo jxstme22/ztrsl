@@ -75,16 +75,18 @@ class LiveStartPayload(StrictModel):
         "whisper-turbo",
         "whisper-full",
         "ncspeech",
+        "ncspeech-zh",
         "groq-whisper",
     ] = "local"
     translation_provider: Literal[
+        "nllb",
         "madlad",
         "demo",
         "libretranslate",
         "google-translate",
         "mymemory",
         "custom-http",
-    ] = "madlad"
+    ] = "nllb"
     resource_profile: Literal["balanced", "quality"] = "quality"
     vad_sensitivity: int = Field(default=50, ge=0, le=100)
 

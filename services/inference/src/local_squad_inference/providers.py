@@ -7,18 +7,67 @@ import json
 import math
 import os
 import platform
+import re
 import subprocess
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, ClassVar, Protocol, cast
 
 from local_squad_inference.vad import AudioUtterance
 
 
 class ModelUnavailableError(RuntimeError):
     pass
+
+
+# Whisper sometimes "hears" boilerplate outro/announcer phrases in loud
+# non-speech audio (game music, menu SFX, launch sounds) even when the VAD
+# triggered on noise. These are near-universal hallucinations; a segment whose
+# text reduces to exactly one of these phrases is dropped instead of being
+# shown as a caption. Real speech is never an exact match in isolation.
+HALLUCINATION_PHRASES: frozenset[str] = frozenset(
+    {
+        "thanks for watching",
+        "thank you for watching",
+        "thanks for listening",
+        "thank you",
+        "thank you so much",
+        "please subscribe",
+        "please like and subscribe",
+        "like and subscribe",
+        "subscribe for more",
+        "get into the game",
+        "get in the game",
+    }
+)
+
+# Faster-whisper reports per-segment no_speech_prob; segments above this are
+# overwhelmingly not speech (silence, clicks, fan noise) and only feed the
+# hallucination patterns above.
+NO_SPEECH_PROB_LIMIT = 0.6
+
+
+def is_hallucination(text: str) -> bool:
+    normalized = " ".join(re.sub(r"[^\w\s]", "", text).lower().split())
+    return normalized in HALLUCINATION_PHRASES
+
+
+def keep_asr_segment(segment: object) -> bool:
+    """Drop empty, non-speech, and pure-hallucination ASR segments.
+
+    ``segment`` is any object exposing ``text`` (whisper-style) and an
+    optional ``no_speech_prob``; kept separate so it can be unit-tested
+    without loading whisper.
+    """
+    text = str(getattr(segment, "text", "") or "").strip()
+    if not text:
+        return False
+    no_speech_prob = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
+    if no_speech_prob >= NO_SPEECH_PROB_LIMIT:
+        return False
+    return not is_hallucination(text)
 
 
 # Maps the app's source_mode identifiers to Whisper ISO-639-1 language tokens
@@ -184,15 +233,17 @@ class SherpaOmnilingualProvider:
         )
 
 
-class NemoCtcTagalogProvider:
-    """NVIDIA NCSpeech FastConformer (Tagalog, hybrid CTC export) via sherpa-onnx.
+class NemoCtcProvider:
+    """NVIDIA NeMo CTC ASR (NCSpeech Tagalog, Citrinet-1024 Mandarin) via sherpa-onnx.
 
     The runtime consumes the CTC ONNX export produced by
     ``scripts/export_ncspeech_onnx.py``; ``sherpa-onnx`` does the decoding.
+    The artifact id is read from the verified manifest.
     """
 
     def __init__(self, model_dir: Path, num_threads: int = 4) -> None:
         manifest = verify_manifest(model_dir, model_dir / "manifest.json")
+        self._model_id = cast(str, manifest["id"])
         artifacts = cast(list[dict[str, object]], manifest["artifacts"])
         paths = {
             cast(str, artifact["role"]): model_dir / cast(str, artifact["path"])
@@ -217,7 +268,7 @@ class NemoCtcTagalogProvider:
             )
         except (KeyError, RuntimeError, TypeError) as error:
             raise ModelUnavailableError(
-                "NCSpeech Tagalog model could not load (exported ONNX required)"
+                "NCSpeech CTC model could not load (exported ONNX required)"
             ) from error
 
     def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
@@ -234,7 +285,7 @@ class NemoCtcTagalogProvider:
             source_mode=source_mode,
             is_final=True,
             inference_ms=elapsed_ms,
-            model_id="ncspeech-tl-fastconformer-hybrid-large",
+            model_id=self._model_id,
             confidence=None,
         )
 
@@ -304,7 +355,7 @@ class FasterWhisperProvider:
             word_timestamps=False,
             temperature=0.0,
         )
-        materialized = [segment for segment in segments if segment.text.strip()]
+        materialized = [segment for segment in segments if keep_asr_segment(segment)]
         elapsed_ms = (time.perf_counter() - started) * 1_000
         text = " ".join(str(segment.text).strip() for segment in materialized).strip()
         confidences = [
@@ -337,7 +388,7 @@ class FasterWhisperProvider:
             condition_on_previous_text=False,
             word_timestamps=False,
         )
-        materialized = [segment for segment in segments if segment.text.strip()]
+        materialized = [segment for segment in segments if keep_asr_segment(segment)]
         elapsed_ms = (time.perf_counter() - started) * 1_000
         per_segment_ms = elapsed_ms / max(len(materialized), 1)
         return tuple(
@@ -466,6 +517,124 @@ class MadladTranslationProvider:
         )
 
 
+class NllbCTranslate2Provider:
+    """Near-real-time local translation via CTranslate2 + NLLB-200-distilled-600M.
+
+    The int8 conversion loads in under a second and translates a short
+    utterance in tens of milliseconds on CUDA (or ~200ms on CPU), replacing
+    the MADLAD candle runner (~50s per caption) so captions land within
+    about a second of speech ending.
+
+    NLLB has no ctranslate2 ``source/target_lang_code`` arguments, so the
+    language is injected manually: the source is prefixed with the source
+    language token and the target language token is forced as the decoder
+    prefix. The ``tokenizer.json`` (fast tokenizer) must be used instead of
+    raw SentencePiece because the model expects the trailing ``</s>``.
+    """
+
+    MODEL_ID = "nllb-200-distilled-600M-ct2-int8"
+    TARGET_LANG = "eng_Latn"
+    MAX_SOURCE_CHARS = 2000
+
+    # NLLB-200 source language tokens per app source_mode. Mandarin is
+    # injected as simplified-script `zho_Hans` (AISHELL-2 transcripts are
+    # simplified); the Latin-script tokens cover Tagalog/Cebuano.
+    SOURCE_LANGS: ClassVar[dict[str, str]] = {
+        "filipino": "tgl_Latn",
+        "cebuano": "tgl_Latn",
+        "mixed": "tgl_Latn",
+        "chinese": "zho_Hans",
+    }
+
+    def __init__(self, model_dir: Path) -> None:
+        verify_manifest(model_dir, model_dir / "manifest.json")
+        try:
+            ctranslate2 = importlib.import_module("ctranslate2")
+            tokenizers = importlib.import_module("tokenizers")
+        except ImportError as error:
+            raise ModelUnavailableError(
+                "ctranslate2 and tokenizers are required for local translation"
+            ) from error
+        configured_device = os.environ.get("LST_TRANSLATION_DEVICE")
+        if configured_device:
+            device = configured_device
+        elif platform.system() == "Windows" and ctranslate2.get_cuda_device_count() > 0:
+            device = "cuda"
+        else:
+            device = "cpu"
+        compute_type = os.environ.get("LST_TRANSLATION_COMPUTE_TYPE", "int8")
+        try:
+            self._translator: Any = ctranslate2.Translator(
+                str(model_dir.resolve()),
+                device=device,
+                compute_type=compute_type,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ModelUnavailableError("NLLB translation model could not load") from error
+        try:
+            self._tokenizer: Any = tokenizers.Tokenizer.from_file(
+                str((model_dir / "tokenizer.json").resolve())
+            )
+        except (OSError, ValueError) as error:
+            raise ModelUnavailableError("NLLB tokenizer could not load") from error
+        self._device = device
+        self._compute_type = compute_type
+
+    @property
+    def runtime_detail(self) -> str:
+        return f"{self._device}/{self._compute_type}"
+
+    def translate(self, result: AsrResult) -> TranslationResult:
+        if not result.text:
+            return TranslationResult(
+                utterance_id=result.utterance_id,
+                source_text=result.text,
+                english_text="",
+                is_final=True,
+                inference_ms=0.0,
+                model_id=self.MODEL_ID,
+            )
+        if len(result.text) > self.MAX_SOURCE_CHARS:
+            return TranslationResult(
+                utterance_id=result.utterance_id,
+                source_text=result.text,
+                english_text=f"[Translation skipped, source too long: {len(result.text)} chars]",
+                is_final=True,
+                inference_ms=0.0,
+                model_id=self.MODEL_ID,
+            )
+        encoding = self._tokenizer.encode(result.text)
+        source_lang = self.SOURCE_LANGS.get(result.source_mode, "tgl_Latn")
+        source = [source_lang, *encoding.tokens]
+        started = time.perf_counter()
+        try:
+            outputs = self._translator.translate_batch(
+                [source],
+                target_prefix=[[self.TARGET_LANG]],
+                max_batch_size=1,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ModelUnavailableError("NLLB translation failed") from error
+        elapsed_ms = (time.perf_counter() - started) * 1_000
+        hypothesis = outputs[0].hypotheses[0]
+        if hypothesis and hypothesis[0] == self.TARGET_LANG:
+            hypothesis = hypothesis[1:]
+        ids = [
+            token_id
+            for token in hypothesis
+            if (token_id := self._tokenizer.token_to_id(token)) is not None
+        ]
+        english_text = self._tokenizer.decode(ids, skip_special_tokens=True).strip()
+        return TranslationResult(
+            utterance_id=result.utterance_id,
+            source_text=result.text,
+            english_text=english_text,
+            is_final=True,
+            inference_ms=elapsed_ms,
+            model_id=self.MODEL_ID,
+        )
+
+
 def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:
     artifact_root = model_root if model_root.name == "artifacts" else model_root / "artifacts"
 
@@ -482,6 +651,8 @@ def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:
     turbo_ready = verified("whisper-large-v3-turbo")
     full_ready = verified("whisper-large-v3")
     ncspeech_ready = verified("ncspeech-tl-fastconformer-hybrid-large")
+    ncspeech_zh_ready = verified("ncspeech-zh-citrinet-1024-gamma")
+    nllb_ready = verified("nllb-200-distilled-600M-ct2-int8")
     translation_ready = (
         verified("madlad400-3b-mt")
         and Path(os.environ.get("LST_TRANSLATION_RUNNER", "translation-runner")).is_file()
@@ -515,6 +686,16 @@ def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:
             "ready": ncspeech_ready,
             "provider": "ncspeech-tl-fastconformer-hybrid-large",
             "detail": "verified" if ncspeech_ready else "not installed",
+        },
+        "asr_ncspeech_zh": {
+            "ready": ncspeech_zh_ready,
+            "provider": "ncspeech-zh-citrinet-1024-gamma",
+            "detail": "verified" if ncspeech_zh_ready else "not installed",
+        },
+        "translation_nllb": {
+            "ready": nllb_ready,
+            "provider": "nllb-200-distilled-600M-ct2-int8",
+            "detail": "verified" if nllb_ready else "not installed (near-real-time default)",
         },
         "translation": {
             "ready": translation_ready,

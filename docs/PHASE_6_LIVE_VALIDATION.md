@@ -61,9 +61,24 @@ Windows:  audio-core x86_64-pc-windows-msvc cargo check passed
 - [ ] Measure critical tactical errors and unrelated-script drift.
 - [ ] Validate transparent overlay focus/click-through behavior while VALORANT is running.
 
-## Known Blockers and Honest Limits
+## RTX 4070 Ti Hardware Acceptance Addendum (2026-08-02)
 
-- The Mac had about 4.5 GB free, so downloading/staging the 3.1 GB full large-v3 artifact there
+- GPU: NVIDIA GeForce RTX 4070 Ti, 12282 MiB VRAM, driver 595.79. CTranslate2 CUDA confirmed
+  (`ctranslate2.get_cuda_device_count() == 1`).
+- ASR: `whisper-large-v3-turbo` CUDA FP16, forced Tagalog; measured 133-401 ms per utterance in E2E.
+- Translation: default is now `nllb-200-distilled-600M-ct2-int8` (CTranslate2 int8, CUDA).
+  Per-phrase MT measured 34-168 ms on CUDA, 148-237 ms CPU int8; batch of 3 in 89 ms.
+  MADLAD via the Rust candle runner (CPU) is retained as a selectable reference path only.
+- E2E paced repro (real models, 7.7 s audio, 0.320 s/packet): 23/23 packets received, 0 dropped,
+  0 low-confidence captions. Capture-to-caption latency: 412 ms / 107 ms with turbo+NLLB and
+  84 ms / 0 ms with NCSpeech+NLLB. Contrast: the same repro with turbo+MADLAD took 69.6 s / 120.8 s.
+- NLLB translation quality spot-checked: "Push na, sila na sa A." → "Push it, they're on A.";
+  "Sige, punta tayo sa B site, may kalaban sa A." → "All right, let's go to site B, we have an
+  opponent at A."
+- Not yet measured with VALORANT running: peak VRAM/RAM, gameplay FPS impact, monitor delay,
+  p50/p95 across a noisy-session fixture. Remaining hardware checklist items above still apply.
+
+## Known Blockers and Honest Limits- The Mac had about 4.5 GB free, so downloading/staging the 3.1 GB full large-v3 artifact there
   would risk filling the disk. Its committed checksum manifest and installer are ready; install it
   on the Windows PC with at least 10 GB free.
 - Simultaneous overlapping speakers are not separated. They may produce one uncertain mixed

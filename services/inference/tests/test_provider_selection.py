@@ -18,7 +18,7 @@ def test_build_asr_provider_aliases(monkeypatch) -> None:
     import local_squad_inference.sidecar as sidecar
 
     monkeypatch.setattr(sidecar, "FasterWhisperProvider", FakeWhisper)
-    monkeypatch.setattr(sidecar, "NemoCtcTagalogProvider", FakeNemo)
+    monkeypatch.setattr(sidecar, "NemoCtcProvider", FakeNemo)
     monkeypatch.setenv("LST_GROQ_API_KEY", "gsk_test")
 
     assert isinstance(build_asr_provider("local"), FakeWhisper)
@@ -26,6 +26,7 @@ def test_build_asr_provider_aliases(monkeypatch) -> None:
     assert isinstance(build_asr_provider("whisper-turbo"), FakeWhisper)
     assert isinstance(build_asr_provider("whisper-full"), FakeWhisper)
     assert isinstance(build_asr_provider("ncspeech"), FakeNemo)
+    assert isinstance(build_asr_provider("ncspeech-zh"), FakeNemo)
     assert isinstance(build_asr_provider("demo"), DemoAsrProvider)
     assert isinstance(build_asr_provider("groq-whisper"), GroqWhisperProvider)
 

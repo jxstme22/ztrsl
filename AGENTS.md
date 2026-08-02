@@ -67,17 +67,26 @@ One-time, from the workspace root:
    local ASR fails with "faster-whisper and CTranslate2 are required for quality
    local ASR".
 2. `python scripts/install_models.py whisper-turbo --accept-license` (or
-   `whisper` for the full large-v3 model) and
-   `python scripts/install_models.py madlad --accept-license` — downloads the
-   verified model artifacts into `models/artifacts/`. The live sidecar prefers
-   `whisper-large-v3-turbo` (lighter, ~1.6 GB) and falls back to
-   `whisper-large-v3` (~3.1 GB) when only that is installed. Override with the
-   `LST_WHISPER_MODEL_ID` environment variable.
-3. Optional NCSpeech Tagalog ASR: `scripts/export_ncspeech_onnx.py` performs a
+   `whisper` for the full large-v3 model),
+   `python scripts/install_models.py nllb --accept-license` (near-real-time
+   translation, CC-BY-NC-4.0; runs on CUDA when available, CPU fallback) and
+   optionally `python scripts/install_models.py madlad --accept-license` —
+   downloads the verified model artifacts into `models/artifacts/`. The live
+   sidecar prefers `whisper-large-v3-turbo` (lighter, ~1.6 GB) and falls back
+   to `whisper-large-v3` (~3.1 GB) when only that is installed. Override with
+   the `LST_WHISPER_MODEL_ID` environment variable. Translation defaults to
+   `nllb` (`nllb-200-distilled-600M-ct2-int8`, ~600 MB, tens of ms on CUDA);
+   `madlad` (MADLAD-400-3B via the Rust candle runner, ~50 s per caption on
+   CPU) remains selectable.
+3. Optional NVIDIA CTC ASR exports: `scripts/export_ncspeech_onnx.py` performs a
    one-time NeMo→CTC ONNX export into `models/artifacts/` and writes a verified
    manifest. It requires a build venv with `nemo_toolkit[asr]` and `torch`
    (~2-3 GB extra disk); the runtime inference venv only needs `sherpa-onnx`.
-   Without the export the `ncspeech` provider raises a visible start error.
+   Without the export the matching provider raises a visible start error.
+   Variants: `--variant tl` (default; NCSpeech FastConformer Tagalog,
+   `ncspeech` provider) and `--variant zh` (Citrinet-1024 Mandarin from
+   `nvidia/stt_zh_citrinet_1024_gamma_0_25`, AISHELL-2 character vocab,
+   `ncspeech-zh` provider, ~555 MB archive). Both are CC-BY-4.0.
 4. The `translation-runner` Rust binary is rebuilt automatically by the Tauri
    `beforeDev`/`beforeBuild` hooks via `scripts/ensure-translation-runner.mjs`.
    After a manual `cargo clean`, the first `pnpm tauri dev`/`pnpm tauri build`

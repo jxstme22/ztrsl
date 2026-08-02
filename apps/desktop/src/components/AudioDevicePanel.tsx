@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { useAudioMeter } from "../audio/useAudioMeter";
+import { Select } from "./Select";
 
 type AudioController = ReturnType<typeof useAudioMeter>;
 
@@ -63,25 +64,20 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
           <label htmlFor="capture-endpoint">
             {isSimulator ? "Generated test source" : "Capture endpoint"}
           </label>
-          <select
+          <Select
             id="capture-endpoint"
+            label={isSimulator ? "Generated test source" : "Capture endpoint"}
             value={audio.selectedEndpointId ?? ""}
-            onChange={(event) => {
-              audio.selectEndpoint(event.currentTarget.value || null);
+            placeholder="Choose an endpoint…"
+            onChange={(value) => {
+              audio.selectEndpoint(value || null);
             }}
-          >
-            <option value="">Choose an endpoint…</option>
-            {audio.captureEndpoints.map((endpoint) => (
-              <option
-                key={endpoint.id}
-                value={endpoint.id}
-                disabled={endpoint.state !== "active"}
-              >
-                {endpoint.friendlyName}
-                {endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}
-              </option>
-            ))}
-          </select>
+            options={audio.captureEndpoints.map((endpoint) => ({
+              value: endpoint.id,
+              label: `${endpoint.friendlyName}${endpoint.state !== "active" ? ` · ${endpoint.state}` : ""}`,
+              disabled: endpoint.state !== "active",
+            }))}
+          />
         </div>
 
         <div className="meter-panel">

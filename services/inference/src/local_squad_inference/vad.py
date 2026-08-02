@@ -66,6 +66,8 @@ class EnergySpeechDetector:
 
     def is_speech(self, frame: tuple[float, ...]) -> bool:
         rms = math.sqrt(sum(sample * sample for sample in frame) / len(frame))
+        if not math.isfinite(rms):
+            return False
         return rms >= self._threshold
 
 
@@ -101,8 +103,11 @@ class SileroSpeechDetector:
         if len(frame) != self.frame_samples:
             raise ValueError("Silero VAD requires 512-sample frames at 16 kHz")
         audio = self._numpy.asarray(frame, dtype=self._numpy.float32).reshape(1, self.frame_samples)
+        if not bool(self._numpy.isfinite(audio).all()):
+            self._reset_state()
+            return False
         model_input = self._numpy.concatenate((self._context, audio), axis=1)
-        probabilities, self._hidden, self._cell = self._session.run(
+        probabilities, hidden, cell = self._session.run(
             None,
             {
                 "input": model_input,
@@ -110,8 +115,27 @@ class SileroSpeechDetector:
                 "c": self._cell,
             },
         )
+        probability = float(probabilities.reshape(-1)[0])
+        self._hidden = hidden
+        self._cell = cell
         self._context = audio[:, -self.context_samples :]
-        return float(probabilities.reshape(-1)[0]) >= self._threshold
+        if not math.isfinite(probability) or not bool(
+            self._numpy.isfinite(hidden).all()
+        ) or not bool(self._numpy.isfinite(cell).all()):
+            # A poisoned recurrent state never recovers on its own: NaN
+            # propagates through every later frame and turns all speech into
+            # silence, so the session silently goes deaf mid-conversation.
+            # Reset the state so the next frame starts clean instead.
+            self._reset_state()
+            return False
+        return probability >= self._threshold
+
+    def _reset_state(self) -> None:
+        self._hidden = self._numpy.zeros((1, 1, 128), dtype=self._numpy.float32)
+        self._cell = self._numpy.zeros((1, 1, 128), dtype=self._numpy.float32)
+        self._context = self._numpy.zeros(
+            (1, self.context_samples), dtype=self._numpy.float32
+        )
 
 
 class EnergyUtteranceManager:
@@ -160,6 +184,31 @@ class EnergyUtteranceManager:
         if self._active is None:
             return []
         return [self._finish(forced=False)]
+
+    def provisional_utterance(self) -> AudioUtterance | None:
+        """Snapshot of the in-progress utterance for provisional ASR.
+
+        Non-destructive: the active buffer keeps accumulating, and the
+        snapshot shares the utterance_id with the final utterance that
+        `_finish` will produce for the same speech. Only the VAD thread
+        calls this, so no locking is needed.
+        """
+        if self._active is None:
+            return None
+        samples = tuple(self._active)
+        started_ns = self._active_started_sample * 1_000_000_000 // SAMPLE_RATE
+        ended_ns = (
+            self._active_started_sample + len(samples)
+        ) * 1_000_000_000 // SAMPLE_RATE
+        return AudioUtterance(
+            utterance_id=f"clip-utterance-{self._utterance_sequence + 1}",
+            pcm_f32=samples,
+            sample_rate=SAMPLE_RATE,
+            started_ns=started_ns,
+            ended_ns=ended_ns,
+            is_final=False,
+            forced_end=False,
+        )
 
     def _feed_frame(self, frame: tuple[float, ...]) -> AudioUtterance | None:
         frame_start = self._total_samples

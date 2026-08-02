@@ -15,6 +15,7 @@ models = [
     "huggingface-hub>=0.36,<1",
     "sherpa-onnx==1.13.4",
     "faster-whisper==1.2.1",
+    "tokenizers>=0.23,<1",
 ]
 dev = [
     "mypy>=1.17,<2",

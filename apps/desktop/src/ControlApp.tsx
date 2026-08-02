@@ -1,5 +1,12 @@
-import { Minus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  Activity,
+  Gauge,
+  Minus,
+  Settings,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -11,41 +18,34 @@ import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
 import { useAudioMeter } from "./audio/useAudioMeter";
+import { useLiveTranslation } from "./live/useLiveTranslation";
 import { isDesktopRuntime } from "./overlay/bridge";
 import { useOverlayController } from "./overlay/useOverlayController";
-import { getLiquidGlassStatus } from "./windowEffects";
 
-type SectionId = "live" | "overlay" | "hotkeys" | "cliplab" | "diagnostics";
+type SectionId = "live" | "settings" | "diagnostics";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
+type LiveController = ReturnType<typeof useLiveTranslation>;
 
 const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
   { id: "live", label: "Live" },
-  { id: "overlay", label: "Overlay" },
-  { id: "hotkeys", label: "Hotkeys" },
-  { id: "cliplab", label: "Clip Lab" },
+  { id: "settings", label: "Settings" },
   { id: "diagnostics", label: "Diagnostics" },
 ];
+
+const NAV_ICONS: Record<SectionId, LucideIcon> = {
+  live: Activity,
+  settings: Settings,
+  diagnostics: Gauge,
+};
 
 export function ControlApp() {
   const controller = useOverlayController();
   const audio = useAudioMeter();
+  const live = useLiveTranslation(controller.ingestCaption);
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
-  const [glassStatus, setGlassStatus] = useState<string>("…");
-
-  useEffect(() => {
-    let cancelled = false;
-    void getLiquidGlassStatus().then((status) => {
-      if (!cancelled) {
-        setGlassStatus(status);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const minimize = () => {
     if (desktop) {
@@ -62,7 +62,7 @@ export function ControlApp() {
   return (
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
-        <span className="titlebar-title">Local Squad Translator</span>
+        <span className="titlebar-title">xTRSNLTR</span>
         {desktop && (
           <div className="window-actions">
             <button type="button" aria-label="Minimize" onClick={minimize}>
@@ -77,43 +77,33 @@ export function ControlApp() {
 
       <div className="app-body">
         <aside className="sidebar">
-          <h1 className="app-title">Translation console</h1>
           <nav className="sidebar-nav" aria-label="Sections">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`nav-button ${section === item.id ? "active" : ""}`}
-                aria-current={section === item.id ? "page" : undefined}
-                onClick={() => {
-                  setSection(item.id);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const Icon = NAV_ICONS[item.id];
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`nav-button ${section === item.id ? "active" : ""}`}
+                  aria-label={item.label}
+                  aria-current={section === item.id ? "page" : undefined}
+                  title={item.label}
+                  onClick={() => {
+                    setSection(item.id);
+                  }}
+                >
+                  <Icon aria-hidden="true" size={19} strokeWidth={1.9} />
+                </button>
+              );
+            })}
           </nav>
-          <div className="sidebar-foot">
-            <div className="privacy-card" id="privacy">
-              <div>
-                <strong>Private by default</strong>
-                <p>
-                  No cloud processing, recording, transcript history,
-                  telemetry, or game-process access.
-                </p>
-              </div>
-            </div>
-            <p className="glass-status">Glass: {glassStatus}</p>
-          </div>
         </aside>
 
         <section className="content" aria-label="Active section">
           {section === "live" && (
-            <LivePage controller={controller} audio={audio} />
+            <LivePage controller={controller} audio={audio} live={live} />
           )}
-          {section === "overlay" && <OverlayPage controller={controller} />}
-          {section === "hotkeys" && <HotkeysPage controller={controller} />}
-          {section === "cliplab" && <ClipLabPage />}
+          {section === "settings" && <SettingsPage controller={controller} />}
           {section === "diagnostics" && (
             <DiagnosticsPage
               audio={audio}
@@ -129,9 +119,11 @@ export function ControlApp() {
 function LivePage({
   controller,
   audio,
+  live,
 }: {
   controller: Controller;
   audio: AudioController;
+  live: LiveController;
 }) {
   const { snapshot } = controller;
 
@@ -162,10 +154,7 @@ function LivePage({
         </section>
       )}
 
-      <LiveTranslationPanel
-        audio={audio}
-        onCaption={controller.ingestCaption}
-      />
+      <LiveTranslationPanel audio={audio} live={live} />
 
       <section className="card" aria-labelledby="preview-title">
         <div className="card-head">
@@ -228,7 +217,7 @@ function LivePage({
   );
 }
 
-function OverlayPage({ controller }: { controller: Controller }) {
+function SettingsPage({ controller }: { controller: Controller }) {
   const { snapshot } = controller;
 
   return (
@@ -355,14 +344,7 @@ function OverlayPage({ controller }: { controller: Controller }) {
           </button>
         </div>
       </section>
-    </div>
-  );
-}
 
-function HotkeysPage({ controller }: { controller: Controller }) {
-  const { snapshot } = controller;
-  return (
-    <div className="page-stack">
       <section className="card" aria-labelledby="hotkeys-title">
         <div className="card-head">
           <h2 className="card-title" id="hotkeys-title">
@@ -375,13 +357,7 @@ function HotkeysPage({ controller }: { controller: Controller }) {
           onSave={controller.updateHotkeys}
         />
       </section>
-    </div>
-  );
-}
 
-function ClipLabPage() {
-  return (
-    <div className="page-stack">
       <ClipLabPanel />
     </div>
   );

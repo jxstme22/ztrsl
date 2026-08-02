@@ -119,11 +119,12 @@ struct LiveStartRequest {
     source_mode: String,
     provider: String,
     /// ASR backend: "local"/"whisper-turbo" (large-v3-turbo), "whisper-full"
-    /// (large-v3), "ncspeech" (NVIDIA FastConformer Tagalog), or "groq-whisper".
+    /// (large-v3), "ncspeech" (NVIDIA FastConformer Tagalog), "ncspeech-zh"
+    /// (NVIDIA Citrinet-1024 Mandarin), or "groq-whisper".
     #[serde(default)]
     asr_provider: String,
-    /// Translation backend: "madlad" (local), "libretranslate",
-    /// "google-translate", "mymemory", "custom-http".
+    /// Translation backend: "nllb" (local, near-real-time), "madlad" (local),
+    /// "libretranslate", "google-translate", "mymemory", "custom-http".
     #[serde(default)]
     translation_provider: String,
     resource_profile: String,
@@ -258,13 +259,13 @@ let LiveStartRequest {
     }
     if !matches!(
         asr_provider.as_str(),
-        "local" | "whisper-turbo" | "whisper-full" | "ncspeech" | "groq-whisper"
+        "local" | "whisper-turbo" | "whisper-full" | "ncspeech" | "ncspeech-zh" | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
     }
     if !matches!(
         translation_provider.as_str(),
-        "madlad" | "libretranslate" | "google-translate" | "mymemory" | "custom-http"
+        "nllb" | "madlad" | "libretranslate" | "google-translate" | "mymemory" | "custom-http"
     ) {
         return Err(format!("unknown translation provider: {translation_provider}"));
     }
@@ -272,7 +273,7 @@ let LiveStartRequest {
     // "http" mode so the sidecar keeps the demo flag off and routes through the
     // configured remote provider.
     let provider = if asr_provider == "groq-whisper"
-        || translation_provider != "madlad"
+        || !matches!(translation_provider.as_str(), "madlad" | "nllb")
     {
         "http".to_string()
     } else {
@@ -826,6 +827,54 @@ fn audio_error_to_string(error: AudioError) -> String {
     error.to_string()
 }
 
+/// Applies the native window look for the control window on Windows 11:
+/// 1. Enables the Mica system backdrop (`DWMSBT_MAINWINDOW`). Unlike the
+///    acrylic `DWMSBT_TRANSIENTWINDOW` backdrop (a light surface that
+///    ignores window regions and painted the window as a white square),
+///    Mica is a dark frosted layer that follows the dark theme, stays
+///    rendered while the window is unfocused, and needs no region to clip.
+/// 2. Requests native corner rounding (`DWMWA_WINDOW_CORNER_PREFERENCE`), so
+///    DWM rounds the window itself like any native app.
+/// Must be re-applied after window creation (DWM may reset attributes while
+/// the surface settles). Best-effort: failures degrade to a plain window.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE,
+        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMSBT_MAINWINDOW, DWMWCP_ROUND,
+    };
+
+    let hwnd = HWND(window.hwnd().map_err(|error| error.to_string())?.0);
+    unsafe {
+        let backdrop = DWMSBT_MAINWINDOW;
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &backdrop as *const _ as *const core::ffi::c_void,
+            core::mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
+        )
+        .map_err(|error| format!("DwmSetWindowAttribute(system backdrop) failed: {error}"))?;
+        let corners = DWMWCP_ROUND;
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corners as *const _ as *const core::ffi::c_void,
+            core::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+        )
+        .map_err(|error| format!("DwmSetWindowAttribute(corner preference) failed: {error}"))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
+    let _ = window;
+    Ok(())
+}
+
 fn lock_error<T>(error: std::sync::PoisonError<T>) -> String {
     format!("audio runtime state is unavailable: {error}")
 }
@@ -1200,7 +1249,8 @@ pub fn run() {
             live_translation_snapshot,
             stop_live_translation,
             set_translation_env,
-            analyze_clip
+            analyze_clip,
+            apply_window_shell
         ])
         .run(tauri::generate_context!());
 

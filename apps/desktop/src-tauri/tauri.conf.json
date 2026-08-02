@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Local Squad Translator",
+  "productName": "xTRSNLTR",
   "version": "0.1.0",
   "identifier": "app.localsquadtranslator.desktop",
   "build": {
@@ -13,10 +13,12 @@
     "windows": [
       {
         "label": "control",
-        "title": "Local Squad Translator",
-        "width": 1120,
-        "height": 720,
-        "resizable": false,
+        "title": "xTRSNLTR",
+        "width": 995,
+        "height": 904,
+        "minWidth": 994,
+        "minHeight": 904,
+        "resizable": true,
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
@@ -24,7 +26,7 @@
       },
       {
         "label": "overlay",
-        "title": "Local Squad Translator Captions",
+        "title": "xTRSNLTR Captions",
         "url": "index.html?window=overlay",
         "width": 900,
         "height": 150,

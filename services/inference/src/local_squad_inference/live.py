@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import threading
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ class LivePipelineMetrics:
     utterances_completed: int
     captions_emitted: int
     low_confidence_captions: int
+    packets_dropped: int = 0
+    utterances_dropped: int = 0
 
 
 class LivePipeline:
@@ -60,93 +63,143 @@ class LivePipeline:
         )
         self._stream_origin_ns: int | None = None
         self._clock_origin_ns: int | None = None
+        self._metrics_lock = threading.Lock()
         self._packets_received = 0
         self._utterances_completed = 0
         self._captions_emitted = 0
         self._low_confidence_captions = 0
+        self._packets_dropped = 0
+        self._utterances_dropped = 0
+        self._provisional_revisions: dict[str, int] = {}
 
     @property
     def metrics(self) -> LivePipelineMetrics:
-        return LivePipelineMetrics(
-            packets_received=self._packets_received,
-            utterances_completed=self._utterances_completed,
-            captions_emitted=self._captions_emitted,
-            low_confidence_captions=self._low_confidence_captions,
-        )
+        with self._metrics_lock:
+            return LivePipelineMetrics(
+                packets_received=self._packets_received,
+                utterances_completed=self._utterances_completed,
+                captions_emitted=self._captions_emitted,
+                low_confidence_captions=self._low_confidence_captions,
+                packets_dropped=self._packets_dropped,
+                utterances_dropped=self._utterances_dropped,
+            )
 
-    def feed(self, packet: AudioPacket) -> tuple[CaptionPayload, ...]:
+    def note_utterances_dropped(self, count: int) -> None:
+        with self._metrics_lock:
+            self._utterances_dropped += count
+
+    def feed_utterances(self, packet: AudioPacket) -> list[AudioUtterance]:
+        """VAD-only, always real-time: never calls ASR or translation, so it
+        never falls behind the audio stream. Returns completed utterances for
+        a caller to hand to inference workers."""
         if packet.sample_rate != 16_000 or packet.channels != 1:
             raise ValueError("live inference requires 16 kHz mono audio")
         if self._stream_origin_ns is None:
             self._stream_origin_ns = packet.capture_monotonic_ns
             self._clock_origin_ns = time.monotonic_ns()
-        self._packets_received += 1
-        return self._transcribe(self._manager.feed(packet.samples))
+        with self._metrics_lock:
+            self._packets_received += 1
+        return self._manager.feed(packet.samples)
+
+    def infer_utterances(
+        self, utterances: list[AudioUtterance]
+    ) -> tuple[CaptionPayload, ...]:
+        """ASR + translation for completed utterances. Safe to call from
+        several inference threads concurrently."""
+        return tuple(
+            caption
+            for utterance in utterances
+            if (caption := self._transcribe_utterance(utterance)) is not None
+        )
+
+    def feed(self, packet: AudioPacket) -> tuple[CaptionPayload, ...]:
+        return self.infer_utterances(self.feed_utterances(packet))
+
+    def flush_utterances(self) -> list[AudioUtterance]:
+        """VAD-only flush: returns the trailing utterance for inference."""
+        return self._manager.flush()
+
+    def provisional_utterance(self) -> AudioUtterance | None:
+        """VAD-only snapshot of the in-progress utterance, or None when no
+        speech is active. Used to schedule provisional ASR while talking so
+        captions appear before the phrase ends."""
+        return self._manager.provisional_utterance()
 
     def flush(self) -> tuple[CaptionPayload, ...]:
-        return self._transcribe(self._manager.flush())
+        return self.infer_utterances(self._manager.flush())
 
-    def _transcribe(self, utterances: list[AudioUtterance]) -> tuple[CaptionPayload, ...]:
-        captions: list[CaptionPayload] = []
-        for utterance in utterances:
-            transcript = self._asr.transcribe(utterance, self._source_mode)
-            self._utterances_completed += 1
-            source_text = _normalize_transcript(transcript.text)
-            if not source_text:
-                if transcript.error:
-                    captions.append(self._failure_caption(utterance, transcript.error))
-                continue
+    def _transcribe_utterance(
+        self, utterance: AudioUtterance
+    ) -> CaptionPayload | None:
+        provisional = not utterance.is_final
+        transcript = self._asr.transcribe(utterance, self._source_mode)
+        with self._metrics_lock:
+            if not provisional:
+                self._utterances_completed += 1
+            # The final revision must always be higher than the last
+            # provisional so it replaces it in the UI, and provisionals for
+            # one utterance strictly increase so a stale decode can never
+            # overwrite a newer one.
+            revision = self._provisional_revisions.get(utterance.utterance_id, 0) + 1
+            if provisional:
+                self._provisional_revisions[utterance.utterance_id] = revision
+            else:
+                self._provisional_revisions.pop(utterance.utterance_id, None)
+        source_text = _normalize_transcript(transcript.text)
+        if not source_text:
+            if transcript.error and not provisional:
+                return self._failure_caption(utterance, transcript.error)
+            return None
 
-            warnings: list[Literal["LOW_CONFIDENCE", "FORCED_SPLIT"]] = []
-            confidence = transcript.confidence
-            if confidence is not None and confidence < 0.35:
+        warnings: list[Literal["LOW_CONFIDENCE", "FORCED_SPLIT"]] = []
+        confidence = transcript.confidence
+        if confidence is not None and confidence < 0.35:
+            warnings.append("LOW_CONFIDENCE")
+        if _UNEXPECTED_SCRIPT.search(source_text):
+            warnings.append("LOW_CONFIDENCE")
+
+        try:
+            translated = self._translation.translate(transcript)
+            english_text = _normalize_transcript(translated.english_text)
+            if not english_text:
+                english_text = "[Speech unclear]"
                 warnings.append("LOW_CONFIDENCE")
-            if _UNEXPECTED_SCRIPT.search(source_text):
-                warnings.append("LOW_CONFIDENCE")
+        except Exception:
+            # A single failed translation must never kill the live
+            # session. Surface a placeholder so the user keeps seeing
+            # the recognized source text plus a status hint, and let
+            # the next utterance try again. Translation providers that
+            # spawn a subprocess (e.g. MADLAD) recover lazily.
+            english_text = "[Translation unavailable]"
+            warnings.append("LOW_CONFIDENCE")
+        if utterance.forced_end:
+            warnings.append("FORCED_SPLIT")
 
-            try:
-                translated = self._translation.translate(transcript)
-                english_text = _normalize_transcript(translated.english_text)
-                if not english_text:
-                    english_text = "[Speech unclear]"
-                    warnings.append("LOW_CONFIDENCE")
-            except Exception:
-                # A single failed translation must never kill the live
-                # session. Surface a placeholder so the user keeps seeing
-                # the recognized source text plus a status hint, and let
-                # the next utterance try again. Translation providers that
-                # spawn a subprocess (e.g. MADLAD) recover lazily.
-                english_text = "[Translation unavailable]"
-                warnings.append("LOW_CONFIDENCE")
-            if utterance.forced_end:
-                warnings.append("FORCED_SPLIT")
-
-            origin_ns = self._clock_origin_ns or time.monotonic_ns()
-            ended_ns = origin_ns + utterance.ended_ns
-            latency_ms = max(0.0, (time.monotonic_ns() - ended_ns) / 1_000_000)
-            unique_warnings = list(dict.fromkeys(warnings))
-            if "LOW_CONFIDENCE" in unique_warnings:
-                self._low_confidence_captions += 1
-            self._captions_emitted += 1
-            captions.append(
-                CaptionPayload(
-                    caption_id=f"live-{utterance.utterance_id}",
-                    utterance_id=utterance.utterance_id,
-                    revision=1,
-                    status="final",
-                    source_mode=self._source_mode,
-                    source_text=source_text,
-                    english_text=english_text,
-                    started_monotonic_ns=origin_ns + utterance.started_ns,
-                    ended_monotonic_ns=ended_ns,
-                    capture_to_caption_ms=latency_ms,
-                    asr_ms=transcript.inference_ms,
-                    translation_ms=translated.inference_ms,
-                    confidence=confidence,
-                    warnings=unique_warnings,
-                )
-            )
-        return tuple(captions)
+        origin_ns = self._clock_origin_ns or time.monotonic_ns()
+        ended_ns = origin_ns + utterance.ended_ns
+        latency_ms = max(0.0, (time.monotonic_ns() - ended_ns) / 1_000_000)
+        unique_warnings = list(dict.fromkeys(warnings))
+        with self._metrics_lock:
+            if not provisional:
+                if "LOW_CONFIDENCE" in unique_warnings:
+                    self._low_confidence_captions += 1
+                self._captions_emitted += 1
+        return CaptionPayload(
+            caption_id=f"live-{utterance.utterance_id}",
+            utterance_id=utterance.utterance_id,
+            revision=revision,
+            status="provisional" if provisional else "final",
+            source_mode=self._source_mode,
+            source_text=source_text,
+            english_text=english_text,
+            started_monotonic_ns=origin_ns + utterance.started_ns,
+            ended_monotonic_ns=None if provisional else ended_ns,
+            capture_to_caption_ms=latency_ms,
+            asr_ms=transcript.inference_ms,
+            translation_ms=translated.inference_ms,
+            confidence=confidence,
+            warnings=unique_warnings,
+        )
 
     def _failure_caption(self, utterance: AudioUtterance, reason: str) -> CaptionPayload:
         """Emit a visible placeholder caption when ASR fails so the user never
@@ -156,8 +209,9 @@ class LivePipeline:
         if len(message) > 160:
             message = message[:157] + "..."
         origin_ns = self._clock_origin_ns or time.monotonic_ns()
-        self._captions_emitted += 1
-        self._low_confidence_captions += 1
+        with self._metrics_lock:
+            self._captions_emitted += 1
+            self._low_confidence_captions += 1
         return CaptionPayload(
             caption_id=f"live-{utterance.utterance_id}",
             utterance_id=utterance.utterance_id,
