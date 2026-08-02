@@ -1,0 +1,23 @@
+xTRSNLTR
+Copyright (c) 2026 the xTRSNLTR contributors.
+
+This product includes software developed by the xTRSNLTR contributors.
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+Third-party notices
+-------------------
+
+Dependencies (Rust crates, Node packages, and Python packages) are governed by
+their own licenses; dependency managers (Cargo, pnpm/npm, uv) record them for
+each installed artifact.
+
+Model artifacts downloaded through the app are NOT part of this project's
+Apache-2.0 code license and carry their own terms:
+
+- faster-whisper large-v3 / large-v3-turbo (OpenAI Whisper weights): MIT.
+- OmniLingual CTC 300M (k2-fsa sherpa-onnx): Apache-2.0.
+- NLLB-200 distilled 600M CTranslate2 int8: CC-BY-NC-4.0 (non-commercial).
+- MADLAD-400 3B MT: Apache-2.0.
+
+VALORANT is a trademark of Riot Games, Inc. This project is not affiliated
+with, endorsed by, or sponsored by Riot Games.

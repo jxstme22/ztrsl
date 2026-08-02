@@ -3,6 +3,7 @@ name = "local-squad-inference"
 version = "0.1.0"
 description = "Local inference sidecar skeleton for Local Squad Translator."
 requires-python = ">=3.11,<3.14"
+license = { text = "Apache-2.0" }
 dependencies = [
     "pydantic>=2.11,<3",
     "websockets>=16,<17",

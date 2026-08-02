@@ -1,211 +1,212 @@
-# Local Live Translator Overlay for VALORANT
+# xTRSNLTR — Local Translator Overlay for VALORANT
 
-A working foundation for a **fully local Windows desktop companion** that:
+A **fully local Windows desktop companion** that translates incoming VALORANT
+voice chat into on-screen subtitles — with **no game-process access, no cloud,
+and no telemetry**.
 
-- listens to incoming party/team voice routed from VALORANT;
-- recognizes **Tagalog/Filipino and Taglish** in V1;
-- translates non-English speech into English;
-- displays low-latency subtitles in a transparent, click-through overlay;
-- does not inject into, read memory from, automate, or modify VALORANT;
-- keeps raw audio and transcripts local by default.
+- Listens to the voice-chat mix routed to a virtual audio cable (or the
+  microphone capture stream you choose).
+- Recognizes **Tagalog / Filipino, Cebuano, Chinese, and English** speech.
+- Translates into **English or Simplified Chinese** (whichever you pick).
+- Shows low-latency subtitles in a transparent, click-through overlay.
+- **Does not** inject into, read the memory of, automate, or modify VALORANT —
+  see [Safety boundaries](#safety-boundaries).
 
-> Research and planning snapshot: **2026-07-29**  
-> Primary target hardware: **Windows 11 + NVIDIA RTX 4070 Ti (12 GB assumed)**  
-> Initial application type: **private alpha**, followed by public distribution only after Windows
-> hardware validation, policy review, model-license review, and signing.
+> **Status: beta.** It works end-to-end on Windows, but production hardening
+> (code signing, auto-update, keychain, native-speaker benchmarks) is
+> still in progress. See the [roadmap](#roadmap-and-release-state).
 
-## Current Implementation
+---
 
-The macOS-buildable foundation, offline clip lab, and live translation vertical slice are
-implemented:
+## Features
 
-- Tauri 2 desktop control-window foundation with React and strict TypeScript;
-- Rust workspace crates for audio boundaries, caption state, IPC protocol, and content-free diagnostics;
-- Python 3.11+ inference-sidecar skeleton with strict Pydantic payloads;
-- bounded queue and failure-path unit tests;
-- CI for frontend, Python, and Windows Rust checks;
-- all required architecture decisions plus the macOS-first sequencing record;
-- separate transparent/topmost Tauri caption overlay;
-- click-through play mode and interactive edit mode;
-- preview provisional-to-final caption lifecycle;
-- configurable global hotkeys;
-- normalized monitor placement, persistence, and missing-monitor recovery.
-- typed Windows endpoint catalog and device-notification implementation;
-- explicit, locally persisted capture-endpoint selection;
-- capture-only level meter UI with a deterministic synthetic source on macOS;
-- bounded audio queues and lock-free level handoff.
-- bounded monitoring and 16 kHz mono inference routing branches;
-- streaming 44.1/48/96 kHz resampling and content-free routing metrics;
-- loopback-only authenticated WebSocket IPC with bounded binary audio frames;
-- supervised Python fake inference with provisional/final captions and restart handling.
-- user-approved MP4/video/audio drag-and-drop with read-only FFmpeg streaming;
-- bounded speech segmentation and timestamped clip results;
-- pinned Faster-Whisper large-v3 Tagalog ASR with a verified turbo development fallback;
-- CPU Silero VAD and bounded live utterance segmentation;
-- continuous Windows capture-to-sidecar-to-overlay live caption plumbing;
-- a persistent Rust Candle worker for the verified MADLAD-400 3B Q4 translation model;
-- explicit atomic model installers and committed SHA-256 manifests.
+- **In-app model manager** — no model files ship with the installer. On first
+  run you choose which models to download; every download shows a confirmation
+  dialog with size, source, and license, verifies SHA-256 checksums, and can be
+  cancelled or deleted from the app afterward.
+- **Live caption pipeline** — bounded audio capture → VAD segmentation →
+  Whisper ASR (Tagalog/Cebuano/Chinese/English) → NLLB/MADLAD or optional
+  HTTP translation → provisional/final captions in the overlay.
+- **Provisional + final captions** — fast revising draft, then a stable final
+  once the utterance ends.
+- **Fully offline by default** — local NLLB translation. Opt-in HTTP
+  translation providers (Google, MyMemory, LibreTranslate, custom endpoint)
+  send only the recognized **text**, never audio.
+- **Privacy-first** — no raw audio persistence, no telemetry, loopback-only
+  authenticated IPC, redacted logs. Only the publisher's first-run welcome and
+  model downloads use the network (pinned public URLs).
+- **Global hotkeys, overlay placement memory, monitoring output** with echo
+  protection.
 
-No audio or transcript is retained. macOS uses a clearly labeled generated-signal simulator;
-ordinary Windows endpoint capture activates only in the Windows build. Windows overlay, audio,
-CUDA, latency, VRAM, and gameplay acceptance remain unverified until the reference PC is available.
-The current sidecar still uses the project Python environment and separately built translation
-worker, not packaged public-release resources.
+## Safety boundaries
 
-## Read This First
+This project deliberately stays out of the game. It never implements:
 
-1. Read `AGENTS.md`.
-2. Read `docs/00_EXECUTIVE_SUMMARY.md`.
-3. Treat `docs/01_PRD.md` and `docs/15_ACCEPTANCE_CHECKLIST.md` as the source of truth.
-4. Implement phases in `docs/07_BUILD_PLAN.md` in order.
-5. Do not start GPU optimization until the CPU/audio/overlay skeleton passes its tests.
-6. Do not add game hooks, DLL injection, memory reading, input automation, or a kernel component.
+- game-process injection, DLL hooks, or graphics API hooks;
+- memory reads, game-file modification, packet interception;
+- input automation or anti-cheat evasion;
+- kernel drivers or hidden-data extraction;
+- screen analysis used for tactical advantage.
 
-## Recommended V1 Stack
+It only **enumerates ordinary Windows audio endpoints**, processes **local audio**,
+draws an ordinary top-level transparent window, registers explicit global
+hotkeys, and stores user-approved local settings.
 
-| Area | Choice |
-|---|---|
-| Desktop shell | Tauri 2 |
-| Native layer | Rust |
-| Overlay UI | React + TypeScript |
-| Windows audio | WASAPI via `windows-rs` or a carefully selected safe wrapper |
-| Routing | User-installed signed virtual audio cable for V1 |
-| VAD | Silero VAD ONNX |
-| Live ASR | Faster-Whisper large-v3, forced Filipino, CUDA FP16 |
-| VAD | Silero VAD v6 ONNX on CPU |
-| Fallback | large-v3-turbo after an explicit benchmark or resource failure |
-| Translation | MADLAD-400 3B MT, quantized where validated |
-| Initial inference process | Python local sidecar |
-| Final optimized runtime | ONNX/sherpa-onnx native integration where practical |
-| IPC | localhost WebSocket with random per-launch token |
-| Packaging | Windows installer; models downloaded separately with checksums |
-
-## Product Principle
-
-The application uses a **two-speed subtitle strategy**:
-
-1. **Provisional caption:** fast, allowed to revise.
-2. **Final caption:** produced after an utterance boundary and expected to remain stable.
-
-No implementation may advertise or assume perfect recognition or translation. The system must expose uncertainty and make model quality measurable.
-
-## Repository Target
-
-Codex should create a monorepo similar to:
+## Repository layout
 
 ```text
-valorant-live-translator/
-├── AGENTS.md
-├── README.md
-├── package.json
-├── pnpm-workspace.yaml
-├── Cargo.toml
-├── apps/
-│   └── desktop/
+.
+├── apps/desktop/          Tauri 2 app (control window + caption overlay)
+│   └── src-tauri/         Rust host: IPC, audio, sidecar supervision
 ├── crates/
-│   ├── audio-core/
-│   ├── overlay-core/
-│   ├── ipc-protocol/
-│   └── diagnostics/
-├── services/
-│   └── inference/
+│   ├── audio-core/        WASAPI capture/playback, resampling, routing
+│   ├── model-manager/     catalog + verified staged model installs
+│   ├── ipc-protocol/      loopback WebSocket IPC schema
+│   ├── sidecar-supervisor/ Python-sidecar lifecycle
+│   ├── translation-runner/ Rust (candle) MADLAD-400 runner
+│   ├── overlay-core/      caption state machine
+│   └── diagnostics/       content-free diagnostics
+├── services/inference/    Python sidecar: VAD, Whisper ASR, NLLB/HTTP MT
+├── scripts/               model installers, sidecar/build helpers
 ├── models/
-│   └── README.md
-├── config/
-├── fixtures/
-├── scripts/
-├── tests/
-└── docs/
+│   ├── catalog.json       pinned, checksummed download catalog (embedded)
+│   ├── manifests/         per-model verification manifests
+│   └── README.md          model policy
+└── docs/                  PRD, architecture, ADRs, phase evidence
 ```
 
-## Non-Goals for V1
+## Getting started (developers)
 
-- DirectX, Vulkan, or OpenGL hooking.
-- DLL injection.
-- Reading VALORANT process memory or game files.
-- Identifying agents, enemies, map state, or tactical events.
-- Translating the user's own microphone.
-- Reliable player-name attribution.
-- Overlapping-speaker transcription.
-- Cloud APIs.
-- Automatic recording or transcript retention.
-- Shipping a custom virtual audio driver.
-- True exclusive-fullscreen overlay support.
-
-## Commands Codex Must Eventually Support
-
-```powershell
-pnpm install
-pnpm lint
-pnpm typecheck
-pnpm test
-
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-
-python -m pytest services/inference/tests
-python services/inference/app.py
-
-pnpm --filter desktop tauri dev
-pnpm --filter desktop tauri build
-```
-
-Exact commands may change during implementation, but the final repository must provide equivalent one-command workflows.
-
-## Phase 0 Setup
-
-Required development tools:
-
-- Windows 11 x64;
-- Node.js 22 or later with Corepack;
-- pnpm 10.32.1 (pinned by `packageManager`);
-- stable Rust with Clippy and rustfmt;
-- Python 3.11–3.13;
-- `uv`.
-
-From PowerShell:
+Prerequisites: **Windows 11 x64**, Node.js 22+ (Corepack), pnpm, stable Rust,
+Python 3.11–3.13, and `uv`.
 
 ```powershell
 corepack enable
 pnpm install --frozen-lockfile
-uv sync --frozen --extra dev
-.\scripts\check.ps1
+uv sync --extra dev --extra models
 ```
 
-For the owner’s first RTX 4070 Ti validation, the one-command preparation path checks FFmpeg,
-NVIDIA/CUDA visibility, builds the persistent translation worker, downloads both pinned models,
-verifies their SHA-256 manifests, and runs the repository checks:
+Run the app:
 
 ```powershell
-.\scripts\prepare_windows.ps1 -AcceptModelLicenses
+pnpm --filter desktop tauri dev          # from repo root
+# or
+cd apps/desktop
+pnpm tauri dev
 ```
 
-Start the foundation UI:
+Sanity checks:
 
 ```powershell
-pnpm --filter desktop tauri dev
+cargo test -p audio-core -p sidecar-supervisor -p model-manager
+cd apps/desktop && pnpm test && pnpm typecheck && pnpm lint
+.venv\Scripts\python -m pytest services\inference\tests -q
+.venv\Scripts\python -m ruff check services\inference
 ```
 
-Smoke-test the content-free sidecar:
+### Models
+
+The app downloads models itself at first run (see the welcome dialog). For
+development you can also install them with the CLI, matching what the catalog
+ships:
 
 ```powershell
-uv run python services/inference/app.py
+python scripts/install_models.py whisper-turbo --accept-license
+python scripts/install_models.py nllb --accept-license
+python scripts/install_models.py madlad --accept-license   # optional, CPU only
 ```
 
-The checks require no models, GPU, audio hardware, VALORANT installation, telemetry, or cloud
-service. Windows manual validation evidence is tracked in `docs/PHASE_0_VALIDATION.md`.
+Optional experimental ASR (dev-only, NCCL/export pipelines): see
+`scripts/export_ncspeech_onnx.py` and the docs.
 
-## Definition of Done
+## Model licenses
 
-The project is not done when text appears on screen. It is done when:
+Model artifacts keep their **own** licenses, separate from this project's code
+license (Apache-2.0):
 
-- audio routing is understandable and recoverable;
-- output monitoring does not create echo or a feedback loop;
-- the overlay is readable and never steals game input;
-- the application remains outside the game process;
-- Tagalog and Taglish fixtures are benchmarked with native-speaker review;
-- latency and resource budgets are measured on target hardware;
-- raw audio is not persisted by default;
-- every failure mode has a user-visible recovery path;
-- build, tests, model setup, and installer instructions are reproducible.
+| Model | Kind | License | Notes |
+|---|---|---|---|
+| faster-whisper large-v3 / turbo | ASR | MIT | OpenAI Whisper weights |
+| OmniLingual CTC 300M | ASR | Apache-2.0 | research candidate |
+| NLLB-200 distilled 600M | Translation | **CC-BY-NC-4.0** | non-commercial by default |
+| MADLAD-400 3B | Translation | Apache-2.0 | ~50 s/caption on CPU |
+
+Because the default translation model is non-commercial, review the model
+licenses before any commercial distribution of the full package.
+
+## How it works
+
+```
+VALORANT voice chat
+      │  (ordinary audio endpoint / virtual cable)
+      ▼
+ WindowsAudioCapture ──► bounded ring buffer / resampler (16 kHz mono)
+      │
+      ▼
+ Sidecar (Python): Silero VAD → utterance segmentation → Whisper ASR
+      │                                              │
+      │                                      text (never audio)
+      ▼                                              ▼
+ provisional/final caption ─► NLLB / MADLAD / opt-in HTTP translation
+      │
+      ▼
+ Tauri overlay window (click-through, always-on-top)
+```
+
+IPC is a loopback WebSocket secured with a random per-launch token and
+constant-time comparison; audio packets are bounded and never written to disk
+unless you enable diagnostic recording.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the reporting policy. Highlights:
+
+- No API keys or secrets in the repository; `.env*` is gitignored.
+- Keys you enter for opt-in HTTP providers are runtime env vars forwarded to
+  the sidecar only for that session (stored in webview localStorage — future
+  work will move this to the OS keychain before v1.0).
+- Every model download is pinned to a revision and committed SHA-256; nothing
+  is downloaded until you confirm.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) — including the hard safety boundary
+list, the phase workflow, and how to add a model to the catalog.
+
+## Documentation
+
+The formal project docs live in [`docs/`](docs/README.md): PRD, system
+architecture, ASR/MT pipeline, data models & IPC, security & Riot compliance,
+build plan, phase acceptance evidence, and architecture decision records
+(`docs/adr/`).
+
+## Roadmap and release state
+
+Current release state: **beta** (functional end-to-end; not yet production).
+
+Remaining for a 1.0 release:
+
+- [ ] code signing (Windows SmartScreen) and a tested NSIS/MSI installer;
+- [ ] package the Python sidecar via PyInstaller into the installer
+      (script: `scripts/build-sidecar.mjs`, see `docs/adr/ADR-012-packaging.md`);
+- [ ] native-speaker benchmarks for Tagalog/Cebuano accuracy;
+- [ ] move opt-in API keys to the OS keychain;
+- [ ] auto-update pipeline;
+- [ ] clean-machine install tests.
+
+The on-disk model manager, in-app picker with confirmation modal, delete
+support, and the embedded download catalog are already in place
+(see `docs/adr/ADR-011-model-manager.md`).
+
+## License
+
+Copyright (c) 2026 the xTRSNLTR contributors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use the files in this repository except in compliance with the
+License. You may obtain a copy at <http://www.apache.org/licenses/LICENSE-2.0>.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+License for the specific language governing permissions and limitations.
