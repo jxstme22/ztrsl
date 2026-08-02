@@ -50,10 +50,10 @@ class CaptionPayload(StrictModel):
     revision: int = Field(ge=1)
     status: Literal["provisional", "final"]
     source_mode: SourceMode
-    source_text: str = Field(max_length=500)
+    source_text: str = Field(max_length=8000)
     # Carries the translation output; the language is the session's
     # target_language (English by default, Chinese when selected).
-    english_text: str = Field(max_length=500)
+    english_text: str = Field(max_length=8000)
     started_monotonic_ns: int = Field(ge=0)
     ended_monotonic_ns: int | None = Field(default=None, ge=0)
     capture_to_caption_ms: float = Field(ge=0)

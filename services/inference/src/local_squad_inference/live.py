@@ -16,6 +16,11 @@ from local_squad_inference.vad import (
     VadConfig,
 )
 
+# Truncation boundary set well under the Pydantic max_length=8000 so a
+# validation error never kills the live session (the error propagates as
+# an unhandled exception and terminates the sidecar).
+MAX_CAPTION_LENGTH = 7990
+
 _UNEXPECTED_SCRIPT = re.compile(
     "[\u0400-\u052f\u0600-\u06ff\u0750-\u077f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]"
 )
@@ -175,6 +180,10 @@ class LivePipeline:
         if utterance.forced_end:
             warnings.append("FORCED_SPLIT")
 
+        MAX_CAPTION_LENGTH = 7990
+
+# … (the function stays the same, unchanged code above)
+
         origin_ns = self._clock_origin_ns or time.monotonic_ns()
         ended_ns = origin_ns + utterance.ended_ns
         latency_ms = max(0.0, (time.monotonic_ns() - ended_ns) / 1_000_000)
@@ -184,6 +193,12 @@ class LivePipeline:
                 if "LOW_CONFIDENCE" in unique_warnings:
                     self._low_confidence_captions += 1
                 self._captions_emitted += 1
+        # Hard truncation at the caption character limit — the ASR or
+        # translation may produce text longer than the protocol allows, and
+        # a 7990-character caption is already far beyond any reasonable
+        # utterance. Silently truncating is safer than crashing the session.
+        source_text = source_text[:MAX_CAPTION_LENGTH]
+        english_text = english_text[:MAX_CAPTION_LENGTH]
         return CaptionPayload(
             caption_id=f"live-{utterance.utterance_id}",
             utterance_id=utterance.utterance_id,
