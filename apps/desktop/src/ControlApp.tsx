@@ -122,11 +122,12 @@ export function ControlApp() {
         </section>
       </div>
 
-      {desktop && !models.loading && !models.hasInstalledModels && (
+      {desktop && !models.hasInstalledModels && (
         <WelcomeModelsDialog
           models={models}
           error={models.error}
           onInstall={(id) => void models.startInstall(id)}
+          onRetry={() => void models.refresh()}
         />
       )}
     </main>
@@ -174,7 +175,9 @@ function LivePage({
         <section className="inline-alert" role="status">
           <div>
             <strong>Overlay moved to the primary display</strong>
-            <p>The saved monitor was unavailable, so the overlay stayed visible.</p>
+            <p>
+              The saved monitor was unavailable, so the overlay stayed visible.
+            </p>
           </div>
         </section>
       )}
@@ -267,9 +270,7 @@ function SettingsPage({ controller }: { controller: Controller }) {
                 type="checkbox"
                 checked={snapshot.translationEnabled}
                 onChange={(event) => {
-                  controller.setTranslationEnabled(
-                    event.currentTarget.checked,
-                  );
+                  controller.setTranslationEnabled(event.currentTarget.checked);
                 }}
               />
             </div>
