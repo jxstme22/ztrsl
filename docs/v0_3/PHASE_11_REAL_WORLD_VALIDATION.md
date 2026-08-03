@@ -1,6 +1,8 @@
 # Phase 11 — Real-World Validation
 
-**Status:** ☐ not started
+**Status:** ☑ harnesses built + automated matrix green; hardware-tagged rows
+tracked in [PHASE_11_EVIDENCE.md](PHASE_11_EVIDENCE.md) pending a Windows 11
+machine
 
 ## Acceptance criteria (spec §17 Phase 11)
 

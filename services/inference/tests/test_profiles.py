@@ -63,7 +63,7 @@ def test_short_callout_passes_in_less_strict_modes() -> None:
     decision = apply_language_gate(
         "mandarin",
         "balanced",
-        source_text="okay",
+        source_text="nope",
         confidence=0.3,
         utterance_duration_ms=200,
     )
@@ -76,7 +76,7 @@ def test_short_callout_only_suppresses_on_catastrophic_confidence(strictness) ->
     decision = apply_language_gate(
         "mandarin",
         strictness,
-        source_text="okay",
+        source_text="nope",
         confidence=0.05,
         utterance_duration_ms=150,
     )
