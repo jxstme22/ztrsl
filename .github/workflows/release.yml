@@ -64,3 +64,54 @@ jobs:
           files: |
             target/release/bundle/nsis/*-setup.exe
             target/release/bundle/msi/*.msi
+
+  build-macos:
+    name: Build macOS app (Apple Silicon)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Python sidecar dependencies (incl. PyInstaller + MLX)
+        run: uv sync --extra dev --extra models --extra mlx
+
+      - name: Build the app bundle (sidecar + runner + Tauri DMG)
+        working-directory: apps/desktop
+        run: pnpm tauri build
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Attach app bundle to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: false
+          fail_on_unmatched_files: false
+          files: |
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/macos/*.app
