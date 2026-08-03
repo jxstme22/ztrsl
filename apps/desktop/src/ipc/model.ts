@@ -1,5 +1,36 @@
 import { z } from "zod";
 
+export const PROTOCOL_V2 = 2;
+
+export const sourceIdSchema = z
+  .string()
+  .regex(/^[0-9a-f]{32}$/, "source id must be 32 lowercase hex chars");
+
+export const labelStyleSchema = z.enum([
+  "brackets",
+  "colon",
+  "bullet",
+  "stacked",
+  "hidden",
+]);
+export const strictnessSchema = z.enum(["off", "balanced", "strict"]);
+export const filterAppliedSchema = z.enum([
+  "off",
+  "suppressed",
+  "flagged",
+  "passed",
+]);
+
+export const sourceSnapshotSchema = z.object({
+  display_name: z.string().min(1).max(48),
+  caption_tag: z.string().min(1).max(32),
+  label_style: labelStyleSchema,
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/)
+    .nullable(),
+});
+
 export const sidecarStatusSchema = z.object({
   state: z.enum(["ready", "stopped"]),
   provider: z.literal("fake"),
@@ -21,10 +52,15 @@ export const captionPayloadSchema = z.object({
   translation_ms: z.number().nonnegative(),
   confidence: z.number().min(0).max(1).nullable(),
   warnings: z.array(z.enum(["LOW_CONFIDENCE", "FORCED_SPLIT"])).max(8),
+  source_id: sourceIdSchema.optional(),
+  source_snapshot: sourceSnapshotSchema.optional(),
+  strictness: strictnessSchema.optional(),
+  filter_applied: filterAppliedSchema.optional(),
+  filter_reason: z.string().max(128).optional(),
 });
 
 export const captionEnvelopeSchema = z.object({
-  protocol_version: z.literal(1),
+  protocol_version: z.union([z.literal(1), z.literal(2)]),
   message_id: z.string().min(1).max(128),
   session_id: z.string().min(1).max(128),
   type: z.enum(["caption.provisional", "caption.final"]),
@@ -34,4 +70,5 @@ export const captionEnvelopeSchema = z.object({
 
 export type CaptionEnvelope = z.infer<typeof captionEnvelopeSchema>;
 export type CaptionPayload = z.infer<typeof captionPayloadSchema>;
+export type SourceSnapshot = z.infer<typeof sourceSnapshotSchema>;
 export type SidecarStatus = z.infer<typeof sidecarStatusSchema>;

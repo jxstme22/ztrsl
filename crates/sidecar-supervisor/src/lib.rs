@@ -8,8 +8,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ipc_protocol::{
-    AudioPacket, CaptionPayload, ClipProcessPayload, ClipResultPayload, Envelope,
-    HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_VERSION,
+    AudioPacket, AudioPacketV2, CAPABILITY_IPC_V2, CAPABILITY_MULTI_SOURCE, CaptionLabelStyle,
+    CaptionPayload, CaptionStrictness, ClipProcessPayload, ClipResultPayload, Envelope,
+    HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
+    SourcePresentationUpdatePayload, SourceRegistryEntry, SourceRegistryPayload, SourceSnapshot,
+    source_id_from_hex,
 };
 use thiserror::Error;
 use tungstenite::{Message, WebSocket};
@@ -19,6 +22,14 @@ const IO_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const CLIP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LIVE_START_TIMEOUT: Duration = Duration::from_secs(3 * 60);
+
+/// Default source id used by the single-source fake roundtrip (v2). The
+/// real app always sends the source's own immutable id.
+const DEFAULT_SOURCE_ID: &str = "00000000000000000000000000000001";
+/// Fixed ids for the multi-source fake proof; they are valid UUID-shaped
+/// ids (32 lowercase hex) but not UUID-v4 — the wire does not enforce v4.
+const TEAM_SOURCE_ID: &str = "11111111111111111111111111111111";
+const DISCORD_SOURCE_ID: &str = "22222222222222222222222222222222";
 
 #[derive(Debug, Clone, Default)]
 pub struct SidecarConfig {
@@ -108,6 +119,9 @@ pub struct SidecarSupervisor {
     session_id: String,
     session_bytes: [u8; 16],
     next_sequence: u64,
+    /// Protocol version negotiated during the hello handshake: 2 when the
+    /// sidecar shares `ipc_v2`, otherwise 1 (v0.2 compatibility).
+    negotiated_version: u16,
     stopped: bool,
 }
 
@@ -166,8 +180,13 @@ impl SidecarSupervisor {
             payload: HelloPayload {
                 token,
                 desktop_version: env!("CARGO_PKG_VERSION").to_owned(),
-                protocol_versions: vec![PROTOCOL_VERSION],
-                capabilities: vec!["pcm_f32le".to_owned(), "caption_revisions".to_owned()],
+                protocol_versions: vec![PROTOCOL_V2, PROTOCOL_VERSION],
+                capabilities: vec![
+                    "pcm_f32le".to_owned(),
+                    "caption_revisions".to_owned(),
+                    CAPABILITY_IPC_V2.to_owned(),
+                    CAPABILITY_MULTI_SOURCE.to_owned(),
+                ],
             },
         };
         write_json(&mut socket, &hello)?;
@@ -175,9 +194,14 @@ impl SidecarSupervisor {
         accepted
             .validate_version()
             .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
-        if accepted.message_type != "hello.accepted"
-            || accepted.payload.protocol_version != PROTOCOL_VERSION
-        {
+        if accepted.message_type != "hello.accepted" {
+            terminate_child(&mut child);
+            return Err(SupervisorError::HandshakeRejected);
+        }
+        // The sidecar computes and echoes the negotiated version (freeze §1);
+        // the desktop trusts the echo and requires a version it proposed.
+        let negotiated_version = accepted.payload.protocol_version;
+        if negotiated_version != PROTOCOL_V2 && negotiated_version != PROTOCOL_VERSION {
             terminate_child(&mut child);
             return Err(SupervisorError::HandshakeRejected);
         }
@@ -188,6 +212,7 @@ impl SidecarSupervisor {
             session_id,
             session_bytes,
             next_sequence: 0,
+            negotiated_version,
             stopped: false,
         })
     }
@@ -200,7 +225,233 @@ impl SidecarSupervisor {
         self.ensure_running()?;
         let sequence = self.next_sequence;
         self.next_sequence = self.next_sequence.saturating_add(1);
-        let packet = AudioPacket {
+        let frame = if self.negotiated_version == PROTOCOL_V2 {
+            self.encode_v2_audio(sequence, capture_monotonic_ns, samples, DEFAULT_SOURCE_ID)?
+        } else {
+            self.encode_v1_audio(sequence, capture_monotonic_ns, samples)?
+        };
+        self.socket
+            .send(Message::Binary(frame.into()))
+            .map_err(SupervisorError::WebSocket)?;
+
+        let provisional: Envelope<CaptionPayload> = read_json(&mut self.socket)?;
+        let final_caption: Envelope<CaptionPayload> = read_json(&mut self.socket)?;
+        provisional
+            .validate_version_in(&[self.negotiated_version])
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        final_caption
+            .validate_version_in(&[self.negotiated_version])
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        if provisional.message_type != "caption.provisional"
+            || final_caption.message_type != "caption.final"
+            || provisional.payload.caption_id != final_caption.payload.caption_id
+            || provisional.payload.revision >= final_caption.payload.revision
+        {
+            return Err(SupervisorError::InvalidCaptionLifecycle);
+        }
+        Ok(vec![provisional, final_caption])
+    }
+
+    /// Push the session's source registry (v2 sessions only, right after
+    /// `live.start`). The sidecar resolves `source.presentation.update`
+    /// targets against it.
+    pub fn push_source_registry(
+        &mut self,
+        sources: Vec<SourceRegistryEntry>,
+    ) -> Result<(), SupervisorError> {
+        self.ensure_running()?;
+        if self.negotiated_version != PROTOCOL_V2 {
+            return Err(SupervisorError::Protocol(
+                "source.registry requires a v2 session".to_owned(),
+            ));
+        }
+        let request = Envelope {
+            protocol_version: self.negotiated_version,
+            message_id: format!("source-registry-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "source.registry".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: SourceRegistryPayload { sources },
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        if response.message_type == "source.registry.error" {
+            return Err(SupervisorError::Protocol(error_message(
+                &response.payload,
+                "source.registry rejected",
+            )));
+        }
+        if response.message_type != "source.registry.accepted" {
+            return Err(SupervisorError::Protocol(
+                "unexpected source.registry response".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Push a presentation-only snapshot change (ADR-015). Never touches
+    /// routing, VAD, or any key.
+    pub fn update_source_presentation(
+        &mut self,
+        source_id: &str,
+        snapshot: SourceSnapshot,
+    ) -> Result<(), SupervisorError> {
+        self.ensure_running()?;
+        if self.negotiated_version != PROTOCOL_V2 {
+            return Err(SupervisorError::Protocol(
+                "source.presentation.update requires a v2 session".to_owned(),
+            ));
+        }
+        let request = Envelope {
+            protocol_version: self.negotiated_version,
+            message_id: format!("source-presentation-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "source.presentation.update".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: SourcePresentationUpdatePayload {
+                source_id: source_id.to_owned(),
+                source_snapshot: snapshot,
+            },
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        if response.message_type == "source.presentation.error" {
+            return Err(SupervisorError::Protocol(error_message(
+                &response.payload,
+                "source.presentation.update rejected",
+            )));
+        }
+        if response.message_type != "source.presentation.accepted" {
+            return Err(SupervisorError::Protocol(
+                "unexpected source.presentation.update response".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Multi-source fake proof (IPC v2 freeze §6): registers TEAM and
+    /// DISCORD, sends independent v2 audio frames for both, and asserts the
+    /// captions carry the right source ids and snapshots. Then renames
+    /// DISCORD mid-session and asserts TEAM captions are unaffected.
+    pub fn fake_roundtrip_multi_source(
+        &mut self,
+        capture_monotonic_ns: u64,
+        samples: Vec<f32>,
+    ) -> Result<Vec<Envelope<CaptionPayload>>, SupervisorError> {
+        self.ensure_running()?;
+        if self.negotiated_version != PROTOCOL_V2 {
+            return Err(SupervisorError::Protocol(
+                "multi-source fake requires a v2 session".to_owned(),
+            ));
+        }
+        let team_snapshot = SourceSnapshot {
+            display_name: "Valorant Team".to_owned(),
+            caption_tag: "TEAM".to_owned(),
+            label_style: CaptionLabelStyle::Brackets,
+            color: Some("#7dd3fc".to_owned()),
+        };
+        let discord_snapshot = SourceSnapshot {
+            display_name: "Discord Call".to_owned(),
+            caption_tag: "DISCORD".to_owned(),
+            label_style: CaptionLabelStyle::Brackets,
+            color: Some("#a5f3fc".to_owned()),
+        };
+        self.push_source_registry(vec![
+            SourceRegistryEntry {
+                source_id: TEAM_SOURCE_ID.to_owned(),
+                display_name: team_snapshot.display_name.clone(),
+                caption_tag: team_snapshot.caption_tag.clone(),
+                capture_target: serde_json::json!({
+                    "kind": "endpoint",
+                    "endpoint_id": "team-capture"
+                }),
+                language_profile: "auto".to_owned(),
+                strictness: CaptionStrictness::Balanced,
+                label_style: CaptionLabelStyle::Brackets,
+                color: team_snapshot.color.clone(),
+            },
+            SourceRegistryEntry {
+                source_id: DISCORD_SOURCE_ID.to_owned(),
+                display_name: discord_snapshot.display_name.clone(),
+                caption_tag: discord_snapshot.caption_tag.clone(),
+                capture_target: serde_json::json!({
+                    "kind": "endpoint",
+                    "endpoint_id": "discord-capture"
+                }),
+                language_profile: "auto".to_owned(),
+                strictness: CaptionStrictness::Off,
+                label_style: CaptionLabelStyle::Brackets,
+                color: discord_snapshot.color.clone(),
+            },
+        ])?;
+
+        let team_captions =
+            self.send_v2_roundtrip(capture_monotonic_ns, samples.clone(), TEAM_SOURCE_ID)?;
+        let discord_captions =
+            self.send_v2_roundtrip(capture_monotonic_ns + 1, samples.clone(), DISCORD_SOURCE_ID)?;
+        for caption in team_captions.iter().chain(discord_captions.iter()) {
+            if caption.payload.source_id.is_none() {
+                return Err(SupervisorError::InvalidCaptionLifecycle);
+            }
+        }
+        if team_captions[0].payload.source_id.as_deref() != Some(TEAM_SOURCE_ID)
+            || discord_captions[0].payload.source_id.as_deref() != Some(DISCORD_SOURCE_ID)
+            || team_captions[0]
+                .payload
+                .source_snapshot
+                .as_ref()
+                .map(|snapshot| &snapshot.caption_tag)
+                != Some(&"TEAM".to_owned())
+            || discord_captions[0]
+                .payload
+                .source_snapshot
+                .as_ref()
+                .map(|snapshot| &snapshot.caption_tag)
+                != Some(&"DISCORD".to_owned())
+        {
+            return Err(SupervisorError::InvalidCaptionLifecycle);
+        }
+
+        // Mid-session rename: DISCORD gets a new tag, then a second round
+        // must not disturb TEAM revisions or captions.
+        let renamed = SourceSnapshot {
+            display_name: "Discord (Renamed)".to_owned(),
+            caption_tag: "DC2".to_owned(),
+            label_style: CaptionLabelStyle::Colon,
+            color: discord_snapshot.color.clone(),
+        };
+        self.update_source_presentation(DISCORD_SOURCE_ID, renamed)?;
+        let team_captions_after =
+            self.send_v2_roundtrip(capture_monotonic_ns + 2, samples.clone(), TEAM_SOURCE_ID)?;
+        let discord_captions_after =
+            self.send_v2_roundtrip(capture_monotonic_ns + 3, samples, DISCORD_SOURCE_ID)?;
+        if team_captions_after[0].payload.source_id.as_deref() != Some(TEAM_SOURCE_ID)
+            || discord_captions_after[0]
+                .payload
+                .source_snapshot
+                .as_ref()
+                .map(|snapshot| &snapshot.caption_tag)
+                != Some(&"DC2".to_owned())
+        {
+            return Err(SupervisorError::InvalidCaptionLifecycle);
+        }
+        Ok(team_captions
+            .into_iter()
+            .chain(discord_captions)
+            .chain(team_captions_after)
+            .chain(discord_captions_after)
+            .collect())
+    }
+
+    fn encode_v1_audio(
+        &self,
+        sequence: u64,
+        capture_monotonic_ns: u64,
+        samples: Vec<f32>,
+    ) -> Result<Vec<u8>, SupervisorError> {
+        AudioPacket {
             session_id: self.session_bytes,
             sequence,
             capture_monotonic_ns,
@@ -208,16 +459,46 @@ impl SidecarSupervisor {
             channels: 1,
             flags: 0,
             samples,
-        };
-        self.socket
-            .send(Message::Binary(
-                packet
-                    .encode()
-                    .map_err(|error| SupervisorError::Protocol(error.to_string()))?
-                    .into(),
-            ))
-            .map_err(SupervisorError::WebSocket)?;
+        }
+        .encode()
+        .map_err(|error| SupervisorError::Protocol(error.to_string()))
+    }
 
+    fn encode_v2_audio(
+        &self,
+        sequence: u64,
+        capture_monotonic_ns: u64,
+        samples: Vec<f32>,
+        source_id: &str,
+    ) -> Result<Vec<u8>, SupervisorError> {
+        let source_id_bytes = source_id_from_hex(source_id)
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        AudioPacketV2 {
+            session_id: self.session_bytes,
+            sequence,
+            capture_monotonic_ns,
+            sample_rate: 16_000,
+            channels: 1,
+            flags: 0,
+            source_id: source_id_bytes,
+            samples,
+        }
+        .encode()
+        .map_err(|error| SupervisorError::Protocol(error.to_string()))
+    }
+
+    fn send_v2_roundtrip(
+        &mut self,
+        capture_monotonic_ns: u64,
+        samples: Vec<f32>,
+        source_id: &str,
+    ) -> Result<Vec<Envelope<CaptionPayload>>, SupervisorError> {
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        let frame = self.encode_v2_audio(sequence, capture_monotonic_ns, samples, source_id)?;
+        self.socket
+            .send(Message::Binary(frame.into()))
+            .map_err(SupervisorError::WebSocket)?;
         let provisional: Envelope<CaptionPayload> = read_json(&mut self.socket)?;
         let final_caption: Envelope<CaptionPayload> = read_json(&mut self.socket)?;
         if provisional.message_type != "caption.provisional"
@@ -246,7 +527,7 @@ impl SidecarSupervisor {
     ) -> Result<serde_json::Value, SupervisorError> {
         self.ensure_running()?;
         let request = Envelope {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: self.negotiated_version,
             message_id: format!("live-start-{}", self.next_sequence),
             session_id: self.session_id.clone(),
             message_type: "live.start".to_owned(),
@@ -273,7 +554,7 @@ impl SidecarSupervisor {
             .set_read_timeout(Some(IO_TIMEOUT))
             .map_err(SupervisorError::Io)?;
         response
-            .validate_version()
+            .validate_version_in(&[self.negotiated_version])
             .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
         if response.message_type == "live.error" {
             return Err(SupervisorError::LiveInference(error_message(
@@ -297,22 +578,13 @@ impl SidecarSupervisor {
         self.ensure_running()?;
         let sequence = self.next_sequence;
         self.next_sequence = self.next_sequence.saturating_add(1);
-        let packet = AudioPacket {
-            session_id: self.session_bytes,
-            sequence,
-            capture_monotonic_ns,
-            sample_rate: 16_000,
-            channels: 1,
-            flags: 0,
-            samples,
+        let frame = if self.negotiated_version == PROTOCOL_V2 {
+            self.encode_v2_audio(sequence, capture_monotonic_ns, samples, DEFAULT_SOURCE_ID)?
+        } else {
+            self.encode_v1_audio(sequence, capture_monotonic_ns, samples)?
         };
         self.socket
-            .send(Message::Binary(
-                packet
-                    .encode()
-                    .map_err(|error| SupervisorError::Protocol(error.to_string()))?
-                    .into(),
-            ))
+            .send(Message::Binary(frame.into()))
             .map_err(SupervisorError::WebSocket)
     }
 
@@ -336,7 +608,7 @@ impl SidecarSupervisor {
             Err(error) => return Err(error),
         };
         response
-            .validate_version()
+            .validate_version_in(&[self.negotiated_version])
             .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
         if response.message_type == "live.error" {
             return Err(SupervisorError::LiveInference(error_message(
@@ -365,7 +637,7 @@ impl SidecarSupervisor {
     pub fn stop_live(&mut self) -> Result<serde_json::Value, SupervisorError> {
         self.ensure_running()?;
         let request = Envelope {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: self.negotiated_version,
             message_id: format!("live-stop-{}", self.next_sequence),
             session_id: self.session_id.clone(),
             message_type: "live.stop".to_owned(),
@@ -399,7 +671,7 @@ impl SidecarSupervisor {
             return Err(SupervisorError::InvalidClipPath);
         }
         let request = Envelope {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: self.negotiated_version,
             message_id: format!("clip-{}", self.next_sequence),
             session_id: self.session_id.clone(),
             message_type: "clip.process".to_owned(),
@@ -422,7 +694,7 @@ impl SidecarSupervisor {
             .set_read_timeout(Some(IO_TIMEOUT))
             .map_err(SupervisorError::Io)?;
         response
-            .validate_version()
+            .validate_version_in(&[self.negotiated_version])
             .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
         if response.message_type == "clip.error" {
             let message = response
@@ -457,7 +729,7 @@ impl SidecarSupervisor {
         }
         self.stopped = true;
         let shutdown = Envelope {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: self.negotiated_version,
             message_id: "shutdown-1".to_owned(),
             session_id: self.session_id.clone(),
             message_type: "shutdown".to_owned(),
@@ -692,8 +964,8 @@ fn find_onnxruntime_library_dir(python_executable: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        SidecarConfig, SupervisorError, packaged_sidecar_available, to_hex,
-        workspace_root_from_manifest,
+        DISCORD_SOURCE_ID, PROTOCOL_V2, SidecarConfig, SidecarSupervisor, SupervisorError,
+        TEAM_SOURCE_ID, packaged_sidecar_available, to_hex, workspace_root_from_manifest,
     };
 
     #[test]
@@ -737,5 +1009,71 @@ mod tests {
             return;
         }
         assert!(config.runtime_library_dir.is_some());
+    }
+
+    /// IPC v2 freeze §6: TEAM + DISCORD produce independent caption streams,
+    /// and a mid-session DISCORD rename never touches TEAM captions, ids, or
+    /// revisions. Requires the workspace venv (skipped when absent).
+    #[test]
+    fn v2_multi_source_fake_roundtrip_proves_independent_streams() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        assert_eq!(
+            supervisor.negotiated_version, PROTOCOL_V2,
+            "desktop proposes v2 and the sidecar must accept it"
+        );
+        let captions = supervisor
+            .fake_roundtrip_multi_source(1_000_000, vec![0.25; 320])
+            .expect("multi-source fake roundtrip must succeed");
+        // 4 rounds (TEAM, DISCORD, TEAM-after-rename, DISCORD-after-rename)
+        // x 2 (provisional + final).
+        assert_eq!(captions.len(), 8);
+        let team = &captions[0];
+        let discord = &captions[2];
+        let team_after = &captions[4];
+        let discord_after = &captions[6];
+        assert_eq!(team.payload.source_id.as_deref(), Some(TEAM_SOURCE_ID));
+        assert_eq!(
+            discord.payload.source_id.as_deref(),
+            Some(DISCORD_SOURCE_ID)
+        );
+        assert_eq!(
+            team.payload
+                .source_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.caption_tag.as_str()),
+            Some("TEAM")
+        );
+        assert_eq!(
+            discord
+                .payload
+                .source_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.caption_tag.as_str()),
+            Some("DISCORD")
+        );
+        assert_eq!(
+            discord_after
+                .payload
+                .source_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.caption_tag.as_str()),
+            Some("DC2"),
+            "mid-session rename must be reflected on DISCORD captions"
+        );
+        assert_eq!(team.payload.revision, team_after.payload.revision);
+        assert_eq!(
+            team_after.payload.source_id.as_deref(),
+            Some(TEAM_SOURCE_ID),
+            "TEAM audio key must be untouched by the DISCORD rename"
+        );
+        assert_ne!(
+            team.payload.caption_id, discord.payload.caption_id,
+            "per-source caption ids must never collide"
+        );
     }
 }

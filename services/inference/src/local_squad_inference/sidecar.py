@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal, TypedDict
 
 from pydantic import ValidationError
 from websockets.asyncio.server import ServerConnection, serve
@@ -26,8 +27,10 @@ from local_squad_inference.http_translation import (
 )
 from local_squad_inference.live import LivePipeline
 from local_squad_inference.protocol import (
+    AUDIO_HEADER_V2,
     MAX_AUDIO_MESSAGE_BYTES,
     MAX_CONTROL_MESSAGE_BYTES,
+    PROTOCOL_V2,
     PROTOCOL_VERSION,
     AudioPacket,
     CaptionPayload,
@@ -35,7 +38,16 @@ from local_squad_inference.protocol import (
     ControlEnvelope,
     HelloPayload,
     LiveStartPayload,
+    SourcePresentationUpdatePayload,
+    SourceRegistryEntry,
+    SourceRegistryPayload,
+    SourceSnapshot,
+    Strictness,
+    dump_caption,
+    encode_source_id_hex,
+    negotiate_protocol_version,
     parse_audio_packet,
+    parse_audio_packet_v2,
 )
 from local_squad_inference.providers import (
     AsrProvider,
@@ -182,15 +194,25 @@ def envelope(
     message_id: str,
     session_id: str,
     payload: dict[str, object],
+    version: int = PROTOCOL_VERSION,
 ) -> dict[str, object]:
     return {
-        "protocol_version": PROTOCOL_VERSION,
+        "protocol_version": version,
         "message_id": message_id,
         "session_id": session_id,
         "type": message_type,
         "sent_monotonic_ns": time.monotonic_ns(),
         "payload": payload,
     }
+
+
+def entry_snapshot(entry: SourceRegistryEntry) -> SourceSnapshot:
+    return SourceSnapshot(
+        display_name=entry.display_name,
+        caption_tag=entry.caption_tag,
+        label_style=entry.label_style,
+        color=entry.color,
+    )
 
 
 def fake_captions(session_id: str, sequence: int, started_ns: int) -> tuple[CaptionPayload, ...]:
@@ -227,6 +249,78 @@ def fake_captions(session_id: str, sequence: int, started_ns: int) -> tuple[Capt
             translation_ms=2.0,
             confidence=None,
             warnings=[],
+        ),
+    )
+
+
+_DEFAULT_FAKE_SNAPSHOT = SourceSnapshot(
+    display_name="Fake Source",
+    caption_tag="SRC",
+    label_style="brackets",
+    color=None,
+)
+
+
+class _FakeCaptionV2Fields(TypedDict):
+    caption_id: str
+    utterance_id: str
+    source_mode: Literal["cebuano"]
+    source_text: str
+    started_monotonic_ns: int
+    capture_to_caption_ms: float
+    asr_ms: float
+    translation_ms: float
+    confidence: None
+    warnings: list[Literal["LOW_CONFIDENCE", "FORCED_SPLIT"]]
+    source_id: str
+    source_snapshot: SourceSnapshot
+    strictness: Literal["off", "balanced", "strict"]
+    filter_applied: Literal["off", "suppressed", "flagged", "passed"]
+    filter_reason: None
+
+
+def fake_captions_v2(
+    session_id: str,
+    sequence: int,
+    started_ns: int,
+    source_id: bytes,
+    snapshot: SourceSnapshot | None,
+    strictness: Strictness | None,
+) -> tuple[CaptionPayload, ...]:
+    """v2 fake captions: same text as v1 but stamped with the immutable
+    source id and the presentation snapshot (registry-backed or default)."""
+    caption_id = f"fake-{session_id}-{sequence}"
+    common: _FakeCaptionV2Fields = {
+        "caption_id": caption_id,
+        "utterance_id": f"utterance-{sequence}",
+        "source_mode": "cebuano",
+        "source_text": "Adto ta sa B, naa na sila sa A.",
+        "started_monotonic_ns": started_ns,
+        "capture_to_caption_ms": 18.0,
+        "asr_ms": 4.0,
+        "translation_ms": 2.0,
+        "confidence": None,
+        "warnings": [],
+        "source_id": encode_source_id_hex(source_id),
+        "source_snapshot": snapshot or _DEFAULT_FAKE_SNAPSHOT,
+        "strictness": strictness or "off",
+        "filter_applied": "off",
+        "filter_reason": None,
+    }
+    return (
+        CaptionPayload(
+            **common,
+            revision=1,
+            status="provisional",
+            english_text="Let's rotate to B…",
+            ended_monotonic_ns=None,
+        ),
+        CaptionPayload(
+            **common,
+            revision=2,
+            status="final",
+            english_text="Let's rotate to B—they're already on A.",
+            ended_monotonic_ns=started_ns + 20_000_000,
         ),
     )
 
@@ -448,6 +542,7 @@ async def drain_live_results(
     session_id: str,
     worker: LivePipelineWorker,
     send_lock: asyncio.Lock,
+    version: int = PROTOCOL_VERSION,
 ) -> None:
     """Delivers worker results as they arrive, without blocking the event loop.
 
@@ -476,6 +571,7 @@ async def drain_live_results(
                                 "message": str(result),
                                 "recoverable": True,
                             },
+                            version=version,
                         )
                     )
                 )
@@ -496,7 +592,8 @@ async def drain_live_results(
                             f"caption.{caption.status}",
                             f"live-caption-{sequence}",
                             session_id,
-                            caption.model_dump(mode="json"),
+                            dump_caption(caption, include_v2=version >= PROTOCOL_V2),
+                            version=version,
                         )
                     )
                 )
@@ -524,11 +621,12 @@ async def handle_connection(
             return
         hello_envelope = ControlEnvelope.model_validate_json(first)
         hello = HelloPayload.model_validate(hello_envelope.payload)
-        if (
-            hello_envelope.type != "hello"
-            or not hmac.compare_digest(hello.token, expected_token)
-            or PROTOCOL_VERSION not in hello.protocol_versions
-        ):
+        try:
+            negotiated_version = negotiate_protocol_version(hello.protocol_versions)
+        except ValueError:
+            await connection.close(code=1008, reason="authentication failed")
+            return
+        if hello_envelope.type != "hello" or not hmac.compare_digest(hello.token, expected_token):
             await connection.close(code=1008, reason="authentication failed")
             return
 
@@ -539,7 +637,7 @@ async def handle_connection(
                     "hello-accepted",
                     hello_envelope.session_id,
                     {
-                        "protocol_version": PROTOCOL_VERSION,
+                        "protocol_version": negotiated_version,
                         "sidecar_version": "0.1.0",
                         "models": {
                             "vad": "fake-vad",
@@ -551,6 +649,20 @@ async def handle_connection(
             )
         )
 
+        # v2 session state: registry pushed by the desktop after hello, and
+        # the presentation snapshots the sidecar stamps onto captions.
+        source_registry: dict[str, SourceRegistryEntry] = {}
+        source_snapshots: dict[str, SourceSnapshot] = {}
+
+        def snapshot_for(source_id: bytes) -> tuple[SourceSnapshot | None, Strictness | None]:
+            entry = source_registry.get(encode_source_id_hex(source_id))
+            if entry is None:
+                return None, None
+            return (
+                source_snapshots.get(entry.source_id) or entry_snapshot(entry),
+                entry.strictness,
+            )
+
         last_sequence: int | None = None
         live_pipeline: LivePipeline | None = None
         live_worker: LivePipelineWorker | None = None
@@ -558,6 +670,58 @@ async def handle_connection(
         send_lock = asyncio.Lock()
         async for message in connection:
             if isinstance(message, bytes):
+                if negotiated_version == PROTOCOL_V2:
+                    try:
+                        if len(message) < AUDIO_HEADER_V2.size:
+                            raise ValueError("v1-shaped frame in v2 session")
+                        packet_v2 = parse_audio_packet_v2(message)
+                    except ValueError:
+                        await connection.send(
+                            json.dumps(
+                                envelope(
+                                    "error.protocol_mismatch",
+                                    f"audio-{time.monotonic_ns()}",
+                                    hello_envelope.session_id,
+                                    {"message": "invalid v2 audio frame"},
+                                    version=negotiated_version,
+                                )
+                            )
+                        )
+                        await connection.close(code=1008, reason="protocol_mismatch")
+                        return
+                    if last_sequence is not None and packet_v2.sequence <= last_sequence:
+                        await connection.close(code=1008, reason="stale audio sequence")
+                        return
+                    last_sequence = packet_v2.sequence
+                    if live_worker is not None:
+                        # v2 live inference (real providers) lands in a later
+                        # phase; the fake provider never builds a worker.
+                        await connection.close(code=1008, reason="v2 live not supported")
+                        return
+                    snapshot, strictness = snapshot_for(packet_v2.source_id)
+                    for index, caption in enumerate(
+                        fake_captions_v2(
+                            hello_envelope.session_id,
+                            packet_v2.sequence,
+                            packet_v2.capture_monotonic_ns,
+                            packet_v2.source_id,
+                            snapshot,
+                            strictness,
+                        ),
+                        start=1,
+                    ):
+                        await connection.send(
+                            json.dumps(
+                                envelope(
+                                    f"caption.{caption.status}",
+                                    f"caption-{packet_v2.sequence}-{index}",
+                                    hello_envelope.session_id,
+                                    dump_caption(caption, include_v2=True),
+                                    version=negotiated_version,
+                                )
+                            )
+                        )
+                    continue
                 packet = parse_audio_packet(message)
                 if last_sequence is not None and packet.sequence <= last_sequence:
                     await connection.close(code=1008, reason="stale audio sequence")
@@ -566,25 +730,6 @@ async def handle_connection(
                 if live_worker is not None:
                     live_worker.submit(packet)
                     continue
-                for index, caption in enumerate(
-                    fake_captions(
-                        hello_envelope.session_id,
-                        packet.sequence,
-                        packet.capture_monotonic_ns,
-                    ),
-                    start=1,
-                ):
-                    await connection.send(
-                        json.dumps(
-                            envelope(
-                                f"caption.{caption.status}",
-                                f"caption-{packet.sequence}-{index}",
-                                hello_envelope.session_id,
-                                caption.model_dump(mode="json"),
-                            )
-                        )
-                    )
-                continue
                 for index, caption in enumerate(
                     fake_captions(
                         hello_envelope.session_id,
@@ -624,6 +769,7 @@ async def handle_connection(
                                 "models_loaded": False,
                                 "provider": "fake",
                             },
+                            version=negotiated_version,
                         )
                     )
                 )
@@ -635,6 +781,7 @@ async def handle_connection(
                             "shutdown-response",
                             control.session_id,
                             {},
+                            version=negotiated_version,
                         )
                     )
                 )
@@ -649,6 +796,57 @@ async def handle_connection(
                             control.message_id,
                             control.session_id,
                             {"providers": provider_readiness(model_root)},
+                            version=negotiated_version,
+                        )
+                    )
+                )
+            elif control.type == "source.registry":
+                if negotiated_version != PROTOCOL_V2:
+                    await connection.close(code=1008, reason="v2 control in v1 session")
+                    return
+                registry = SourceRegistryPayload.model_validate(control.payload)
+                source_registry.clear()
+                for entry in registry.sources:
+                    source_registry[entry.source_id] = entry
+                    source_snapshots[entry.source_id] = entry_snapshot(entry)
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "source.registry.accepted",
+                            control.message_id,
+                            control.session_id,
+                            {"sources": len(registry.sources)},
+                            version=negotiated_version,
+                        )
+                    )
+                )
+            elif control.type == "source.presentation.update":
+                if negotiated_version != PROTOCOL_V2:
+                    await connection.close(code=1008, reason="v2 control in v1 session")
+                    return
+                update = SourcePresentationUpdatePayload.model_validate(control.payload)
+                if update.source_id not in source_registry:
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "source.presentation.error",
+                                control.message_id,
+                                control.session_id,
+                                {"code": "unknown_source", "message": "unknown source"},
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                    continue
+                source_snapshots[update.source_id] = update.source_snapshot
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "source.presentation.accepted",
+                            control.message_id,
+                            control.session_id,
+                            {"source_id": update.source_id},
+                            version=negotiated_version,
                         )
                     )
                 )
@@ -684,6 +882,7 @@ async def handle_connection(
                             hello_envelope.session_id,
                             live_worker,
                             send_lock,
+                            version=negotiated_version,
                         )
                     )
                 except Exception as error:
@@ -699,6 +898,7 @@ async def handle_connection(
                                     "message": str(error),
                                     "recoverable": True,
                                 },
+                                version=negotiated_version,
                             )
                         )
                     )
@@ -720,6 +920,7 @@ async def handle_connection(
                                     "channels": 1,
                                 },
                             },
+                            version=negotiated_version,
                         )
                     )
                 )
@@ -763,7 +964,8 @@ async def handle_connection(
                                 f"caption.{caption.status}",
                                 f"live-final-{index}",
                                 control.session_id,
-                                caption.model_dump(mode="json"),
+                                dump_caption(caption, include_v2=negotiated_version >= PROTOCOL_V2),
+                                version=negotiated_version,
                             )
                         )
                     )
@@ -774,6 +976,7 @@ async def handle_connection(
                             control.message_id,
                             control.session_id,
                             {"metrics": metrics},
+                            version=negotiated_version,
                         )
                     )
                 )
@@ -811,6 +1014,7 @@ async def handle_connection(
                                     "code": "CLIP_PROCESSING_FAILED",
                                     "message": str(error),
                                 },
+                                version=negotiated_version,
                             )
                         )
                     )
@@ -827,6 +1031,7 @@ async def handle_connection(
                                 "truncated": result.truncated,
                                 "mode": result.mode,
                             },
+                            version=negotiated_version,
                         )
                     )
                 )

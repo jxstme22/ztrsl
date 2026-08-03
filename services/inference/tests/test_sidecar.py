@@ -12,7 +12,12 @@ from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosedError
 
-from local_squad_inference.protocol import AudioPacket, encode_audio_packet
+from local_squad_inference.protocol import (
+    AudioPacket,
+    AudioPacketV2,
+    encode_audio_packet,
+    encode_audio_packet_v2,
+)
 from local_squad_inference.sidecar import LivePipelineWorker, handle_connection
 
 
@@ -87,6 +92,207 @@ def test_fake_audio_produces_provisional_and_final_captions() -> None:
             assert final["type"] == "caption.final"
             assert provisional["payload"]["caption_id"] == final["payload"]["caption_id"]
             assert provisional["payload"]["revision"] < final["payload"]["revision"]
+            stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
+def hello_v2(token: str) -> str:
+    return json.dumps(
+        {
+            "protocol_version": 1,
+            "message_id": "hello-1",
+            "session_id": "session-v2",
+            "type": "hello",
+            "sent_monotonic_ns": 1,
+            "payload": {
+                "token": token,
+                "desktop_version": "0.1.0",
+                "protocol_versions": [2, 1],
+                "capabilities": ["ipc_v2", "multi_source", "pcm_f32le", "caption_revisions"],
+            },
+        }
+    )
+
+
+TEAM_SOURCE = "11111111111111111111111111111111"
+DISCORD_SOURCE = "22222222222222222222222222222222"
+
+
+def control(message_id: str, message_type: str, payload: dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "protocol_version": 2,
+            "message_id": message_id,
+            "session_id": "session-v2",
+            "type": message_type,
+            "sent_monotonic_ns": 2,
+            "payload": payload,
+        }
+    )
+
+
+def registry_payload() -> dict[str, Any]:
+    return {
+        "sources": [
+            {
+                "source_id": TEAM_SOURCE,
+                "display_name": "Valorant Team",
+                "caption_tag": "TEAM",
+                "capture_target": {"kind": "endpoint", "endpoint_id": "team-capture"},
+                "language_profile": "auto",
+                "strictness": "balanced",
+                "label_style": "brackets",
+                "color": "#7dd3fc",
+            },
+            {
+                "source_id": DISCORD_SOURCE,
+                "display_name": "Discord Call",
+                "caption_tag": "DISCORD",
+                "capture_target": {"kind": "endpoint", "endpoint_id": "discord-capture"},
+                "language_profile": "auto",
+                "strictness": "off",
+                "label_style": "brackets",
+                "color": "#a5f3fc",
+            },
+        ]
+    }
+
+
+def v2_packet(sequence: int, source_id: bytes) -> AudioPacketV2:
+    return AudioPacketV2(
+        session_id=b"0123456789abcdef",
+        sequence=sequence,
+        capture_monotonic_ns=sequence * 20_000_000,
+        sample_rate=16_000,
+        channels=1,
+        flags=0,
+        source_id=source_id,
+        samples=tuple([0.25] * 320),
+    )
+
+
+def test_v2_multi_source_captions_are_independent_and_rename_isolated() -> None:
+    """IPC v2 freeze §6: TEAM + DISCORD streams are independent, and a
+    mid-session DISCORD rename never touches TEAM captions, ids, or
+    revisions."""
+
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello_v2("launch-token"))
+            accepted: dict[str, Any] = json.loads(await websocket.recv())
+            assert accepted["type"] == "hello.accepted"
+            assert accepted["payload"]["protocol_version"] == 2
+
+            await websocket.send(control("registry-1", "source.registry", registry_payload()))
+            assert json.loads(await websocket.recv())["type"] == "source.registry.accepted"
+
+            async def roundtrip(sequence: int, source_id: str) -> dict[str, Any]:
+                packet = v2_packet(sequence, bytes.fromhex(source_id))
+                await websocket.send(encode_audio_packet_v2(packet))
+                provisional: dict[str, Any] = json.loads(await websocket.recv())
+                final: dict[str, Any] = json.loads(await websocket.recv())
+                assert provisional["protocol_version"] == 2
+                assert provisional["type"] == "caption.provisional"
+                assert final["type"] == "caption.final"
+                assert provisional["payload"]["caption_id"] == final["payload"]["caption_id"]
+                return provisional["payload"]
+
+            team = await roundtrip(1, TEAM_SOURCE)
+            discord = await roundtrip(2, DISCORD_SOURCE)
+            assert team["source_id"] == TEAM_SOURCE
+            assert discord["source_id"] == DISCORD_SOURCE
+            assert team["source_snapshot"]["caption_tag"] == "TEAM"
+            assert discord["source_snapshot"]["caption_tag"] == "DISCORD"
+            assert team["strictness"] == "balanced"
+            assert discord["strictness"] == "off"
+            assert team["filter_applied"] == "off"
+            assert team["caption_id"] != discord["caption_id"]
+
+            await websocket.send(
+                control(
+                    "presentation-1",
+                    "source.presentation.update",
+                    {
+                        "source_id": DISCORD_SOURCE,
+                        "source_snapshot": {
+                            "display_name": "Discord (Renamed)",
+                            "caption_tag": "DC2",
+                            "label_style": "colon",
+                            "color": "#a5f3fc",
+                        },
+                    },
+                )
+            )
+            assert json.loads(await websocket.recv())["type"] == "source.presentation.accepted"
+
+            team_after = await roundtrip(3, TEAM_SOURCE)
+            discord_after = await roundtrip(4, DISCORD_SOURCE)
+            assert team_after["source_snapshot"]["caption_tag"] == "TEAM"
+            assert team_after["source_id"] == TEAM_SOURCE
+            assert team_after["revision"] == team["revision"]
+            assert discord_after["source_snapshot"]["caption_tag"] == "DC2"
+            assert discord_after["source_id"] == DISCORD_SOURCE
+            stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
+def test_v2_session_rejects_v1_frames_with_protocol_mismatch() -> None:
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello_v2("launch-token"))
+            await websocket.recv()
+
+            v1 = AudioPacket(
+                session_id=b"0123456789abcdef",
+                sequence=1,
+                capture_monotonic_ns=100,
+                sample_rate=16_000,
+                channels=1,
+                flags=0,
+                samples=(0.25,) * 320,
+            )
+            await websocket.send(encode_audio_packet(v1))
+            mismatch: dict[str, Any] = json.loads(await websocket.recv())
+            assert mismatch["type"] == "error.protocol_mismatch"
+            try:
+                await websocket.recv()
+                raise AssertionError("v1 frame in v2 session must close the connection")
+            except ConnectionClosedError as error:
+                assert error.rcvd is not None
+                assert error.rcvd.code == 1008
+            stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
+def test_v2_presentation_update_for_unknown_source_errors() -> None:
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello_v2("launch-token"))
+            await websocket.recv()
+            await websocket.send(control("registry-1", "source.registry", registry_payload()))
+            await websocket.recv()
+
+            await websocket.send(
+                control(
+                    "presentation-1",
+                    "source.presentation.update",
+                    {
+                        "source_id": "99999999999999999999999999999999",
+                        "source_snapshot": {
+                            "display_name": "Ghost",
+                            "caption_tag": "GHOST",
+                            "label_style": "brackets",
+                            "color": None,
+                        },
+                    },
+                )
+            )
+            error: dict[str, Any] = json.loads(await websocket.recv())
+            assert error["type"] == "source.presentation.error"
+            assert error["payload"]["code"] == "unknown_source"
             stop.set()
 
     asyncio.run(with_server(scenario))

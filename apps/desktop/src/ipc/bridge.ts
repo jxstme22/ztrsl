@@ -71,3 +71,14 @@ export async function runFakeInference(): Promise<CaptionEnvelope[]> {
     .array()
     .parse(await invoke("fake_inference_roundtrip"));
 }
+
+export async function runFakeMultiSourceInference(): Promise<
+  CaptionEnvelope[]
+> {
+  if (!isTauri()) {
+    throw new Error("multi-source fake inference requires the Tauri runtime");
+  }
+  return captionEnvelopeSchema
+    .array()
+    .parse(await invoke("fake_multi_source_roundtrip"));
+}

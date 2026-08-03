@@ -663,7 +663,7 @@ struct LiveSnapshot {
 }
 
 enum LiveWorkerEvent {
-    Caption(CaptionPayload),
+    Caption(Box<CaptionPayload>),
     Metrics(LiveMetrics),
     Error(String),
     Stopped,
@@ -1223,6 +1223,20 @@ fn fake_inference_roundtrip(
 }
 
 #[tauri::command]
+fn fake_multi_source_roundtrip(
+    runtime: tauri::State<'_, SidecarRuntime>,
+) -> Result<Vec<Envelope<CaptionPayload>>, String> {
+    runtime
+        .supervisor
+        .lock()
+        .map_err(lock_error)?
+        .as_mut()
+        .ok_or_else(|| "fake sidecar is not running".to_owned())?
+        .fake_roundtrip_multi_source(200_000_000, vec![0.25; 320])
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn stop_fake_sidecar(runtime: tauri::State<'_, SidecarRuntime>) -> Result<SidecarStatus, String> {
     if let Some(mut supervisor) = runtime.supervisor.lock().map_err(lock_error)?.take() {
         supervisor.stop();
@@ -1646,7 +1660,7 @@ fn drain_live_captions(
     {
         metrics.captions_received = metrics.captions_received.saturating_add(1);
         events
-            .send(LiveWorkerEvent::Caption(envelope.payload))
+            .send(LiveWorkerEvent::Caption(Box::new(envelope.payload)))
             .map_err(|_| "live UI event receiver disconnected".to_owned())?;
     }
     Ok(())
@@ -1662,7 +1676,7 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
     let mut captions = Vec::new();
     for event in pending {
         match event {
-            LiveWorkerEvent::Caption(caption) => captions.push(caption),
+            LiveWorkerEvent::Caption(caption) => captions.push(*caption),
             LiveWorkerEvent::Metrics(metrics) => state.metrics = metrics,
             LiveWorkerEvent::Error(error) => {
                 state.error = Some(error);
@@ -1798,6 +1812,7 @@ pub fn run() {
             stop_synthetic_routing,
             start_fake_sidecar,
             fake_inference_roundtrip,
+            fake_multi_source_roundtrip,
             stop_fake_sidecar,
             start_live_translation,
             live_translation_snapshot,
