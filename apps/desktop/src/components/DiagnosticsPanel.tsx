@@ -13,6 +13,7 @@ import {
   buildSupportBundle,
   serializeContentFree,
 } from "../diagnostics/supportBundle";
+import { useT } from "../features/i18n/store";
 import type { SourceConfigs } from "../sources/model";
 import type { OverlaySettings } from "../overlay/model";
 
@@ -89,6 +90,7 @@ export function DiagnosticsPanel({
   onExport?: (json: string) => void;
   onRunLeakage?: () => void;
 }) {
+  const t = useT();
   const displayName = new Map(
     (sourceConfigs?.sources ?? []).map((source) => [
       source.sourceId,
@@ -121,16 +123,16 @@ export function DiagnosticsPanel({
     <section className="card" aria-labelledby="diagnostics-title">
       <div className="card-head">
         <h2 className="card-title" id="diagnostics-title">
-          Diagnostics
+          {t("diagnosticsTitle")}
         </h2>
         <button
           className="button quiet"
           type="button"
           onClick={exportBundle}
-          aria-label="Export support bundle"
+          aria-label={t("diagnosticsExport")}
         >
           <Download aria-hidden="true" size={15} />
-          Export support bundle
+          {t("diagnosticsExport")}
         </button>
       </div>
 
@@ -138,7 +140,7 @@ export function DiagnosticsPanel({
         <div className="diag-block">
           <div className="section-heading">
             <Gauge aria-hidden="true" size={16} />
-            <h3>Scheduler</h3>
+            <h3>{t("diagnosticsScheduler")}</h3>
           </div>
           <div className="diag-metric-row">
             <Metric label="Queue depth" value={scheduler.queueDepth} />
@@ -182,12 +184,10 @@ export function DiagnosticsPanel({
       <div className="diag-block">
         <div className="section-heading">
           <Layers aria-hidden="true" size={16} />
-          <h3>Sources</h3>
+          <h3>{t("diagnosticsSources")}</h3>
         </div>
         {snapshot.sources.length === 0 ? (
-          <p className="diag-empty">
-            No active sources. Start a live session to see per-source metrics.
-          </p>
+          <p className="diag-empty">{t("diagnosticsNoSources")}</p>
         ) : (
           <div className="diag-source-grid">
             {snapshot.sources.map((source) => (

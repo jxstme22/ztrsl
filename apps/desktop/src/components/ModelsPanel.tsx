@@ -8,6 +8,8 @@ import {
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useT } from "../features/i18n/store";
+
 import type { ModelInfo, ModelProgress } from "../models/model";
 import type { ModelUiState } from "../models/useModels";
 import { Select } from "./Select";
@@ -248,9 +250,15 @@ function ModelCard({
   const finishedError =
     progress !== null && progress.done && progress.error !== null;
   return (
-    <article className="lst-model-card">
+    <article
+      className="lst-model-card"
+      data-installed={installed || undefined}
+    >
       <div className="lst-model-card-head">
         <h3>{model.name}</h3>
+        {installed && (
+          <span className="lst-badge lst-badge-installed">Installed</span>
+        )}
         {model.recommended && <span className="lst-badge">Recommended</span>}
         {localOnly && (
           <span className="lst-badge lst-badge-local">Local export</span>
@@ -265,7 +273,7 @@ function ModelCard({
         <span>·</span>
         <span>
           {installed
-            ? `${formatBytes(model.installedSizeBytes)} installed`
+            ? `${formatBytes(model.installedSizeBytes)} on disk`
             : `${formatBytes(model.downloadSizeBytes)} download`}
         </span>
         <span>·</span>
@@ -442,6 +450,7 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
 export function ModelsPanel({ models }: { models: ModelUiState }) {
   const [action, setAction] = useState<DialogAction>(null);
   const [instantiating, setInstantiating] = useState<string | null>(null);
+  const t = useT();
 
   const runInstall = async (id: string) => {
     setInstantiating(id);
@@ -459,8 +468,8 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
     list.length === 0 ? (
       <p className="lst-model-empty">
         {list === models.installed
-          ? "No models installed yet."
-          : "No models available."}
+          ? t("modelsNoInstalled")
+          : t("modelsNoAvailable")}
       </p>
     ) : (
       <div className="lst-model-grid">
@@ -489,29 +498,37 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
           <Database aria-hidden="true" size={17} />
           <h2>Models</h2>
         </div>
+        <span className="pill on" aria-live="polite">
+          <span aria-hidden="true" />
+          {models.installed.length} installed · {models.available.length} available
+        </span>
       </div>
       <p className="lst-page-description">
         Model files are downloaded only when you choose them, from the pinned
         official sources referenced in the confirmation dialogs. Nothing is
-        fetched at install time.
+        fetched at install time. Installed models are verified by checksum on
+        disk.
       </p>
       <DownloadServerRow models={models} />
       <OfflinePackRow models={models} />
       {models.error !== null && (
         <p className="lst-error-text">{models.error}</p>
       )}
-      <section className="lst-model-section" aria-label="Installed">
-        <h3 className="section-heading">Installed</h3>
+      <section className="lst-model-section" aria-label={t("modelsInstalled")}>
+        <h3 className="section-heading">{t("modelsInstalled")}</h3>
         {cards(models.installed)}
       </section>
-      <section className="lst-model-section" aria-label="Available">
-        <h3 className="section-heading">Available to install</h3>
+      <section className="lst-model-section" aria-label={t("modelsAvailable")}>
+        <h3 className="section-heading">{t("modelsAvailable")}</h3>
         {cards(models.available)}
       </section>
       {(models.knownInstalled.length > 0 ||
         models.knownAvailable.length > 0) && (
-        <section className="lst-model-section" aria-label="Local exports">
-          <h3 className="section-heading">Local exports (NCSpeech)</h3>
+        <section
+          className="lst-model-section"
+          aria-label={t("modelsLocalExports")}
+        >
+          <h3 className="section-heading">{t("modelsLocalExports")}</h3>
           <p className="lst-page-description">
             Fixed-language CTC models generated on this PC via
             <code> scripts/export_ncspeech_onnx.py</code>. They are not

@@ -43,7 +43,7 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 type SectionId =
   "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
 
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.4.2";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -87,6 +87,14 @@ export function ControlApp() {
   const language = useUiLanguage();
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
+  // Show the welcome card when no models are installed, or on the very first
+  // run (dismissible once). On later runs with models present, it stays
+  // hidden so it never blocks the app.
+  const [showWelcome, setShowWelcome] = useState(
+    () =>
+      !models.hasInstalledModels ||
+      window.localStorage.getItem("lst.welcome-dismissed") !== "1",
+  );
 
   const minimize = () => {
     if (desktop) {
@@ -142,7 +150,12 @@ export function ControlApp() {
 
         <section className="content" aria-label="Active section">
           {section === "live" && (
-            <LivePage controller={controller} audio={audio} live={live} />
+            <LivePage
+              controller={controller}
+              audio={audio}
+              live={live}
+              models={models}
+            />
           )}
           {section === "models" && <ModelsPage models={models} />}
           {section === "sources" && (
@@ -173,12 +186,16 @@ export function ControlApp() {
         </section>
       </div>
 
-      {desktop && !models.hasInstalledModels && (
+      {desktop && showWelcome && (
         <WelcomeModelsDialog
           models={models}
           error={models.error}
           onInstall={(id) => void models.startInstall(id)}
           onRetry={() => void models.refresh()}
+          onDismiss={() => {
+            window.localStorage.setItem("lst.welcome-dismissed", "1");
+            setShowWelcome(false);
+          }}
           language={language}
         />
       )}
@@ -198,10 +215,12 @@ function LivePage({
   controller,
   audio,
   live,
+  models,
 }: {
   controller: Controller;
   audio: AudioController;
   live: LiveController;
+  models: ModelsController;
 }) {
   const { snapshot } = controller;
 
@@ -234,7 +253,7 @@ function LivePage({
         </section>
       )}
 
-      <LiveTranslationPanel audio={audio} live={live} />
+      <LiveTranslationPanel audio={audio} live={live} models={models} />
 
       <section className="card" aria-labelledby="preview-title">
         <div className="card-head">

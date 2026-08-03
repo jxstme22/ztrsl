@@ -1,4 +1,32 @@
-# 23 — Release Notes (v0.4.1)
+# 23 — Release Notes (v0.4.2)
+
+## v0.4.2 — no more terminal window, polished UI
+
+**The console window is gone for real.** The previous fix hid the sidecar's
+console, but the app itself was still built as a Windows console-subsystem
+program, so a terminal opened next to it and closing that terminal killed the
+whole app. The app is now a proper GUI executable:
+- no terminal opens on launch;
+- the window's own close button works (closing it no longer kills the app);
+- the sidecar + translation runner stay headless.
+
+Also in v0.4.2:
+
+- **Live start "audio capture stalled"** — the stall check no longer
+  false-positives during a slow endpoint warm-up: it only begins counting once
+  the first frame arrives, allows a longer grace period, and the error now
+  suggests trying a different capture endpoint.
+- **Welcome/onboarding** — shows on first run (even if models are already
+  installed) and can be dismissed once.
+- **Models page** — clearly shows **Installed** vs available with on-disk
+  sizes and a live count header; the Live panel tags each ASR/MT option as
+  `(not installed)` when the model isn't on disk.
+- **Color picker** — replaced the unstylable OS popup with a branded swatch +
+  preset palette matching the rest of the app.
+- **Chinese (Simplified)** — now applied across Models, Sources, Diagnostics,
+  and the Live panel (not just Settings/Welcome).
+- **Footer spacing** — more bottom breathing room so the last card isn't flush
+  against the window edge.
 
 ## v0.4.1 — headless background processes
 

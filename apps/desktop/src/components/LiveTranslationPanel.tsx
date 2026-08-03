@@ -10,6 +10,8 @@ import type {
   TargetLanguage,
   TranslationProvider,
 } from "../live/bridge";
+import type { ModelUiState } from "../models/useModels";
+import { useT } from "../features/i18n/store";
 import { Select } from "./Select";
 import type { SelectOption } from "./Select";
 
@@ -19,6 +21,8 @@ type LiveController = ReturnType<typeof useLiveTranslation>;
 type LiveTranslationPanelProps = {
   audio: AudioController;
   live: LiveController;
+  /** Installed model ids, so provider options can show what's on disk. */
+  models?: ModelUiState;
 };
 
 const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
@@ -140,6 +144,7 @@ async function pushProviderEnv(
 export function LiveTranslationPanel({
   audio,
   live,
+  models,
 }: LiveTranslationPanelProps) {
   const [inputEndpointId, setInputEndpointId] = useState<string | null>(() =>
     loadStored(INPUT_ENDPOINT_KEY),
@@ -172,6 +177,7 @@ export function LiveTranslationPanel({
   const [customTxApiKey, setCustomTxApiKey] = useState<string>(
     () => window.localStorage.getItem(CUSTOM_TX_API_KEY_KEY) ?? "",
   );
+  const t = useT();
   const isSimulator = audio.catalog?.platform === "development";
   const busy = live.state === "starting" || live.state === "stopping";
   const listening = live.state === "listening";
@@ -185,6 +191,23 @@ export function LiveTranslationPanel({
     () => endpoints.filter((endpoint) => endpoint.kind === "render"),
     [endpoints],
   );
+
+  // Installed local model ids (whisper/nllb/madlad on disk) plus the known
+  // NCSpeech exports, so the provider list can honestly tag what's available
+  // vs. what still needs downloading/exporting.
+  const installedModelIds = useMemo(() => {
+    const installed = new Set<string>();
+    for (const model of models?.installed ?? []) {
+      installed.add(model.id);
+    }
+    for (const model of models?.knownInstalled ?? []) {
+      installed.add(model.id);
+    }
+    return installed;
+  }, [models?.installed, models?.knownInstalled]);
+
+  const tag = (label: string, installed: boolean): string =>
+    installed ? label : `${label} (${t("liveNotInstalled")})`;
 
   const channelOptions = useMemo<SelectOption[]>(() => {
     const options: SelectOption[] = [];
@@ -469,7 +492,7 @@ export function LiveTranslationPanel({
           <label htmlFor="live-asr">Speech recognition</label>
           <Select
             id="live-asr"
-            label="Speech recognition source"
+            label={t("liveSpeechRecognitionSource")}
             value={asrProvider}
             disabled={listening || busy}
             onChange={(value) => {
@@ -478,19 +501,40 @@ export function LiveTranslationPanel({
             options={[
               {
                 value: "whisper-turbo",
-                label: "Local Whisper large-v3-turbo (fast)",
+                label: tag(
+                  "Local Whisper large-v3-turbo (fast)",
+                  installedModelIds.has("whisper-large-v3-turbo"),
+                ),
               },
-              { value: "whisper-full", label: "Local Whisper large-v3 (full)" },
-              { value: "ncspeech", label: "NCSpeech FastConformer (Tagalog)" },
+              {
+                value: "whisper-full",
+                label: tag(
+                  "Local Whisper large-v3 (full)",
+                  installedModelIds.has("whisper-large-v3"),
+                ),
+              },
+              {
+                value: "ncspeech",
+                label: tag(
+                  "NCSpeech FastConformer (Tagalog)",
+                  installedModelIds.has("ncspeech-tl-fastconformer-hybrid-large"),
+                ),
+              },
               {
                 value: "ncspeech-zh",
-                label: "NCSpeech Citrinet-1024 (Mandarin)",
+                label: tag(
+                  "NCSpeech Citrinet-1024 (Mandarin)",
+                  installedModelIds.has("ncspeech-zh-citrinet-1024-gamma"),
+                ),
               },
               {
                 value: "ncspeech-zh-parakeet",
-                label: "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
+                label: tag(
+                  "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
+                  installedModelIds.has("ncspeech-zh-parakeet-ctc-0.6b"),
+                ),
               },
-              { value: "groq-whisper", label: "Groq Whisper (free API)" },
+              { value: "groq-whisper", label: "Groq Whisper (API)" },
             ]}
           />
         </div>
@@ -499,7 +543,7 @@ export function LiveTranslationPanel({
           <label htmlFor="live-translation">Translation source</label>
           <Select
             id="live-translation"
-            label="Translation source"
+            label={t("liveTranslationSource")}
             value={translationProvider}
             disabled={listening || busy}
             onChange={(value) => {
@@ -508,9 +552,18 @@ export function LiveTranslationPanel({
             options={[
               {
                 value: "nllb",
-                label: "Local NLLB (offline, near-real-time, GPU)",
+                label: tag(
+                  "Local NLLB (offline, near-real-time, GPU)",
+                  installedModelIds.has("nllb-200-distilled-600M-ct2-int8"),
+                ),
               },
-              { value: "madlad", label: "Local MADLAD (offline, slower)" },
+              {
+                value: "madlad",
+                label: tag(
+                  "Local MADLAD (offline, slower)",
+                  installedModelIds.has("madlad400-3b-mt"),
+                ),
+              },
               {
                 value: "google-translate",
                 label: "Google Translate (free, unofficial endpoint)",

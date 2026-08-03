@@ -113,12 +113,14 @@ export function WelcomeModelsDialog({
   onInstall,
   error,
   onRetry,
+  onDismiss,
   language,
 }: {
   models: ModelUiState;
   onInstall: (id: string) => void;
   error: string | null;
   onRetry: () => void;
+  onDismiss: () => void;
   language: UiLanguageController;
 }) {
   const [showOptional, setShowOptional] = useState(false);
@@ -259,6 +261,11 @@ export function WelcomeModelsDialog({
         )}
 
         <p className="lst-welcome-foot">{t("welcomeFoot")}</p>
+        <div className="lst-welcome-dismiss">
+          <button type="button" className="button quiet" onClick={onDismiss}>
+            Skip for now
+          </button>
+        </div>
       </div>
     </div>
   );

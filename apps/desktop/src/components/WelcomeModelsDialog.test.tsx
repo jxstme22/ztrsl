@@ -66,6 +66,7 @@ function Harness({ language }: { language: "en" | "zh" }) {
       onInstall={vi.fn()}
       error={null}
       onRetry={vi.fn()}
+      onDismiss={vi.fn()}
       language={{
         language,
         setLanguage: controller.setLanguage,

@@ -1,7 +1,9 @@
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { ColorPicker } from "./ColorPicker";
 import { Select } from "./Select";
+import { useT } from "../features/i18n/store";
 import { type AsrProvider } from "../live/bridge";
 import { renderLabel } from "../sources/labels";
 import { SOURCE_PRESETS, createSourceFromPreset } from "../sources/presets";
@@ -107,6 +109,7 @@ function SourceCard({
   onRemove: () => void;
   asrProvider: AsrProvider;
 }) {
+  const t = useT();
   const validation = useMemo(
     () => validateSource(source, siblings),
     [source, siblings],
@@ -128,7 +131,7 @@ function SourceCard({
 
       <div className="form-grid">
         <label className="field">
-          <span>Name</span>
+          <span>{t("sourcesName")}</span>
           <input
             type="text"
             value={source.displayName}
@@ -140,7 +143,7 @@ function SourceCard({
         </label>
 
         <label className="field">
-          <span>Caption tag</span>
+          <span>{t("sourcesCaptionTag")}</span>
           <input
             type="text"
             value={source.captionTag}
@@ -153,9 +156,9 @@ function SourceCard({
         </label>
 
         <label className="field">
-          <span>Label style</span>
+          <span>{t("sourcesLabelStyle")}</span>
           <Select
-            label="Label style"
+            label={t("sourcesLabelStyle")}
             value={source.labelStyle}
             onChange={(value) => {
               onChange({ labelStyle: value as CaptionLabelStyle });
@@ -165,9 +168,9 @@ function SourceCard({
         </label>
 
         <label className="field">
-          <span>Language profile</span>
+          <span>{t("sourcesLanguageProfile")}</span>
           <Select
-            label="Language profile"
+            label={t("sourcesLanguageProfile")}
             value={source.languageProfile}
             onChange={(value) => {
               onChange({ languageProfile: value as LanguageProfile });
@@ -180,9 +183,9 @@ function SourceCard({
         </label>
 
         <label className="field">
-          <span>Strictness</span>
+          <span>{t("sourcesStrictness")}</span>
           <Select
-            label="Strictness"
+            label={t("sourcesStrictness")}
             value={source.strictness}
             onChange={(value) => {
               onChange({ strictness: value as LanguageStrictness });
@@ -201,12 +204,12 @@ function SourceCard({
         </div>
 
         <label className="field">
-          <span>Color</span>
-          <input
-            type="color"
-            value={source.color ?? "#7dd3fc"}
-            onChange={(event) => {
-              onChange({ color: event.target.value });
+          <span>{t("sourcesColor")}</span>
+          <ColorPicker
+            label={t("sourcesColor")}
+            value={source.color}
+            onChange={(color) => {
+              onChange({ color });
             }}
           />
         </label>
@@ -265,7 +268,7 @@ function SourceCard({
           disabled={siblings.length <= 1}
         >
           <Trash2 aria-hidden="true" size={14} />
-          Remove
+          {t("sourcesRemove")}
         </button>
       </div>
     </section>
@@ -280,13 +283,14 @@ export function SourcesPanel({
   const { configs, updateSource, addSource, removeSource } = useSourceConfigs();
   const [presetToAdd, setPresetToAdd] = useState("custom");
   const atMax = configs.sources.length >= MAX_SOURCES;
+  const t = useT();
 
   return (
     <div className="page-stack">
       <section className="card" aria-labelledby="sources-title">
         <div className="card-head">
           <h2 className="card-title" id="sources-title">
-            Audio sources
+            {t("sourcesTitle")}
           </h2>
           <span className="pill on">
             <span aria-hidden="true" />
@@ -316,7 +320,7 @@ export function SourcesPanel({
 
       <div className="action-row">
         <Select
-          label="Add source"
+          label={t("sourcesAdd")}
           value={presetToAdd}
           onChange={(value) => {
             setPresetToAdd(value);
@@ -332,7 +336,7 @@ export function SourcesPanel({
           }}
         >
           <Plus aria-hidden="true" size={15} />
-          Add source
+          {t("sourcesAdd")}
         </button>
       </div>
     </div>

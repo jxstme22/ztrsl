@@ -1794,14 +1794,17 @@ fn run_windows_live_loop(
         .map_err(audio_error_to_string)?;
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
-    let mut last_frame_at = Instant::now();
+    // Stall detection only begins once the first frame has been delivered:
+    // some endpoints take a moment to start producing buffers, so counting
+    // silence before the first frame would false-positive on a slow warmup.
+    let mut last_frame_at: Option<Instant> = None;
     loop {
         if stop.try_recv().is_ok() {
             return Ok(());
         }
         match capture.try_next().map_err(audio_error_to_string)? {
             Some(frame) => {
-                last_frame_at = Instant::now();
+                last_frame_at = Some(Instant::now());
                 metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                 metrics.capture_drops = capture.dropped_frames();
                 if let Some(playback) = playback.as_mut() {
@@ -1832,12 +1835,15 @@ fn run_windows_live_loop(
         // stalled-capture branch, or the session would hang "listening" with
         // no visible failure.
         drain_live_captions(supervisor, events, &mut metrics)?;
-        if last_frame_at.elapsed() >= Duration::from_millis(1500) {
-            return Err(format!(
-                "audio capture stalled: no frames for {:.1}s — the endpoint may have been \
-                 disconnected or disabled",
-                last_frame_at.elapsed().as_secs_f32()
-            ));
+        if let Some(since) = last_frame_at {
+            if since.elapsed() >= Duration::from_secs(3) {
+                return Err(format!(
+                    "audio capture stalled: no frames for {:.1}s — the endpoint may be \
+                     disconnected or disabled, or the device is being used exclusively \
+                     by another app. Try a different capture endpoint in Sources.",
+                    since.elapsed().as_secs_f32()
+                ));
+            }
         }
         if last_metrics.elapsed() >= Duration::from_millis(500) {
             let _ = events.try_send(LiveWorkerEvent::Metrics(metrics.clone()));

@@ -113,6 +113,59 @@ const UI_STRINGS = {
   },
   english: { en: "English", zh: "英语" },
   chineseSimplified: { en: "Chinese (Simplified)", zh: "简体中文" },
+
+  // Models page
+  modelsInstalled: { en: "Installed", zh: "已安装" },
+  modelsAvailable: { en: "Available to install", zh: "可安装" },
+  modelsLocalExports: { en: "Local exports (NCSpeech)", zh: "本地导出（NCSpeech）" },
+  modelsSpeechRecognition: { en: "Speech recognition", zh: "语音识别" },
+  modelsTranslation: { en: "Translation", zh: "翻译" },
+  modelsOnDisk: { en: "on disk", zh: "已存在" },
+  modelsDownload: { en: "download", zh: "下载" },
+  modelsLocalExportHint: { en: "Requires local export", zh: "需要本地导出" },
+  modelsDownloadServer: { en: "Download server", zh: "下载服务器" },
+  modelsOfflinePack: { en: "Install offline model pack", zh: "安装离线模型包" },
+  modelsImport: { en: "Import", zh: "导入" },
+  modelsNoInstalled: { en: "No models installed yet.", zh: "尚未安装模型。" },
+  modelsNoAvailable: { en: "No models available.", zh: "没有可用模型。" },
+  modelsInstallAction: { en: "Install", zh: "安装" },
+
+  // Sources page
+  sourcesTitle: { en: "Audio sources", zh: "音频源" },
+  sourcesName: { en: "Name", zh: "名称" },
+  sourcesCaptionTag: { en: "Caption tag", zh: "字幕标签" },
+  sourcesLabelStyle: { en: "Label style", zh: "标签样式" },
+  sourcesColor: { en: "Color", zh: "颜色" },
+  sourcesLanguageProfile: { en: "Language profile", zh: "语言档案" },
+  sourcesStrictness: { en: "Strictness", zh: "严格度" },
+  sourcesAdd: { en: "Add source", zh: "添加音频源" },
+  sourcesRemove: { en: "Remove", zh: "移除" },
+
+  // Diagnostics page
+  diagnosticsTitle: { en: "Diagnostics", zh: "诊断" },
+  diagnosticsScheduler: { en: "Scheduler", zh: "调度器" },
+  diagnosticsSources: { en: "Sources", zh: "音频源" },
+  diagnosticsIsolation: { en: "Isolation check", zh: "隔离检查" },
+  diagnosticsExport: { en: "Export support bundle", zh: "导出支持包" },
+  diagnosticsNoSources: {
+    en: "No active sources. Start a live session to see per-source metrics.",
+    zh: "没有活动音源。启动实时会话以查看各音源指标。",
+  },
+
+  // Live page
+  liveSpeechRecognitionSource: {
+    en: "Speech recognition source",
+    zh: "语音识别来源",
+  },
+  liveTranslationSource: { en: "Translation source", zh: "翻译来源" },
+  liveNotInstalled: { en: "not installed", zh: "未安装" },
+  liveStart: { en: "Start subtitles", zh: "开始字幕" },
+  liveStop: { en: "Stop subtitles", zh: "停止字幕" },
+
+  // Common
+  speechRecognition: { en: "Speech recognition", zh: "语音识别" },
+  translation: { en: "Translation", zh: "翻译" },
+  closeApp: { en: "Close", zh: "关闭" },
 } satisfies Record<string, UIString>;
 
 export type UIKey = keyof typeof UI_STRINGS;
