@@ -908,10 +908,8 @@ fn run_loopback_capture(
                 &mut captured_samples,
                 &mut sequence,
             );
-            if !frame.samples.is_empty() {
-                if sender.try_send(frame).is_err() {
-                    dropped_frames.fetch_add(1, Ordering::Relaxed);
-                }
+            if !frame.samples.is_empty() && sender.try_send(frame).is_err() {
+                dropped_frames.fetch_add(1, Ordering::Relaxed);
             }
             let _ = unsafe { capture_client.ReleaseBuffer(num_frames) };
             // Continue the inner loop to drain trailing packets without sleeping.
