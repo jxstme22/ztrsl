@@ -1,97 +1,224 @@
-# xTRSNLTR — Local Translator Overlay for VALORANT
+# xTRSNLTR
 
-A **fully local Windows desktop companion** that translates incoming VALORANT
-voice chat into on-screen subtitles — with **no game-process access, no cloud,
-and no telemetry**.
+**Real-time English subtitles for your VALORANT voice chat — 100% local.**
 
-- Listens to the voice-chat mix routed to a virtual audio cable (or the
-  microphone capture stream you choose).
-- Recognizes **Tagalog / Filipino, Cebuano, Chinese, and English** speech.
-- Translates into **English or Simplified Chinese** (whichever you pick).
-- Shows low-latency subtitles in a transparent, click-through overlay.
-- **Does not** inject into, read the memory of, automate, or modify VALORANT —
-  see [Safety boundaries](#safety-boundaries).
+Hear Tagalog, Cebuano, or Chinese callouts, *read* them in English as they happen,
+and never send a second of audio to the cloud.
 
-> **Download the Windows installer** from the
-> [GitHub Releases page](https://github.com/jxstme22/ztrsl/releases/latest)
-> (`xTRSNLTR_0.2.0_x64-setup.exe`, NSIS, ~72 MB). Installers are built by CI
-> and attached to each release; nothing binary lives in the repository.
-
-> **Status: beta.** It works end-to-end on Windows, but production hardening
-> (code signing, auto-update, keychain, native-speaker benchmarks) is
-> still in progress. See the [roadmap](#roadmap-and-release-state).
-
-> **macOS:** the app builds and runs on Apple Silicon (M4) in development
-> mode, but the live voice-chat pipeline needs a port (audio capture is WASAPI
-> on Windows). See [docs/16_MACOS_PORT.md](docs/16_MACOS_PORT.md) for the
-> reliability assessment and the recommended M4 stack.
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Windows%2011-7dd3fc" alt="Platform: Windows 11"/>
+  <img src="https://img.shields.io/badge/latency-low--latency--local-4ade80" alt="Local low latency"/>
+  <img src="https://img.shields.io/badge/privacy-no%20cloud-4ade80" alt="No cloud"/>
+  <img src="https://img.shields.io/badge/license-Apache--2.0-dc4d5e" alt="Apache 2.0"/>
+</p>
 
 ---
 
-## Features
+## What it does
 
-- **In-app model manager** — no model files ship with the installer. On first
-  run you choose which models to download; every download shows a confirmation
-  dialog with size, source, and license, verifies SHA-256 checksums, and can be
-  cancelled or deleted from the app afterward. If you are in mainland China and
-  cannot reach Hugging Face, switch the **Download server** setting in the
-  Models tab to `hf-mirror.com` (or set the `HF_ENDPOINT`/`LST_HF_ENDPOINT`
-  environment variable to your mirror before launching).
-- **Live caption pipeline** — bounded audio capture → VAD segmentation →
-  Whisper ASR (Tagalog/Cebuano/Chinese/English) → NLLB/MADLAD or optional
-  HTTP translation → provisional/final captions in the overlay.
-- **Provisional + final captions** — fast revising draft, then a stable final
-  once the utterance ends.
-- **Fully offline by default** — local NLLB translation. Opt-in HTTP
-  translation providers (Google, MyMemory, LibreTranslate, custom endpoint)
-  send only the recognized **text**, never audio.
-- **Privacy-first** — no raw audio persistence, no telemetry, loopback-only
-  authenticated IPC, redacted logs. Only the publisher's first-run welcome and
-  model downloads use the network (pinned public URLs).
-- **Global hotkeys, overlay placement memory, monitoring output** with echo
-  protection.
+```
+"Rush B!"            xTRSNLTR               "Rush B!" → "Rush B!"
+(Tagalog voice)  ─────────────►  (English subtitle on screen)
+```
 
-## Safety boundaries
+- Listens to **your voice-chat mix** — through a virtual audio cable or any
+  audio endpoint you pick.
+- Recognizes **Tagalog / Filipino, Cebuano, Chinese, and English**.
+- Translates into **English** (Simplified Chinese optional).
+- Shows a **transparent, click-through overlay** above your game.
+- Handles **multiple channels at once** — `[TEAM]` and `[DISCORD]` lanes, each
+  with its own language profile.
+
+It never touches the game: no injection, no memory reads, no automation.
+[Why that matters ↓](#safety-first-by-design)
+
+> **Download:** get the Windows installer from
+> [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
+> **Status:** beta. It works end-to-end; signing + clean-machine tests are the
+> remaining 1.0 work.
+
+---
+
+## How it works (in one picture)
+
+```mermaid
+flowchart TB
+  subgraph Game
+    V[VALORANT voice chat]
+  end
+
+  subgraph xTRSNLTR desktop
+    C[Audio capture<br/>WASAPI / virtual cable]
+    R[16 kHz mono ring buffer]
+    O[Transparent overlay window]
+    S[Model manager<br/>download + verify]
+  end
+
+  subgraph Local inference sidecar
+    VAD[VAD + utterance segmentation]
+    ASR[Whisper ASR]
+    MT[NLLB / MADLAD translation]
+    SCHED[Shared priority scheduler]
+  end
+
+  V --> C --> R --> VAD --> ASR --> SCHED --> MT
+  SCHED --> O
+  S -. models .-> ASR & MT
+```
+
+**The 30-second version:**
+
+1. Your voice-chat audio is captured from a Windows audio endpoint.
+2. A small **VAD** splits the stream into "someone is talking" chunks.
+3. **Speech recognition** (local Whisper) turns each chunk into text.
+4. **Translation** (local NLLB) turns that into English.
+5. A shared **scheduler** keeps finals ahead of drafts and everything bounded.
+6. The **overlay** shows it on screen — labeled per source.
+
+Everything runs on your machine. No audio ever leaves it.
+
+---
+
+## VB-CABLE: how voice chat reaches xTRSNLTR
+
+A **virtual audio cable** is a free, user-installed Windows driver that acts as
+a "software wire": whatever an app plays to its **Input** can be *captured*
+from its **Output**. That's how xTRSNLTR hears exactly the voice-chat mix —
+and nothing else.
+
+```mermaid
+flowchart TB
+  subgraph Your PC
+    VC[VALORANT voice chat] --> CI["CABLE Input<br/>(virtual cable)"]
+    DC[Discord voice chat] --> CI
+    CO["CABLE Output"] --> APP["xTRSNLTR audio core"]
+    APP --> HP[("Headphones")]
+  end
+  GAME[VALORANT game audio] --> HP
+```
+
+### Set it up (5 minutes)
+
+**1. Install the cable** — download **VB-CABLE** (free) from
+<https://vb-audio.com/Cable/>. Windows will now show a **CABLE Input**
+(Playback) and **CABLE Output** (Recording) device pair.
+
+**2. VALORANT voice chat → CABLE Input** — in VALORANT
+`Settings → Audio → Voice Chat`, set **Output Device** to **CABLE Input**.
+Your teammates' voices now play *into the cable only*.
+
+**3. VALORANT game audio → headphones** — in VALORANT `Settings → Audio`,
+keep **Speaker / Output Device** on your **headphones**. Game effects must
+never go to the cable, or xTRSNLTR will hear explosions as speech.
+
+**4. Discord voice → the same cable** (or a second one) — in Discord
+`Settings → Voice & Video`, set **Output Device** to **CABLE Input**. Route
+Discord and VALORANT into the same cable to treat them as one source, or use a
+second cable (paid VB-CABLE product) for a separate `[DISCORD]` lane.
+
+**5. Headphones — keep hearing your team** — because voice now plays into the
+cable, xTRSNLTR **monitors** it back to you: in xTRSNLTR **Setup**, set the
+**monitoring output** to your **headphones** and turn monitoring on. Avoid
+echo by letting xTRSNLTR be the *only* path replaying voice to your headset.
+
+**6. Sanity check** — in **Diagnostics**, run **Isolation check**. When only
+game sounds play and nobody speaks, the voice capture meter should stay
+near-silent. If it jumps, game audio is leaking into the cable.
+
+> VB-CABLE is a **separate install** — xTRSNLTR never bundles, installs, or
+> patches the driver; it only detects and routes to it when you choose to.
+
+---
+
+## Caption lifecycle
+
+```mermaid
+sequenceDiagram
+  participant G as Game voice
+  participant S as Sidecar
+  participant O as Overlay
+
+  G->>S: audio chunk (16 kHz)
+  S->>S: VAD detects speech
+  S-->>O: provisional "Listening…" (fast draft)
+  G->>S: more audio
+  S-->>O: provisional revision ↑ (draft improves)
+  G->>S: silence / utterance ends
+  S->>O: final caption (stable, replaces draft)
+```
+
+Provisionals stream **while** someone talks; the final replaces them the moment
+the utterance closes. Multiple sources each get their own lane.
+
+---
+
+## Multi-source, per language
+
+```mermaid
+flowchart LR
+  A[TEAM channel] --> P1[Tagalog profile] --> O[(Overlay lane 1)]
+  B[DISCORD channel] --> P2[Cebuano profile] --> O2[(Overlay lane 2)]
+  C[Party channel] --> P3[Mandarin profile] --> O3[(Overlay lane 3)]
+```
+
+Each source picks a **language profile** and a **strictness**:
+
+- **Profiles:** Tagalog · Taglish · Cebuano · Bislish · Mandarin ·
+  Chinese/English · Auto
+- **Strictness:** Off (accept everything) · Balanced (filter clear misses) ·
+  Strict (suppress anything off-profile)
+- **Tactical callouts** (`rush B`, `rotate A`, numbers) always pass, even under
+  Strict — the glossary treats them as data.
+
+---
+
+## Safety first, by design
 
 This project deliberately stays out of the game. It never implements:
 
-- game-process injection, DLL hooks, or graphics API hooks;
-- memory reads, game-file modification, packet interception;
-- input automation or anti-cheat evasion;
-- kernel drivers or hidden-data extraction;
-- screen analysis used for tactical advantage.
+- game-process injection, DLL / graphics hooks, or memory reads;
+- game-file modification, packet interception, or input automation;
+- anti-cheat evasion, kernel drivers, or hidden-data extraction;
+- screen analysis for tactical advantage.
 
-It only **enumerates ordinary Windows audio endpoints**, processes **local audio**,
-draws an ordinary top-level transparent window, registers explicit global
-hotkeys, and stores user-approved local settings.
+It only:
+
+- enumerates ordinary **Windows audio endpoints** and processes local audio;
+- draws a normal **transparent top-level window**;
+- registers explicit **global hotkeys**;
+- stores **user-approved local settings**.
+
+That keeps it outside Vanguard's scope and makes the privacy story simple:
+**local in, local out.**
+
+---
 
 ## Repository layout
 
 ```text
 .
-├── apps/desktop/          Tauri 2 app (control window + caption overlay)
-│   └── src-tauri/         Rust host: IPC, audio, sidecar supervision
+├── apps/desktop/           Tauri 2 app — control window + caption overlay
+│   └── src-tauri/          Rust host: IPC, audio, sidecar supervision
 ├── crates/
-│   ├── audio-core/        WASAPI capture/playback, resampling, routing
-│   ├── model-manager/     catalog + verified staged model installs
-│   ├── ipc-protocol/      loopback WebSocket IPC schema
+│   ├── audio-core/         WASAPI capture/playback, resampling, routing
+│   ├── model-manager/      verified staged model installs (multi-provider)
+│   ├── ipc-protocol/       loopback WebSocket IPC schema
 │   ├── sidecar-supervisor/ Python-sidecar lifecycle
 │   ├── translation-runner/ Rust (candle) MADLAD-400 runner
-│   ├── overlay-core/      caption state machine
-│   └── diagnostics/       content-free diagnostics
-├── services/inference/    Python sidecar: VAD, Whisper ASR, NLLB/HTTP MT
-├── scripts/               model installers, sidecar/build helpers
-├── models/
-│   ├── catalog.json       pinned, checksummed download catalog (embedded)
-│   ├── manifests/         per-model verification manifests
-│   └── README.md          model policy
+│   ├── overlay-core/       caption state machine
+│   └── diagnostics/        content-free diagnostics
+├── services/inference/    Python sidecar: VAD, ASR, MT
+├── scripts/               model installers, build helpers, validation harnesses
+├── models/catalog.json    pinned, checksummed download catalog (embedded)
 └── docs/                  PRD, architecture, ADRs, phase evidence
 ```
 
+---
+
 ## Getting started (developers)
 
-Prerequisites: **Windows 11 x64**, Node.js 22+ (Corepack), pnpm, stable Rust,
-Python 3.11–3.13, and `uv`.
+**Prereqs:** Windows 11 x64 · Node.js 22+ (Corepack) · pnpm · stable Rust ·
+Python 3.11–3.13 · `uv`
 
 ```powershell
 corepack enable
@@ -102,8 +229,6 @@ uv sync --extra dev --extra models
 Run the app:
 
 ```powershell
-pnpm --filter desktop tauri dev          # from repo root
-# or
 cd apps/desktop
 pnpm tauri dev
 ```
@@ -119,132 +244,66 @@ cd apps/desktop && pnpm test && pnpm typecheck && pnpm lint
 
 ### Models
 
-The app downloads models itself at first run (see the welcome dialog). For
-development you can also install them with the CLI, matching what the catalog
-ships:
+The app downloads models itself on first run (pinned, checksum-verified, with a
+confirmation dialog). Prefer the CLI in development:
 
 ```powershell
 python scripts/install_models.py whisper-turbo --accept-license
 python scripts/install_models.py nllb --accept-license
-python scripts/install_models.py madlad --accept-license   # optional, CPU only
+python scripts/install_models.py madlad --accept-license   # optional, CPU-only
 ```
 
-Optional experimental ASR (dev-only, NCCL/export pipelines): see
-`scripts/export_ncspeech_onnx.py` and the docs.
+Can't reach Hugging Face? The Models tab can use `hf-mirror.com` (or
+`LST_REGION=cn`), and offline packs install with zero network.
+
+---
 
 ## Model licenses
 
-Model artifacts keep their **own** licenses, separate from this project's code
-license (Apache-2.0):
+Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
-| Model | Kind | License | Notes |
-|---|---|---|---|
-| faster-whisper large-v3 / turbo | ASR | MIT | OpenAI Whisper weights |
-| OmniLingual CTC 300M | ASR | Apache-2.0 | research candidate |
-| NLLB-200 distilled 600M | Translation | **CC-BY-NC-4.0** | non-commercial by default |
-| MADLAD-400 3B | Translation | Apache-2.0 | ~50 s/caption on CPU |
+| Model | Kind | License |
+|---|---|---|
+| faster-whisper large-v3 / turbo | ASR | MIT |
+| OmniLingual CTC 300M | ASR | Apache-2.0 |
+| NLLB-200 distilled 600M | Translation | **CC-BY-NC-4.0** (non-commercial) |
+| MADLAD-400 3B | Translation | Apache-2.0 |
 
-Because the default translation model is non-commercial, review the model
-licenses before any commercial distribution of the full package.
+---
 
-## How it works
+## User documentation
 
-```
-VALORANT voice chat
-      │  (ordinary audio endpoint / virtual cable)
-      ▼
- WindowsAudioCapture ──► bounded ring buffer / resampler (16 kHz mono)
-      │
-      ▼
- Sidecar (Python): Silero VAD → utterance segmentation → Whisper ASR
-      │                                              │
-      │                                      text (never audio)
-      ▼                                              ▼
- provisional/final caption ─► NLLB / MADLAD / opt-in HTTP translation
-      │
-      ▼
- Tauri overlay window (click-through, always-on-top)
-```
+- [Setup guide](docs/17_SETUP_GUIDE.md) — includes the VB-CABLE handoff
+- [Sources & labels](docs/18_SOURCES_AND_LABELS.md)
+- [Language profiles & strictness](docs/19_LANGUAGE_PROFILES.md)
+- [Models & downloads](docs/20_MODELS_AND_DOWNLOADS.md)
+- [Diagnostics & troubleshooting](docs/21_DIAGNOSTICS_TROUBLESHOOTING.md)
+- [FAQ](docs/22_FAQ.md)
+- [v0.3.0 release notes](docs/23_RELEASE_NOTES_V0_3_0.md)
 
-IPC is a loopback WebSocket secured with a random per-launch token and
-constant-time comparison; audio packets are bounded and never written to disk
-unless you enable diagnostic recording.
+## For contributors
 
-## Security
+- [Contributing](CONTRIBUTING.md) — including the hard safety boundary list
+- [Security policy](SECURITY.md)
+- Formal design docs in [`docs/`](docs/README.md) — PRD, architecture, ADRs,
+  and per-phase evidence.
 
-See [SECURITY.md](SECURITY.md) for the reporting policy. Highlights:
+---
 
-- No API keys or secrets in the repository; `.env*` is gitignored.
-- Keys you enter for opt-in HTTP providers are runtime env vars forwarded to
-  the sidecar only for that session (stored in webview localStorage — future
-  work will move this to the OS keychain before v1.0).
-- Every model download is pinned to a revision and committed SHA-256; nothing
-  is downloaded until you confirm.
+## Roadmap to 1.0
 
-## Contributing
+Current release: **v0.3.0** (beta — multi-source). Working toward 1.0:
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — including the hard safety boundary
-list, the phase workflow, and how to add a model to the catalog.
-
-## Documentation
-
-The formal project docs live in [`docs/`](docs/README.md): PRD, system
-architecture, ASR/MT pipeline, data models & IPC, security & Riot compliance,
-build plan, phase acceptance evidence, and architecture decision records
-(`docs/adr/`).
-
-## Roadmap and release state
-
-Current release state: **beta** (functional end-to-end; not yet production).
-
-### Installer
-
-Windows installers are built from tagged releases by CI
-(`.github/workflows/release.yml`) and attached to the
-[GitHub Releases page](https://github.com/jxstme22/ztrsl/releases):
-
-- **`xTRSNLTR_<version>_x64-setup.exe`** (NSIS, ~72 MB) — installs the app and
-  bundles the frozen inference sidecar; an MSI is produced alongside.
-- Build it yourself with `pnpm --filter desktop tauri build`
-  (outputs under `target/release/bundle/`).
-
-The installer bundles everything a user needs to run the app:
-
-- the desktop app and overlay (Rust + WebView2, no system dependencies);
-- the **Python inference sidecar frozen into a standalone executable** via
-  PyInstaller (only the app is bundled, ~266 MB before compression — no
-  Python or `.venv` is required on the target machine);
-- the `translation-runner` (MADLAD candle) binary.
-
-Models are **not** bundled — the app downloads them on first run through the
-welcome dialog (see [Models](#features)). Downloads come from Hugging Face by
-default; for mainland China use the in-app **Download server** setting
-(hf-mirror.com) or set `HF_ENDPOINT` before launch.
-
-> Signed builds are coming for 1.0; the current installer is unsigned, so
-> Windows SmartScreen will show a warning until then.
-
-Remaining for a 1.0 release:
-
-- [ ] code signing (Windows SmartScreen) — in progress;
-- [ ] clean-machine install tests of the packaged installer;
-- [ ] native-speaker benchmarks for Tagalog/Cebuano accuracy;
-- [ ] move opt-in API keys to the OS keychain;
-- [ ] auto-update pipeline;
-
-The on-disk model manager, in-app picker with confirmation modal, delete
-support, and the embedded download catalog are already in place
-(see `docs/adr/ADR-011-model-manager.md`).
+- [ ] code signing (Windows SmartScreen)
+- [ ] clean-machine installer walkthrough (the last hardware gate)
+- [ ] native-speaker accuracy benchmarks (Tagalog/Cebuano)
+- [ ] opt-in API keys → OS keychain
+- [ ] auto-update
 
 ## License
 
-Copyright (c) 2026 the xTRSNLTR contributors.
+Copyright (c) 2026 the xTRSNLTR contributors. Licensed under the
+[Apache License 2.0](LICENSE).
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use the files in this repository except in compliance with the
-License. You may obtain a copy at <http://www.apache.org/licenses/LICENSE-2.0>.
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-License for the specific language governing permissions and limitations.
+*VALORANT is a trademark of Riot Games, Inc. This project is not affiliated
+with, endorsed by, or sponsored by Riot Games.*
