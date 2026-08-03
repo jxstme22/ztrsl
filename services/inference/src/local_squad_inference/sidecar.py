@@ -10,7 +10,7 @@ import queue
 import threading
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -26,6 +26,7 @@ from local_squad_inference.http_translation import (
     HttpTranslationError,
 )
 from local_squad_inference.live import LivePipeline, LivePipelineMetrics, source_key_of
+from local_squad_inference.profiles import FilterApplied, apply_language_gate
 from local_squad_inference.protocol import (
     AUDIO_HEADER_V2,
     MAX_AUDIO_MESSAGE_BYTES,
@@ -109,24 +110,73 @@ def _language_profile_of_source(
     return entry.language_profile if entry is not None else "auto"
 
 
+@dataclass
+class _FilterStats:
+    applied: int = 0
+    suppressed: int = 0
+    flagged: int = 0
+    passed: int = 0
+    off: int = 0
+
+    def reconcile(self, applied: FilterApplied) -> None:
+        self.applied += 1
+        if applied == "suppressed":
+            self.suppressed += 1
+        elif applied == "flagged":
+            self.flagged += 1
+        elif applied == "passed":
+            self.passed += 1
+        else:
+            self.off += 1
+
+
+# Per-source language-gate counters (Phase 7; surface in Phase 10). Guarded:
+# the drain task and the control handler can touch these from different
+# threads.
+_filter_stats: dict[str, _FilterStats] = {}
+_filter_stats_lock = threading.Lock()
+
+
+def filter_stats_for(source_id: str) -> _FilterStats:
+    with _filter_stats_lock:
+        return _filter_stats.setdefault(source_id, _FilterStats())
+
+
 def stamp_v2_caption(
     caption: CaptionPayload,
     source_registry: dict[str, SourceRegistryEntry],
     source_snapshots: dict[str, SourceSnapshot],
 ) -> CaptionPayload:
     """Return a copy of the caption with the registry presentation
-    snapshot and strictness attached, so live captions stay
-    source-correct after mid-session renames. Unknown sources keep the
-    caption's own fields (unchanged copy)."""
+    snapshot, strictness, and language-gate result attached, so live
+    captions stay source-correct after mid-session renames. Unknown sources
+    keep the caption's own fields (unchanged copy)."""
     if caption.source_id is None:
         return caption
     entry = source_registry.get(caption.source_id)
     if entry is None:
         return caption
+    # The gate classifies on the signals the caption actually carries
+    # (confidence, timing); detected language is not yet threaded onto
+    # captions, so mismatch classification is exercised by the gate's unit
+    # tests and available to a future provider that reports it.
+    duration_ms = None
+    if caption.ended_monotonic_ns is not None and caption.started_monotonic_ns is not None:
+        duration_ms = (caption.ended_monotonic_ns - caption.started_monotonic_ns) / 1e6
+    decided = apply_language_gate(
+        entry.language_profile,
+        entry.strictness,
+        source_text=caption.source_text,
+        confidence=caption.confidence,
+        utterance_duration_ms=duration_ms,
+    )
+    filter_stats_for(entry.source_id).reconcile(decided.applied)
     return caption.model_copy(
         update={
             "source_snapshot": source_snapshots.get(entry.source_id) or entry_snapshot(entry),
             "strictness": entry.strictness,
+            "filter_applied": decided.applied,
+            "filter_reason": decided.reason,
         }
     )
 
@@ -1170,6 +1220,14 @@ async def handle_connection(
                         live_worker.source_diagnostics,
                         payload.source_id,
                     )
+                stats = filter_stats_for(payload.source_id)
+                diagnostics["filter"] = {
+                    "applied": stats.applied,
+                    "suppressed": stats.suppressed,
+                    "flagged": stats.flagged,
+                    "passed": stats.passed,
+                    "off": stats.off,
+                }
                 await connection.send(
                     json.dumps(
                         envelope(

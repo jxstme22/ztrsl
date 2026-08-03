@@ -729,6 +729,13 @@ def test_v2_live_two_sources_keep_independent_utterances_and_rename_does_not_spl
             assert finals[DISCORD_SOURCE]["source_snapshot"]["caption_tag"] == "DISCORD"
             assert finals[TEAM_SOURCE]["caption_id"] != finals[DISCORD_SOURCE]["caption_id"]
             assert finals[TEAM_SOURCE]["source_mode"] == "filipino"
+            # Phase 7: the language gate stamps filter fields per source.
+            # TEAM is balanced -> demo caption (confidence None) classified
+            # passed; DISCORD is off -> the gate reports "off".
+            assert finals[TEAM_SOURCE]["strictness"] == "balanced"
+            assert finals[TEAM_SOURCE]["filter_applied"] in ("passed", "off")
+            assert finals[DISCORD_SOURCE]["strictness"] == "off"
+            assert finals[DISCORD_SOURCE]["filter_applied"] == "off"
 
             # Per-source diagnostics: both sessions are active and have
             # completed exactly one utterance.
@@ -739,6 +746,9 @@ def test_v2_live_two_sources_keep_independent_utterances_and_rename_does_not_spl
             assert team_diag["type"] == "source.diagnostics"
             assert team_diag["payload"]["active"] is True
             assert team_diag["payload"]["utterances_completed"] == 1
+            # Phase 7: language-gate counters surface in diagnostics.
+            team_filter = team_diag["payload"]["filter"]
+            assert team_filter["applied"] >= 1
             await websocket.send(
                 control("diag-2", "source.diagnostics.request", {"source_id": DISCORD_SOURCE})
             )

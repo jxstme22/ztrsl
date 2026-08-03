@@ -98,6 +98,10 @@ class AsrResult:
     model_id: str
     confidence: float | None
     error: str | None = None
+    # Detected language (Whisper ISO-639-1 token like "tl"/"en"/"zh") when
+    # the provider exposes one. None means unknown; the language gate then
+    # filters on confidence only (post-filter honesty). Phase 7.
+    language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -381,6 +385,7 @@ class FasterWhisperProvider:
             inference_ms=elapsed_ms,
             model_id=self._model_id,
             confidence=confidence,
+            language=_info.language if _info is not None else None,
         )
 
     def transcribe_file(self, source: Path, source_mode: str) -> tuple[FileAsrSegment, ...]:

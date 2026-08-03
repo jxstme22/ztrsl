@@ -2,14 +2,24 @@ import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Select } from "./Select";
+import { type AsrProvider } from "../live/bridge";
 import { renderLabel } from "../sources/labels";
 import { SOURCE_PRESETS, createSourceFromPreset } from "../sources/presets";
 import {
   MAX_SOURCES,
   type AudioSourceConfig,
   type CaptionLabelStyle,
+  type LanguageProfile,
+  type LanguageStrictness,
   type SourceConfigs,
 } from "../sources/model";
+import {
+  PROFILE_META,
+  PROFILE_OPTIONS,
+  STRICTNESS_META,
+  STRICTNESS_OPTIONS,
+  capabilityNote,
+} from "../sources/profiles";
 import { loadSourceConfigs, saveSourceConfigs } from "../sources/storage";
 import { validateSource } from "../sources/validation";
 
@@ -89,11 +99,13 @@ function SourceCard({
   siblings,
   onChange,
   onRemove,
+  asrProvider,
 }: {
   source: AudioSourceConfig;
   siblings: readonly AudioSourceConfig[];
   onChange: (patch: Partial<AudioSourceConfig>) => void;
   onRemove: () => void;
+  asrProvider: AsrProvider;
 }) {
   const validation = useMemo(
     () => validateSource(source, siblings),
@@ -151,6 +163,42 @@ function SourceCard({
             options={LABEL_STYLE_OPTIONS}
           />
         </label>
+
+        <label className="field">
+          <span>Language profile</span>
+          <Select
+            label="Language profile"
+            value={source.languageProfile}
+            onChange={(value) => {
+              onChange({ languageProfile: value as LanguageProfile });
+            }}
+            options={PROFILE_OPTIONS}
+          />
+          <small className="field-note">
+            {PROFILE_META[source.languageProfile].description}
+          </small>
+        </label>
+
+        <label className="field">
+          <span>Strictness</span>
+          <Select
+            label="Strictness"
+            value={source.strictness}
+            onChange={(value) => {
+              onChange({ strictness: value as LanguageStrictness });
+            }}
+            options={STRICTNESS_OPTIONS}
+          />
+          <small className="field-note">
+            {STRICTNESS_META[source.strictness].description}
+          </small>
+        </label>
+
+        <div className="field field-wide">
+          <small className="field-note">
+            {capabilityNote(asrProvider, source.languageProfile)}
+          </small>
+        </div>
 
         <label className="field">
           <span>Color</span>
@@ -224,7 +272,11 @@ function SourceCard({
   );
 }
 
-export function SourcesPanel() {
+export function SourcesPanel({
+  asrProvider = "local",
+}: {
+  asrProvider?: AsrProvider;
+}) {
   const { configs, updateSource, addSource, removeSource } = useSourceConfigs();
   const [presetToAdd, setPresetToAdd] = useState("custom");
   const atMax = configs.sources.length >= MAX_SOURCES;
@@ -252,11 +304,12 @@ export function SourcesPanel() {
           key={source.sourceId}
           source={source}
           siblings={configs.sources}
-          onChange={(patch) => {
-            updateSource(source.sourceId, patch);
-          }}
           onRemove={() => {
             removeSource(source.sourceId);
+          }}
+          asrProvider={asrProvider}
+          onChange={(patch) => {
+            updateSource(source.sourceId, patch);
           }}
         />
       ))}
