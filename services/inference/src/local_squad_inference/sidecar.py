@@ -20,6 +20,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from local_squad_inference.clip import process_clip
+from local_squad_inference.evaluation.accuracy_lab import KNOWN_CONFIGS, compare_clips
 from local_squad_inference.http_asr import GroqWhisperProvider, HttpAsrError
 from local_squad_inference.http_translation import (
     HTTP_PROVIDER_FACTORIES,
@@ -35,6 +36,7 @@ from local_squad_inference.protocol import (
     PROTOCOL_VERSION,
     AudioPacket,
     CaptionPayload,
+    ClipComparePayload,
     ClipProcessPayload,
     ControlEnvelope,
     HelloPayload,
@@ -1462,6 +1464,96 @@ async def handle_connection(
                                 "captions": [asdict(caption) for caption in result.captions],
                                 "truncated": result.truncated,
                                 "mode": result.mode,
+                            },
+                            version=negotiated_version,
+                        )
+                    )
+                )
+            elif control.type == "clip.compare":
+                compare_request = ClipComparePayload.model_validate(control.payload)
+
+                class _SidecarBuilders:
+                    def asr(self, name: str):
+                        return build_asr_provider(name)
+
+                    def translation(self, name: str):
+                        return build_translation_provider(name)
+
+                configs = (
+                    tuple(
+                        (f"custom-{a}+{t}", a, t)
+                        for a, t in (tuple(c) for c in compare_request.configs)
+                    )
+                    if compare_request.configs
+                    else KNOWN_CONFIGS
+                )
+                try:
+                    report = await asyncio.to_thread(
+                        compare_clips,
+                        Path(compare_request.path),
+                        compare_request.source_mode,
+                        _SidecarBuilders(),
+                        configs=configs,
+                        app_version="0.4.0-dev",
+                    )
+                except Exception as error:
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "clip.compare.error",
+                                control.message_id,
+                                control.session_id,
+                                {
+                                    "code": "CLIP_COMPARE_FAILED",
+                                    "message": str(error),
+                                },
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                    continue
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "clip.compare.completed",
+                            control.message_id,
+                            control.session_id,
+                            {
+                                "path": report.path,
+                                "source_mode": report.source_mode,
+                                "file_size_bytes": report.file_size_bytes,
+                                "duration_seconds": report.duration_seconds,
+                                "captured_at_ms": report.captured_at_ms,
+                                "app_version": report.app_version,
+                                "runs": [
+                                    {
+                                        "label": run.label,
+                                        "asr_name": run.asr_name,
+                                        "translation_name": run.translation_name,
+                                        "asr_ms": run.asr_ms,
+                                        "translation_ms": run.translation_ms,
+                                        "total_ms": run.total_ms,
+                                        "model_id": run.model_id,
+                                        "errors": list(run.errors),
+                                        "critical_errors": run.critical_errors,
+                                        "caption_count": len(run.clip.captions),
+                                        "captions": (
+                                            [
+                                                {
+                                                    "start_ms": caption.start_ms,
+                                                    "end_ms": caption.end_ms,
+                                                    "source_text": caption.source_text,
+                                                    "english_text": caption.english_text,
+                                                    "warnings": list(caption.warnings),
+                                                }
+                                                for caption in run.clip.captions
+                                            ]
+                                            if compare_request.include_transcripts
+                                            else []
+                                        ),
+                                    }
+                                    for run in report.runs
+                                ],
                             },
                             version=negotiated_version,
                         )

@@ -30,12 +30,22 @@ struct AppStatus {
     /// v0.3 feature flag: multi-source audio, IPC v2, per-source language
     /// strictness. When disabled the app behaves exactly like v0.2.
     multi_source: bool,
+    /// v0.4 feature flag: caption accuracy / overlap awareness / trust
+    /// (certainty states, phrase filters, glossary, Accuracy Lab). When
+    /// disabled the app behaves exactly like v0.3.
+    caption_trust: bool,
 }
 
 /// `LST_MULTI_SOURCE=0` disables the multi-source feature; anything else
 /// (including unset) enables it in v0.3 development builds.
 fn multi_source_enabled() -> bool {
     std::env::var("LST_MULTI_SOURCE").as_deref() != Ok("0")
+}
+
+/// `LST_CAPTION_TRUST=0` disables the v0.4 caption-accuracy feature set;
+/// anything else (including unset) enables it in v0.4 development builds.
+fn caption_trust_enabled() -> bool {
+    std::env::var("LST_CAPTION_TRUST").as_deref() != Ok("0")
 }
 
 #[cfg(test)]
@@ -77,6 +87,22 @@ mod feature_flag_tests {
         assert!(multi_source_enabled());
         unsafe { std::env::set_var("LST_MULTI_SOURCE", "on") };
         assert!(multi_source_enabled());
+    }
+
+    #[test]
+    fn caption_trust_enabled_by_default() {
+        let _guard = lock_env();
+        // SAFETY: test-only env mutation; serialized by ENV_LOCK.
+        unsafe { std::env::remove_var("LST_CAPTION_TRUST") };
+        assert!(caption_trust_enabled());
+    }
+
+    #[test]
+    fn caption_trust_disabled_by_zero() {
+        let _guard = lock_env();
+        // SAFETY: see above.
+        unsafe { std::env::set_var("LST_CAPTION_TRUST", "0") };
+        assert!(!caption_trust_enabled());
     }
 }
 
@@ -777,6 +803,7 @@ fn app_status(
                 .map(|supervisor| supervisor.is_some())
                 .unwrap_or(false),
         multi_source: multi_source_enabled(),
+        caption_trust: caption_trust_enabled(),
     }
 }
 
@@ -1081,6 +1108,64 @@ fn analyze_clip_blocking(
         }
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// v0.4 Accuracy Lab: run a clip through multiple ASR/MT configurations.
+/// Returns the raw sidecar report (validated by the frontend schema).
+#[tauri::command]
+async fn clip_compare(
+    path: String,
+    source_mode: String,
+    configs: Vec<Vec<String>>,
+    include_transcripts: bool,
+    runtime: tauri::State<'_, SidecarRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
+) -> Result<serde_json::Value, String> {
+    let supervisor = Arc::clone(&runtime.supervisor);
+    let bundled = paths.bundled.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        analyze_clip_compare_blocking(
+            supervisor,
+            path,
+            source_mode,
+            configs,
+            include_transcripts,
+            bundled,
+        )
+    })
+    .await
+    .map_err(|error| format!("clip compare worker failed: {error}"))?
+}
+
+fn analyze_clip_compare_blocking(
+    runtime: Arc<Mutex<Option<SidecarSupervisor>>>,
+    path: String,
+    source_mode: String,
+    configs: Vec<Vec<String>>,
+    include_transcripts: bool,
+    bundled: Option<BundledPaths>,
+) -> Result<serde_json::Value, String> {
+    let mut supervisor = runtime.lock().map_err(lock_error)?;
+    let needs_restart = supervisor
+        .as_mut()
+        .is_some_and(|running| running.ensure_running().is_err());
+    if needs_restart {
+        let _ = supervisor.take();
+    }
+    if supervisor.is_none() {
+        let config = sidecar_config(bundled.as_ref(), &[]);
+        *supervisor = Some(SidecarSupervisor::start(&config).map_err(|error| error.to_string())?);
+    }
+    supervisor
+        .as_mut()
+        .expect("sidecar was started above")
+        .clip_compare(
+            std::path::Path::new(&path),
+            &source_mode,
+            configs,
+            include_transcripts,
+        )
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1888,6 +1973,7 @@ pub fn run() {
             stop_live_translation,
             set_translation_env,
             analyze_clip,
+            clip_compare,
             apply_window_shell,
             models_list,
             models_install,
@@ -1921,12 +2007,14 @@ mod tests {
                 capture_active: state.selected_endpoint_id.is_some(),
                 inference_active: false,
                 multi_source: true,
+                caption_trust: true,
             },
             AppStatus {
                 phase: 5,
                 capture_active: false,
                 inference_active: false,
                 multi_source: true,
+                caption_trust: true,
             }
         );
     }

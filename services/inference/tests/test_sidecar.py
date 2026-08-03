@@ -644,6 +644,61 @@ def test_user_selected_wav_runs_through_clip_pipeline(tmp_path: Path) -> None:
     asyncio.run(with_server(scenario))
 
 
+def test_clip_compare_runs_multiple_configs_content_free(tmp_path: Path) -> None:
+    """v0.4 Phase 1: clip.compare runs a file through several configs and, by
+    default, returns no transcript content."""
+    source = tmp_path / "compare.wav"
+    samples = array(
+        "h",
+        (
+            int(12_000 * math.sin(2 * math.pi * 220 * index / 16_000))
+            if 3_200 <= index < 8_000
+            else 0
+            for index in range(16_000)
+        ),
+    )
+    with wave.open(str(source), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(16_000)
+        output.writeframes(samples.tobytes())
+
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello("launch-token"))
+            await websocket.recv()
+            await websocket.send(
+                json.dumps(
+                    {
+                        "protocol_version": 1,
+                        "message_id": "clip-compare-1",
+                        "session_id": "session-1",
+                        "type": "clip.compare",
+                        "sent_monotonic_ns": 2,
+                        "payload": {
+                            "path": str(source.resolve()),
+                            "source_mode": "mixed",
+                            "configs": [["demo", "demo"]],
+                        },
+                    }
+                )
+            )
+            completed: dict[str, Any] = json.loads(await websocket.recv())
+            assert completed["type"] == "clip.compare.completed"
+            payload = completed["payload"]
+            assert payload["app_version"] == "0.4.0-dev"
+            assert len(payload["runs"]) == 1
+            run = payload["runs"][0]
+            assert run["asr_name"] == "demo"
+            assert run["caption_count"] >= 1
+            assert run["model_id"] == "demo+demo"
+            # Default report is content-free: no transcript text.
+            assert run["captions"] == []
+            stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
 def speech_packet_v2(sequence: int, source_id: str, amplitude: float) -> AudioPacketV2:
     """4800 samples (300 ms at 16 kHz) of speech-shaped or silent audio for
     a v2 live session. Sequence numbers are per-session, so callers must

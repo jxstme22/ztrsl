@@ -183,6 +183,19 @@ pub struct ClipProcessPayload {
     pub provider: String,
 }
 
+/// v0.4 Accuracy Lab: run one clip through multiple ASR/MT configurations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ClipComparePayload {
+    pub path: String,
+    pub source_mode: String,
+    /// Each entry is `[asr_name, translation_name]`; empty = known configs.
+    #[serde(default)]
+    pub configs: Vec<Vec<String>>,
+    /// When true the report includes transcripts (offline review only).
+    #[serde(default)]
+    pub include_transcripts: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LiveStartPayload {
     pub source_mode: String,

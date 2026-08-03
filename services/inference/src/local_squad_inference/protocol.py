@@ -174,6 +174,18 @@ class ClipProcessPayload(StrictModel):
     provider: Literal["demo", "local"] = "demo"
 
 
+class ClipComparePayload(StrictModel):
+    """v0.4 Accuracy Lab: run one clip through multiple provider configs."""
+
+    path: str = Field(min_length=1, max_length=4096)
+    source_mode: Literal["filipino", "cebuano", "chinese", "mixed", "english"]
+    # Each config is [asr_name, translation_name]; empty defaults to known
+    # installed configs. Names must be resolvable by build_asr_provider /
+    # build_translation_provider.
+    configs: list[list[str]] = Field(default_factory=list, max_length=8)
+    include_transcripts: bool = False
+
+
 class LiveStartPayload(StrictModel):
     source_mode: Literal["filipino", "chinese", "english"] = "filipino"
     provider: Literal["demo", "local", "http"] = "local"

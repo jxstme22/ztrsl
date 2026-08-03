@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use ipc_protocol::{
     AudioPacket, AudioPacketV2, CAPABILITY_IPC_V2, CAPABILITY_MULTI_SOURCE, CaptionLabelStyle,
-    CaptionPayload, CaptionStrictness, ClipProcessPayload, ClipResultPayload, Envelope,
-    HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
+    CaptionPayload, CaptionStrictness, ClipComparePayload, ClipProcessPayload, ClipResultPayload,
+    Envelope, HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
     SourceControlPayload, SourcePresentationUpdatePayload, SourceRegistryEntry,
     SourceRegistryPayload, SourceSnapshot, source_id_from_hex,
 };
@@ -847,6 +847,63 @@ impl SidecarSupervisor {
             .map_err(|error| SupervisorError::Protocol(error.to_string()))
     }
 
+    /// v0.4 Accuracy Lab: run one clip through multiple ASR/MT configs.
+    /// Returns the raw `clip.compare.completed` payload (schema-free here;
+    /// the desktop validates it with a Zod schema).
+    pub fn clip_compare(
+        &mut self,
+        path: &Path,
+        source_mode: &str,
+        configs: Vec<Vec<String>>,
+        include_transcripts: bool,
+    ) -> Result<serde_json::Value, SupervisorError> {
+        self.ensure_running()?;
+        if !path.is_absolute() {
+            return Err(SupervisorError::InvalidClipPath);
+        }
+        let request = Envelope {
+            protocol_version: self.negotiated_version,
+            message_id: format!("clip-compare-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "clip.compare".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: ClipComparePayload {
+                path: path.to_string_lossy().into_owned(),
+                source_mode: source_mode.to_owned(),
+                configs,
+                include_transcripts,
+            },
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(CLIP_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        response
+            .validate_version_in(&[self.negotiated_version])
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        if response.message_type == "clip.compare.error" {
+            let message = response
+                .payload
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("clip comparison failed");
+            return Err(SupervisorError::ClipProcessing(message.to_owned()));
+        }
+        if response.message_type != "clip.compare.completed" {
+            return Err(SupervisorError::Protocol(
+                "unexpected clip.compare response".to_owned(),
+            ));
+        }
+        Ok(response.payload)
+    }
+
     pub fn ensure_running(&mut self) -> Result<(), SupervisorError> {
         if self.stopped {
             return Err(SupervisorError::SidecarExited("stopped".to_owned()));
@@ -1213,6 +1270,77 @@ mod tests {
             team.payload.caption_id, discord.payload.caption_id,
             "per-source caption ids must never collide"
         );
+    }
+
+    /// v0.4 Phase 1: clip.compare runs a WAV through one config over the wire
+    /// and returns a content-free report (no transcript text). Requires the
+    /// workspace venv (skipped when absent).
+    #[test]
+    fn clip_compare_returns_content_free_report_over_the_wire() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        let wav = write_test_wav();
+        let report = supervisor
+            .clip_compare(
+                &wav,
+                "mixed",
+                vec![vec!["demo".to_owned(), "demo".to_owned()]],
+                false,
+            )
+            .expect("clip_compare must succeed");
+        let serialized = serde_json::to_string(&report).expect("report serializes");
+        let runs = report
+            .get("runs")
+            .and_then(serde_json::Value::as_array)
+            .expect("report has runs");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0]["asr_name"], "demo");
+        assert!(
+            !serialized.contains("source_text"),
+            "report must be content-free"
+        );
+        assert!(!serialized.contains("demo transcript"));
+        let _ = std::fs::remove_file(&wav);
+    }
+
+    fn write_test_wav() -> std::path::PathBuf {
+        use std::io::Write;
+        let path =
+            std::env::temp_dir().join(format!("lst-clip-compare-{}.wav", std::process::id()));
+        let sample_rate = 16_000u32;
+        let mut data = Vec::with_capacity(sample_rate as usize * 2);
+        for index in 0..sample_rate {
+            let sample = if (3200..8000).contains(&index) {
+                (12_000.0
+                    * (2.0 * std::f64::consts::PI * 220.0 * index as f64 / sample_rate as f64)
+                        .sin()) as i16
+            } else {
+                0i16
+            };
+            data.extend_from_slice(&sample.to_le_bytes());
+        }
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(b"WAVE");
+        bytes.extend_from_slice(b"fmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
+        bytes.extend_from_slice(&2u16.to_le_bytes()); // block align
+        bytes.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&data);
+        let mut file = std::fs::File::create(&path).expect("wav file");
+        file.write_all(&bytes).expect("wav bytes");
+        path
     }
 
     /// Phase 5: per-source VAD lifecycle over the real wire. Interleaved

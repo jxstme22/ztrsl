@@ -14,6 +14,7 @@ import { useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AudioDevicePanel } from "./components/AudioDevicePanel";
+import { AccuracyLabPanel } from "./components/AccuracyLabPanel";
 import { CaptionStack } from "./components/CaptionStack";
 import { ClipLabPanel } from "./components/ClipLabPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
@@ -33,6 +34,7 @@ import { isDesktopRuntime } from "./overlay/bridge";
 import type { OverlaySettings } from "./overlay/model";
 import { useOverlayController } from "./overlay/useOverlayController";
 import { loadSourceConfigs } from "./sources/storage";
+import { captionTrustEnabled } from "./sources/captionTrustFlag";
 import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
@@ -532,6 +534,7 @@ function DiagnosticsPage({
       />
       <AudioDevicePanel audio={audio} />
       <RoutingPanel />
+      {captionTrustEnabled() && <AccuracyLabPanel />}
       <IpcPanel onCaption={onCaption} />
     </div>
   );
