@@ -1,3 +1,4 @@
+import { useT } from "../features/i18n/store";
 import type { OverlaySnapshot } from "../overlay/model";
 import { selectVisibleCaptions } from "../overlay/reducer";
 import { renderLabel } from "../sources/labels";
@@ -16,6 +17,7 @@ export function CaptionStack({
   preview = false,
   mode = "stack",
 }: CaptionStackProps) {
+  const t = useT();
   const style = {
     "--caption-scale": snapshot.settings.fontScale,
     "--caption-opacity": snapshot.settings.backgroundOpacity,
@@ -28,8 +30,8 @@ export function CaptionStack({
   if (captions.length === 0) {
     return preview ? (
       <div className="caption-empty">
-        <strong>No captions yet</strong>
-        <span>Send a fake line to test the full caption lifecycle.</span>
+        <strong>{t("captionEmptyTitle")}</strong>
+        <span>{t("captionEmptyNote")}</span>
       </div>
     ) : null;
   }

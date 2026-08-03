@@ -76,12 +76,13 @@ export function ProgressBar({ event }: { event: ModelProgress }) {
       ? event.totalBytesDone / event.totalBytesTotal
       : 0;
   const percent = Math.min(100, Math.round(fraction * 100));
+  const t = useT();
   const label =
     event.phase === "download"
-      ? "Downloading"
+      ? t("liveModelsDownloading")
       : event.phase === "extract"
-        ? "Extracting"
-        : "Installing";
+        ? t("liveModelsExtracting")
+        : t("liveModelsInstalling");
   const { speed, eta } = useDownloadSpeed(
     `${event.modelId}:${String(event.fileIndex)}`,
     event.totalBytesDone,
@@ -439,10 +440,13 @@ function DownloadServerRow({ models }: { models: ModelUiState }) {
   const { downloadEndpoint, providerStatus } = models;
   const userPicked = downloadEndpoint.userOverride;
   const mirrorInUse = downloadEndpoint.mirror;
+  const t = useT();
   return (
     <div className="lst-download-server">
       <div className="lst-download-server-copy">
-        <label htmlFor="model-download-server">Download server</label>
+        <label htmlFor="model-download-server">
+          {t("modelsDownloadServerLabel")}
+        </label>
         <p>
           {mirrorInUse
             ? `Downloads go through ${downloadEndpoint.endpoint}.`
@@ -463,13 +467,13 @@ function DownloadServerRow({ models }: { models: ModelUiState }) {
       </div>
       <Select
         id="model-download-server"
-        label="Model download server"
+        label={t("modelsDownloadServer")}
         value={userPicked ? downloadEndpoint.endpoint : ""}
         onChange={(endpoint) => {
           void models.setDownloadEndpoint(endpoint);
         }}
         options={[
-          { value: "", label: "Automatic" },
+          { value: "", label: t("modelsAutomatic") },
           {
             value: "https://hf-mirror.com",
             label: "hf-mirror.com (mainland China)",
@@ -485,6 +489,7 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
   const [busy, setBusy] = useState(false);
   const [imported, setImported] = useState<string[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const t = useT();
 
   const runImport = async () => {
     if (packDir.trim() === "" || busy) {
@@ -503,11 +508,10 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
   return (
     <div className="lst-download-server">
       <div className="lst-download-server-copy">
-        <label htmlFor="model-offline-pack">Install offline model pack</label>
-        <p>
-          Point at a directory that already contains a manifest-verified model
-          pack. Artifacts are SHA-256 checked and installed with no network.
-        </p>
+        <label htmlFor="model-offline-pack">
+          {t("modelsOfflinePackLabel")}
+        </label>
+        <p>{t("modelsOfflinePackNote")}</p>
       </div>
       <input
         id="model-offline-pack"
@@ -531,13 +535,15 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
         onClick={() => void runImport()}
       >
         <FolderOpen aria-hidden="true" size={14} />
-        {busy ? "Importing…" : "Import"}
+        {busy ? t("modelsImporting") : t("modelsImportBtn")}
       </button>
       {imported !== null && imported.length > 0 && (
-        <p className="lst-ok-text">Installed: {imported.join(", ")}</p>
+        <p className="lst-ok-text">
+          {t("modelsInstalledSuffix")}: {imported.join(", ")}
+        </p>
       )}
       {imported !== null && imported.length === 0 && (
-        <p className="lst-error-text">Nothing was imported.</p>
+        <p className="lst-error-text">{t("modelsNothingImported")}</p>
       )}
     </div>
   );
@@ -582,9 +588,14 @@ function GpuRuntimePanel({
             {t("gpuInstalled")}
           </span>
         )}
+        {!installed && status.systemAvailable && (
+          <span className="lst-badge lst-badge-installed">
+            {t("gpuSystemAvailable")}
+          </span>
+        )}
       </div>
 
-      {!installed && !isInstalling && (
+      {!installed && !isInstalling && !status.systemAvailable && (
         <div className="lst-gpu-meta">
           <span>
             {t("gpuDownloadSize")}: {formatBytes(status.downloadSizeBytes)}
@@ -595,6 +606,10 @@ function GpuRuntimePanel({
             </span>
           )}
         </div>
+      )}
+
+      {!installed && status.systemAvailable && !isInstalling && (
+        <p className="lst-gpu-system-note">{t("gpuSystemAvailableNote")}</p>
       )}
 
       {isInstalling && progress !== null && (
@@ -642,6 +657,8 @@ function GpuRuntimePanel({
           >
             {t("cancel")}
           </button>
+        ) : status.systemAvailable ? (
+          <span className="lst-model-local-hint">{t("gpuReady")}</span>
         ) : (
           <button
             type="button"

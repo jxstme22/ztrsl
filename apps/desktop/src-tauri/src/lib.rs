@@ -687,6 +687,9 @@ struct GpuRuntimeStatus {
     installed_size_bytes: u64,
     /// Total bytes that must be downloaded for the pack.
     download_size_bytes: u64,
+    /// `true` when a CUDA runtime is already usable on this system (the app's
+    /// own pack, or a system CUDA Toolkit) — no download needed.
+    system_available: bool,
     /// Package names + per-wheel sizes shown in the UI.
     wheels: Vec<GpuRuntimeWheelStatus>,
 }
@@ -701,11 +704,13 @@ struct GpuRuntimeWheelStatus {
 #[tauri::command]
 fn gpu_runtime_status(models: tauri::State<'_, ModelRuntime>) -> Result<GpuRuntimeStatus, String> {
     let state = models.state.lock().map_err(lock_error)?;
+    let installed = state.gpu_runtime.is_installed();
     Ok(GpuRuntimeStatus {
-        installed: state.gpu_runtime.is_installed(),
+        installed,
         installing: state.gpu_runtime_install.is_some(),
         installed_size_bytes: state.gpu_runtime.installed_size_bytes(),
         download_size_bytes: model_manager::cuda_pack_download_bytes(),
+        system_available: installed || model_manager::system_cuda_available(),
         wheels: model_manager::CUDA_12_RUNTIME_PACK
             .iter()
             .map(|wheel| GpuRuntimeWheelStatus {
@@ -2115,9 +2120,11 @@ fn run_windows_live_loop(
         if let Some(since) = last_frame_at {
             if since.elapsed() >= Duration::from_secs(3) {
                 return Err(format!(
-                    "audio capture stalled: no frames for {:.1}s — the endpoint may be \
-                     disconnected or disabled, or the device is being used exclusively \
-                     by another app. Try a different capture endpoint in Sources.",
+                    "audio capture stalled: no frames for {:.1}s. The endpoint may have \
+                     been disconnected, disabled, or taken over by another app in \
+                     exclusive mode. A quiet voice channel is normal — this means the \
+                     device itself stopped delivering audio. Try a different capture \
+                     endpoint in Sources.",
                     since.elapsed().as_secs_f32()
                 ));
             }
@@ -2208,9 +2215,11 @@ fn run_macos_live_loop(
         if let Some(since) = last_frame_at {
             if since.elapsed() >= Duration::from_secs(3) {
                 return Err(format!(
-                    "audio capture stalled: no frames for {:.1}s — the endpoint may be \
-                     disconnected or disabled, or the device is being used exclusively \
-                     by another app. Try a different capture endpoint in Sources.",
+                    "audio capture stalled: no frames for {:.1}s. The endpoint may have \
+                     been disconnected, disabled, or taken over by another app in \
+                     exclusive mode. A quiet voice channel is normal — this means the \
+                     device itself stopped delivering audio. Try a different capture \
+                     endpoint in Sources.",
                     since.elapsed().as_secs_f32()
                 ));
             }

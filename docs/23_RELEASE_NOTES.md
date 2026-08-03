@@ -1,5 +1,26 @@
 # 23 — Release Notes
 
+## v0.5.3 — fix live-loopback stall + CUDA detection + full Chinese UI
+
+**Fixed: "audio capture stalled: no frames for 3.0s" on loopback capture.** Root
+cause found: WASAPI loopback marked a quiet endpoint's buffers `SILENT`, and the
+capture worker dropped those buffers without emitting a frame. During normal
+voice chat — which is quiet most of the time — the live loop saw zero frames
+and after 3 s falsely declared the capture stalled. The fix emits real silence
+frames for `SILENT` buffers (matching the microphone path), so a quiet channel
+is treated as healthy. The stall message now also explains that quiet is normal
+and that the error only fires when the device itself stopped delivering audio.
+
+- **CUDA runtime detection** — the Models page now detects when a CUDA
+  runtime is already usable on the system (the app's runtime pack or a CUDA
+  12 Toolkit with its DLLs on PATH) and shows "GPU available — no download
+  needed" instead of asking for the ~1.3 GB pack.
+- **Chinese (Simplified) applied to the whole interface** — the Setup wizard
+  (all steps), hotkeys, audio meter, routing/IPC diagnostics, clip lab, model
+  download rows, caption overlay empty state, and every remaining label,
+  sentence, and description are now translated. Language profiles and proper
+  nouns (Tagalog, Cebuano…) stay as-is.
+
 ## v0.5.2 — UI polish + caption alignment + download speed
 
 - **Models page redesigned** — full-width cards matching Live / Diagnostics /

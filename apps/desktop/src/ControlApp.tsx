@@ -31,6 +31,7 @@ import { SetupWizard } from "./setup/SetupWizard";
 import { useAudioMeter } from "./audio/useAudioMeter";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useUiLanguage } from "./features/i18n/useUiLanguage";
+import { useT } from "./features/i18n/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
@@ -44,7 +45,7 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 type SectionId =
   "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
 
-const APP_VERSION = "0.5.2";
+const APP_VERSION = "0.5.3";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -237,13 +238,14 @@ function LivePage({
   models: ModelsController;
 }) {
   const { snapshot } = controller;
+  const t = useT();
 
   return (
     <div className="page-stack">
       {controller.windowError !== null && (
         <section className="inline-alert error" role="alert">
           <div>
-            <strong>Overlay unavailable</strong>
+            <strong>{t("overlayUnavailable")}</strong>
             <p>{controller.windowError}</p>
           </div>
           <button
@@ -251,7 +253,7 @@ function LivePage({
             type="button"
             onClick={controller.retryWindowSync}
           >
-            Try again
+            {t("retry")}
           </button>
         </section>
       )}
@@ -259,10 +261,8 @@ function LivePage({
       {controller.recoveredPlacement && (
         <section className="inline-alert" role="status">
           <div>
-            <strong>Overlay moved to the primary display</strong>
-            <p>
-              The saved monitor was unavailable, so the overlay stayed visible.
-            </p>
+            <strong>{t("overlayMoved")}</strong>
+            <p>{t("overlayMovedNote")}</p>
           </div>
         </section>
       )}
@@ -272,11 +272,13 @@ function LivePage({
       <section className="card" aria-labelledby="preview-title">
         <div className="card-head">
           <h2 className="card-title" id="preview-title">
-            On-screen captions
+            {t("settingsOnScreenCaptions")}
           </h2>
           <span className={`pill ${snapshot.mode === "edit" ? "on" : ""}`}>
             <span aria-hidden="true" />
-            {snapshot.mode === "edit" ? "Edit mode" : "Play mode"}
+            {snapshot.mode === "edit"
+              ? t("overlayEditMode")
+              : t("overlayPlayMode")}
           </span>
         </div>
 
@@ -299,7 +301,7 @@ function LivePage({
               type="button"
               onClick={controller.hideOverlay}
             >
-              Hide overlay
+              {t("settingsHideOverlay")}
             </button>
           ) : (
             <button
@@ -307,7 +309,7 @@ function LivePage({
               type="button"
               onClick={controller.showOverlay}
             >
-              Show overlay
+              {t("settingsShowOverlay")}
             </button>
           )}
           <button
@@ -315,7 +317,9 @@ function LivePage({
             type="button"
             onClick={controller.toggleEditMode}
           >
-            {snapshot.mode === "edit" ? "Finish editing" : "Edit position"}
+            {snapshot.mode === "edit"
+              ? t("overlayFinishEditing")
+              : t("overlayEditPosition")}
           </button>
           <button
             className="button quiet"
@@ -487,14 +491,14 @@ function SettingsPage({
 
           {sources.length > 1 && (
             <div className="settings-block">
-              <h3>Hidden sources</h3>
+              <h3>{t("settingsHiddenSources")}</h3>
               {sources.map((source) => (
                 <div className="toggle-row" key={source.sourceId}>
                   <div>
                     <label htmlFor={`hide-${source.sourceId}`}>
-                      Hide {source.displayName}
+                      {t("settingsHideSource")} {source.displayName}
                     </label>
-                    <p>Stop this source's captions from appearing.</p>
+                    <p>{t("settingsHiddenSourcesNote")}</p>
                   </div>
                   <input
                     id={`hide-${source.sourceId}`}

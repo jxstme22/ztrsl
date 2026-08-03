@@ -1,6 +1,7 @@
 import { Activity, Play, RefreshCw, Server, Square } from "lucide-react";
 
 import { useSidecar } from "../ipc/useSidecar";
+import { useT } from "../features/i18n/store";
 import type { Caption } from "../overlay/model";
 
 type IpcPanelProps = {
@@ -9,12 +10,13 @@ type IpcPanelProps = {
 
 export function IpcPanel({ onCaption }: IpcPanelProps) {
   const sidecar = useSidecar(onCaption);
+  const t = useT();
 
   return (
     <section className="audio-card" id="inference" aria-labelledby="ipc-title">
       <div className="section-heading">
         <div>
-          <h2 id="ipc-title">Authenticated fake inference</h2>
+          <h2 id="ipc-title">{t("ipcTitle")}</h2>
         </div>
         <span className={`sidecar-state ${sidecar.state}`}>
           <Activity aria-hidden="true" size={14} />
@@ -25,7 +27,7 @@ export function IpcPanel({ onCaption }: IpcPanelProps) {
       {sidecar.error !== null && (
         <div className="inline-alert error" role="alert">
           <div>
-            <strong>Sidecar stopped unexpectedly</strong>
+            <strong>{t("ipcSidecarStopped")}</strong>
             <p>{sidecar.error}</p>
           </div>
           <button
@@ -43,8 +45,8 @@ export function IpcPanel({ onCaption }: IpcPanelProps) {
         <div>
           <Server aria-hidden="true" size={19} />
           <span>
-            <strong>Loopback only</strong>
-            <small>Ephemeral port and launch token</small>
+            <strong>{t("ipcLoopbackOnly")}</strong>
+            <small>{t("ipcEphemeral")}</small>
           </span>
         </div>
         <div>
@@ -52,10 +54,10 @@ export function IpcPanel({ onCaption }: IpcPanelProps) {
           <span>
             <strong>
               {sidecar.lastLatencyMs === null
-                ? "No roundtrip yet"
+                ? t("ipcNoRoundtrip")
                 : `${String(sidecar.lastLatencyMs)} ms fake latency`}
             </strong>
-            <small>No models loaded</small>
+            <small>{t("ipcNoModels")}</small>
           </span>
         </div>
       </div>
@@ -88,7 +90,9 @@ export function IpcPanel({ onCaption }: IpcPanelProps) {
             onClick={() => void sidecar.start()}
           >
             <Server aria-hidden="true" size={17} />
-            {sidecar.state === "starting" ? "Starting…" : "Start fake sidecar"}
+            {sidecar.state === "starting"
+              ? t("ipcStarting")
+              : t("ipcStartFake")}
           </button>
         )}
         <span className="capture-safety">

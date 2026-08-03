@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useAudioMeter } from "../audio/useAudioMeter";
 import { Select } from "../components/Select";
+import { useT } from "../features/i18n/store";
+import type { UIKey } from "../features/i18n/strings";
 import {
   LABEL_STYLE_OPTIONS,
   PRESET_OPTIONS,
@@ -18,7 +20,6 @@ import { saveSourceConfigs } from "../sources/storage";
 import { detectVbCable } from "./vbCable";
 import {
   WIZARD_STEP_IDS,
-  WIZARD_STEP_LABELS,
   addSource,
   assignCaptureTarget,
   canProceed,
@@ -34,6 +35,7 @@ import {
   setMonitorVolume,
   updateSource,
   type WizardState,
+  type WizardStepId,
 } from "./wizardModel";
 
 const SAMPLE_TEAM_CAPTION = "Rotate B!";
@@ -51,15 +53,29 @@ const PROFILE_OPTIONS: readonly { value: LanguageProfile; label: string }[] = [
 
 const STRICTNESS_OPTIONS: readonly {
   value: LanguageStrictness;
-  label: string;
+  labelKey: UIKey;
 }[] = [
-  { value: "off", label: "Off — process any language" },
-  { value: "balanced", label: "Balanced — prefer selected languages" },
-  { value: "strict", label: "Strict — reject unexpected languages" },
+  { value: "off", labelKey: "strictnessOff" },
+  { value: "balanced", labelKey: "strictnessBalanced" },
+  { value: "strict", labelKey: "strictnessStrict" },
 ];
 
 const VB_CABLE_NOTICE =
   "VB-CABLE is installed separately from its official source (vb-audio.com). This app never bundles it.";
+
+const WIZARD_STEP_LABEL_KEYS: Record<WizardStepId, UIKey> = {
+  "choose-setup": "wizardStepLabel_chooseSetup",
+  "add-first-source": "wizardStepLabel_addFirstSource",
+  "select-capture": "wizardStepLabel_selectCapture",
+  "valorant-routing": "wizardStepLabel_valorantRouting",
+  "add-social": "wizardStepLabel_addSocial",
+  "monitoring-output": "wizardStepLabel_monitoringOutput",
+  "isolation-test": "wizardStepLabel_isolationTest",
+  "monitoring-test": "wizardStepLabel_monitoringTest",
+  "language-strictness": "wizardStepLabel_languageStrictness",
+  "overlay-preview": "wizardStepLabel_overlayPreview",
+  "save-preset": "wizardStepLabel_savePreset",
+};
 
 export function SetupWizard({ onFinish }: { onFinish: () => void }) {
   const audio = useAudioMeter();
@@ -98,17 +114,19 @@ export function SetupWizard({ onFinish }: { onFinish: () => void }) {
   };
 
   const stepIndex = WIZARD_STEP_IDS.indexOf(step);
+  const t = useT();
 
   return (
     <div className="page-stack">
       <section className="card" aria-labelledby="wizard-title">
         <div className="card-head">
           <h2 className="card-title" id="wizard-title">
-            Audio setup wizard
+            {t("wizardTitle")}
           </h2>
           <span className="pill on">
             <span aria-hidden="true" />
-            Step {stepIndex + 1} of {WIZARD_STEP_IDS.length}
+            {t("wizardStep")} {stepIndex + 1} {t("wizardOf")}{" "}
+            {WIZARD_STEP_IDS.length}
           </span>
         </div>
         <ol className="wizard-steps" aria-label="Wizard progress">
@@ -133,33 +151,33 @@ export function SetupWizard({ onFinish }: { onFinish: () => void }) {
               >
                 {index + 1}
               </button>
-              <span>{WIZARD_STEP_LABELS[stepId]}</span>
+              <span>{t(WIZARD_STEP_LABEL_KEYS[stepId])}</span>
             </li>
           ))}
         </ol>
       </section>
 
-      {renderStep(state, step, audio, setState)}
+      {renderStep(state, step, audio, setState, t)}
 
       {state.saved ? (
         <section className="card" aria-labelledby="wizard-complete">
           <div className="card-head">
             <h3 className="card-title" id="wizard-complete">
-              Setup saved
+              {t("wizardSetupSaved")}
             </h3>
             <span className="pill on">
               <span aria-hidden="true" />
               <Check aria-hidden="true" size={12} />
-              Done
+              {t("wizardDone")}
             </span>
           </div>
           <p className="card-note">
-            Your source presets are saved. Open Sources to edit them at any
-            time; captions only start once live audio capture is enabled.
+            {t("wizardSetupSavedNote")} Captions only start once live audio
+            capture is enabled.
           </p>
           <div className="action-row">
             <button className="button primary" type="button" onClick={onFinish}>
-              Open Sources
+              {t("sourcesTitle")}
             </button>
           </div>
         </section>
@@ -175,7 +193,7 @@ export function SetupWizard({ onFinish }: { onFinish: () => void }) {
               }}
             >
               <ArrowLeft aria-hidden="true" size={14} />
-              Back
+              {t("wizardBack")}
             </button>
             <div className="wizard-nav-gate">
               {!gate.ok && (
@@ -190,7 +208,9 @@ export function SetupWizard({ onFinish }: { onFinish: () => void }) {
                 disabled={!gate.ok}
                 onClick={next}
               >
-                {step === "save-preset" ? "Save preset" : "Next"}
+                {step === "save-preset"
+                  ? t("wizardSavePreset")
+                  : t("wizardNext")}
                 <ArrowRight aria-hidden="true" size={14} />
               </button>
             </div>
@@ -215,25 +235,26 @@ function renderStep(
   step: (typeof WIZARD_STEP_IDS)[number],
   audio: ReturnType<typeof useAudioMeter>,
   setState: React.Dispatch<React.SetStateAction<WizardState>>,
+  t: ReturnType<typeof useT>,
 ) {
   switch (step) {
     case "choose-setup":
       return (
         <section className="card" aria-labelledby="step-choose">
           <h3 className="card-title" id="step-choose">
-            Choose a setup type
+            {t("wizardChooseSetup")}
           </h3>
           <div className="choice-grid">
             <SetupChoice
-              title="Recommended"
-              detail="One separately installed VB-CABLE for VALORANT voice + a second source for Discord."
+              title={t("wizardRecommended")}
+              detail={t("wizardRecommendedDetail")}
               onClick={() => {
                 setState((s) => selectMode(s, "recommended"));
               }}
             />
             <SetupChoice
-              title="Advanced"
-              detail="Multiple virtual audio endpoints or process captures for separate applications."
+              title={t("wizardAdvanced")}
+              detail={t("wizardAdvancedDetail")}
               onClick={() => {
                 setState((s) => selectMode(s, "advanced"));
               }}
@@ -308,6 +329,7 @@ function SourceEditor({
     return null;
   }
   const { config } = draft;
+  const t = useT();
   return (
     <section
       className="card"
@@ -316,7 +338,7 @@ function SourceEditor({
       <div className="card-head">
         <h4 className="card-title" id={`wizard-source-${config.sourceId}`}>
           {config.displayName.trim() === ""
-            ? "Unnamed source"
+            ? t("sourcesUnnamed")
             : config.displayName}
         </h4>
         <span className="pill">
@@ -326,7 +348,7 @@ function SourceEditor({
       </div>
       <div className="form-grid">
         <div className="field">
-          <span>Source name</span>
+          <span>{t("sourcesName")}</span>
           <input
             type="text"
             value={config.displayName}
@@ -341,7 +363,7 @@ function SourceEditor({
           />
         </div>
         <div className="field">
-          <span>Caption tag</span>
+          <span>{t("sourcesCaptionTag")}</span>
           <input
             type="text"
             value={config.captionTag}
@@ -357,9 +379,9 @@ function SourceEditor({
           />
         </div>
         <div className="field">
-          <span>Caption style</span>
+          <span>{t("wizardCaptionStyle")}</span>
           <Select
-            label="Caption style"
+            label={t("wizardCaptionStyle")}
             value={config.labelStyle}
             onChange={(value) => {
               setState((s) =>
@@ -368,7 +390,10 @@ function SourceEditor({
                 }),
               );
             }}
-            options={LABEL_STYLE_OPTIONS}
+            options={LABEL_STYLE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
           />
         </div>
       </div>
@@ -400,19 +425,17 @@ function SourcePickerStep({
 }) {
   const [presetId, setPresetId] = useState("valorant-team");
   const atMax = state.sources.length >= MAX_SOURCES;
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-add-first">
         <h3 className="card-title" id="step-add-first">
-          Add the first source
+          {t("wizardAddFirstSource")}
         </h3>
-        <p className="card-note">
-          Start from a preset, then edit the name, tag, and label style. The
-          internal identity is assigned once and never changes.
-        </p>
+        <p className="card-note">{t("wizardAddFirstSourceNote")}</p>
         <div className="action-row">
           <Select
-            label="Preset"
+            label={t("wizardPreset")}
             value={presetId}
             onChange={setPresetId}
             options={PRESET_OPTIONS.filter(
@@ -427,7 +450,7 @@ function SourcePickerStep({
               setState((s) => addSource(s, presetId as never));
             }}
           >
-            Add source
+            {t("wizardAddSource")}
           </button>
         </div>
       </section>
@@ -457,24 +480,21 @@ function CaptureMethodStep({
       audio.captureEndpoints.map((endpoint) => ({
         value: endpoint.id,
         label: endpoint.friendlyName,
-        group: endpoint.isSynthetic ? "Simulator" : "Windows audio endpoints",
+        group: endpoint.isSynthetic ? "Simulator" : "Audio endpoints",
       })),
     [audio.captureEndpoints],
   );
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-capture">
         <h3 className="card-title" id="step-capture">
-          Choose a capture method for each source
+          {t("wizardChooseCapture")}
         </h3>
-        <p className="card-note">
-          Nothing is selected automatically. Pick the exact endpoint or process
-          each voice channel comes from.
-        </p>
+        <p className="card-note">{t("wizardChooseCaptureNote")}</p>
         {!audio.catalog?.processCaptureSupported && (
           <p className="card-note wizard-note">
-            Process capture (loopback of a named app) is not available yet on
-            this build; choose endpoints for now.
+            {t("wizardProcessUnavailable")}
           </p>
         )}
       </section>
@@ -488,26 +508,26 @@ function CaptureMethodStep({
           <section
             className="card"
             key={config.sourceId}
-            aria-label={`Capture for ${config.displayName}`}
+            aria-label={`${t("wizardCaptureMethod")} ${config.displayName}`}
           >
             <div className="card-head">
               <h4 className="card-title">{config.displayName}</h4>
               {draft.captureResolved ? (
                 <span className="pill on">
                   <span aria-hidden="true" />
-                  Set
+                  {t("wizardSet")}
                 </span>
               ) : (
-                <span className="pill">Unset</span>
+                <span className="pill">{t("wizardUnset")}</span>
               )}
             </div>
             <div className="form-grid">
               <div className="field">
-                <span>Capture method</span>
+                <span>{t("wizardCaptureMethod")}</span>
                 <Select
-                  label="Capture method"
+                  label={t("wizardCaptureMethod")}
                   value={current}
-                  placeholder="Choose an endpoint…"
+                  placeholder={t("wizardChooseEndpoint")}
                   onChange={(value) => {
                     setState((s) =>
                       assignCaptureTarget(s, index, {
@@ -523,7 +543,7 @@ function CaptureMethodStep({
             {config.captureTarget.kind === "endpoint" &&
               config.captureTarget.endpointId !== null && (
                 <p className="card-note">
-                  Endpoint state:{" "}
+                  {t("wizardEndpointState")}:{" "}
                   {(() => {
                     const selectedId = config.captureTarget.endpointId;
                     return (
@@ -556,19 +576,20 @@ function ValorantRoutingStep({
     () => (audio.catalog === null ? state.vbCable.issues : vbCable.issues),
     [audio.catalog, state.vbCable.issues, vbCable.issues],
   );
+  const t = useT();
   return (
     <section className="card" aria-labelledby="step-routing">
       <h3 className="card-title" id="step-routing">
-        Route VALORANT audio
+        {t("wizardRouteValorant")}
       </h3>
       <p className="card-note">{VB_CABLE_NOTICE}</p>
       <div className="routing-guide">
         <div>
-          <strong>VALORANT game output</strong>
-          <span>Physical headphones (unchanged)</span>
+          <strong>{t("wizardGameOutput")}</strong>
+          <span>{t("wizardPhysicalHeadphones")}</span>
         </div>
         <div>
-          <strong>VALORANT voice chat output</strong>
+          <strong>{t("wizardVoiceChatOutput")}</strong>
           <span>VB-CABLE Input</span>
         </div>
       </div>
@@ -579,9 +600,7 @@ function ValorantRoutingStep({
           ))}
         </ul>
       ) : (
-        <p className="card-note wizard-note">
-          VB-CABLE detected: game voice can be captured as its own source.
-        </p>
+        <p className="card-note wizard-note">{t("wizardVbCableDetected")}</p>
       )}
     </section>
   );
@@ -596,19 +615,17 @@ function SocialSourceStep({
 }) {
   const [presetId, setPresetId] = useState("discord");
   const atMax = state.sources.length >= MAX_SOURCES;
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-social">
         <h3 className="card-title" id="step-social">
-          Add a Discord or social source
+          {t("wizardAddSocial")}
         </h3>
-        <p className="card-note">
-          Recommended: capture Discord as its own source so friends' voices get
-          their own caption lane.
-        </p>
+        <p className="card-note">{t("wizardAddSocialNote")}</p>
         <div className="action-row">
           <Select
-            label="Preset"
+            label={t("wizardPreset")}
             value={presetId}
             onChange={setPresetId}
             options={PRESET_OPTIONS.filter(
@@ -623,7 +640,7 @@ function SocialSourceStep({
               setState((s) => addSource(s, presetId as never));
             }}
           >
-            Add source
+            {t("wizardAddSource")}
           </button>
         </div>
         <div
@@ -664,30 +681,25 @@ function MonitoringOutputStep({
       audio.renderEndpoints.map((endpoint) => ({
         value: endpoint.id,
         label: endpoint.friendlyName,
-        group: endpoint.isSynthetic
-          ? "Simulator"
-          : "Windows playback endpoints",
+        group: endpoint.isSynthetic ? "Simulator" : "Playback endpoints",
       })),
     [audio.renderEndpoints],
   );
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-monitor-out">
         <h3 className="card-title" id="step-monitor-out">
-          Choose the monitoring output
+          {t("wizardMonitoringOutput")}
         </h3>
-        <p className="card-note">
-          Monitoring blends captured voice into your headphones only. It never
-          feeds translation. Beware of feedback loops, disconnected endpoints,
-          and microphones selected as playback.
-        </p>
+        <p className="card-note">{t("wizardMonitoringOutputNote")}</p>
         <div className="form-grid">
           <div className="field">
-            <span>Headphone output</span>
+            <span>{t("wizardHeadphoneOutput")}</span>
             <Select
-              label="Headphone output"
+              label={t("wizardHeadphoneOutput")}
               value={state.monitorEndpointId ?? ""}
-              placeholder="Choose an output…"
+              placeholder={t("wizardChooseEndpoint")}
               onChange={(value) => {
                 setState((s) =>
                   setMonitorEndpoint(s, value === "" ? null : value),
@@ -704,14 +716,14 @@ function MonitoringOutputStep({
           <section
             className="card"
             key={config.sourceId}
-            aria-label={`Monitoring for ${config.displayName}`}
+            aria-label={`${t("wizardMonitorSource")} ${config.displayName}`}
           >
             <div className="toggle-row">
               <div>
                 <label htmlFor={`monitor-${config.sourceId}`}>
-                  Monitor {config.displayName}
+                  {t("wizardMonitorSource")} {config.displayName}
                 </label>
-                <p>Hear this source in your headphones while playing.</p>
+                <p>{t("wizardMonitorSourceNote")}</p>
               </div>
               <input
                 id={`monitor-${config.sourceId}`}
@@ -732,7 +744,7 @@ function MonitoringOutputStep({
             </div>
             {draft.monitorConflict && (
               <p className="field-errors" role="alert">
-                Captures and monitors the same endpoint — audio would loop.
+                {t("wizardFeedbackLoop")}
               </p>
             )}
           </section>
@@ -765,19 +777,20 @@ function MeterCard({
   }));
   const meterWidth = `${String(Math.min(100, audio.level.peak * 100))}%`;
   const meterLabel = `meter-${String(sourceIndex)}`;
+  const t = useT();
   return (
     <section className="card" aria-labelledby={meterLabel}>
       <h4 className="card-title" id={meterLabel}>
-        {source?.config.displayName ?? "Source"} live meter
+        {source?.config.displayName ?? "Source"} {t("wizardLiveMeter")}
       </h4>
       <p className="card-note">{instruction}</p>
       <div className="form-grid">
         <div className="field">
-          <span>Endpoint under test</span>
+          <span>{t("wizardEndpointUnderTest")}</span>
           <Select
-            label="Endpoint under test"
+            label={t("wizardEndpointUnderTest")}
             value={currentTarget ?? ""}
-            placeholder="Choose an endpoint…"
+            placeholder={t("wizardChooseEndpoint")}
             onChange={(value) => {
               if (value !== "") {
                 audio.selectEndpoint(value);
@@ -789,7 +802,7 @@ function MeterCard({
       </div>
       <div className="meter-panel">
         <div className="meter-label">
-          <span>Input level</span>
+          <span>{t("wizardInputLevel")}</span>
           <output>{String(Math.round(audio.level.peak * 100))}%</output>
         </div>
         <div
@@ -853,35 +866,33 @@ function IsolationTestStep({
   const socialIndex = state.sources.findIndex(
     (draft) => draft.presetId !== "valorant-team",
   );
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-isolation">
         <h3 className="card-title" id="step-isolation">
-          Source isolation test
+          {t("wizardIsolationTest")}
         </h3>
-        <p className="card-note">
-          Each source must only ever hear its own voice channel. Play voice into
-          the cable and confirm only its meter moves.
-        </p>
+        <p className="card-note">{t("wizardIsolationNote")}</p>
         <ul className="test-instructions">
-          <li>Play voice into the selected cable (or another app's voice).</li>
-          <li>Trigger VALORANT game or announcer audio.</li>
-          <li>The TEAM meter must move only for voice into the cable.</li>
-          <li>The other source's meter must stay silent.</li>
+          <li>{t("wizardIsolation1")}</li>
+          <li>{t("wizardIsolation2")}</li>
+          <li>{t("wizardIsolation3")}</li>
+          <li>{t("wizardIsolation4")}</li>
         </ul>
       </section>
       <MeterCard
         state={state}
         audio={audio}
         sourceIndex={teamIndex === -1 ? 0 : teamIndex}
-        instruction="TEAM: should move only when voice plays into its cable."
+        instruction={t("wizardTeamInstruction")}
       />
       {socialIndex !== -1 && (
         <MeterCard
           state={state}
           audio={audio}
           sourceIndex={socialIndex}
-          instruction="SOCIAL: must stay silent when VALORANT game audio plays."
+          instruction={t("wizardSocialInstruction")}
         />
       )}
     </>
@@ -897,33 +908,30 @@ function MonitoringTestStep({
   setState: React.Dispatch<React.SetStateAction<WizardState>>;
   audio: ReturnType<typeof useAudioMeter>;
 }) {
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-monitor-test">
         <h3 className="card-title" id="step-monitor-test">
-          Monitoring test
+          {t("wizardMonitoringTest")}
         </h3>
-        <p className="card-note">
-          All enabled voice sources should be audible in your headphones without
-          feedback. Adjust each blend; verify by ear. The blend never enters
-          translation.
-        </p>
+        <p className="card-note">{t("wizardMonitoringTestNote")}</p>
       </section>
       {state.sources.map((draft, index) => (
         <section
           className="card"
           key={draft.config.sourceId}
-          aria-label={`Blend for ${draft.config.displayName}`}
+          aria-label={`${t("wizardBlend")} ${draft.config.displayName}`}
         >
           <div className="range-field">
             <div className="range-label">
               <label htmlFor={`blend-${draft.config.sourceId}`}>
-                {draft.config.displayName} blend
+                {draft.config.displayName} {t("wizardBlend")}
               </label>
               <output htmlFor={`blend-${draft.config.sourceId}`}>
                 {draft.config.monitoring.enabled
                   ? `${String(Math.round(draft.config.monitoring.volume * 100))}%`
-                  : "off"}
+                  : t("wizardBlendOff")}
               </output>
             </div>
             <input
@@ -946,7 +954,7 @@ function MonitoringTestStep({
         state={state}
         audio={audio}
         sourceIndex={0}
-        instruction="Optional: confirm the blend output still carries voice."
+        instruction={t("wizardBlendConfirm")}
       />
     </>
   );
@@ -959,28 +967,28 @@ function LanguageStep({
   state: WizardState;
   setState: React.Dispatch<React.SetStateAction<WizardState>>;
 }) {
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-language">
         <h3 className="card-title" id="step-language">
-          Language profile and strictness per source
+          {t("wizardLanguageStep")}
         </h3>
-        <p className="card-note">
-          Balanced is recommended for mixed gaming speech. Strict rejects
-          unexpected languages more aggressively.
-        </p>
+        <p className="card-note">{t("wizardLanguageNote")}</p>
       </section>
       {state.sources.map((draft, index) => (
         <section
           className="card"
           key={draft.config.sourceId}
-          aria-label={`Language for ${draft.config.displayName}`}
+          aria-label={`${t("wizardLanguageStep")} ${draft.config.displayName}`}
         >
           <div className="form-grid">
             <div className="field">
-              <span>{draft.config.displayName} profile</span>
+              <span>
+                {draft.config.displayName} {t("wizardProfile")}
+              </span>
               <Select
-                label="Language profile"
+                label={t("wizardProfile")}
                 value={draft.config.languageProfile}
                 onChange={(value) => {
                   setState((s) =>
@@ -996,9 +1004,9 @@ function LanguageStep({
               />
             </div>
             <div className="field">
-              <span>Strictness</span>
+              <span>{t("sourcesStrictness")}</span>
               <Select
-                label="Strictness"
+                label={t("sourcesStrictness")}
                 value={draft.config.strictness}
                 onChange={(value) => {
                   setState((s) =>
@@ -1010,7 +1018,10 @@ function LanguageStep({
                     ),
                   );
                 }}
-                options={STRICTNESS_OPTIONS}
+                options={STRICTNESS_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
               />
             </div>
           </div>
@@ -1027,22 +1038,20 @@ function OverlayPreviewStep({
   state: WizardState;
   setState: React.Dispatch<React.SetStateAction<WizardState>>;
 }) {
+  const t = useT();
   return (
     <>
       <section className="card" aria-labelledby="step-preview">
         <h3 className="card-title" id="step-preview">
-          Overlay preview
+          {t("wizardOverlayPreview")}
         </h3>
-        <p className="card-note">
-          Both captions appear at once, each in its own lane. Edit tags and
-          label styles directly.
-        </p>
+        <p className="card-note">{t("wizardOverlayPreviewNote")}</p>
       </section>
       {state.sources.map((draft, index) => (
         <section
           className="card"
           key={draft.config.sourceId}
-          aria-label={`Preview for ${draft.config.displayName}`}
+          aria-label={`${t("wizardOverlayPreview")} ${draft.config.displayName}`}
         >
           <div className="card-head">
             <h4 className="card-title">{draft.config.displayName}</h4>
@@ -1052,7 +1061,7 @@ function OverlayPreviewStep({
                 type="text"
                 value={draft.config.captionTag}
                 maxLength={32}
-                aria-label={`Tag for ${draft.config.displayName}`}
+                aria-label={`${t("wizardCaptionTag")} ${draft.config.displayName}`}
                 onChange={(event) => {
                   setState((s) =>
                     updateSource(s, index, {
@@ -1062,7 +1071,7 @@ function OverlayPreviewStep({
                 }}
               />
               <Select
-                label="Label style"
+                label={t("wizardCaptionStyle")}
                 value={draft.config.labelStyle}
                 onChange={(value) => {
                   setState((s) =>
@@ -1071,7 +1080,10 @@ function OverlayPreviewStep({
                     }),
                   );
                 }}
-                options={LABEL_STYLE_OPTIONS}
+                options={LABEL_STYLE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(option.labelKey),
+                }))}
               />
             </div>
           </div>
@@ -1099,19 +1111,23 @@ function OverlayPreviewStep({
 
 function SaveStep({ state }: { state: WizardState }) {
   const { error } = save(state);
+  const t = useT();
+  const count = state.sources.length;
   return (
     <section className="card" aria-labelledby="step-save">
       <h3 className="card-title" id="step-save">
-        Save preset
+        {t("wizardSavePreset")}
       </h3>
       <p className="card-note">
-        Saving writes {state.sources.length} source preset
-        {state.sources.length === 1 ? "" : "s"} to this device. Suggested name:{" "}
+        {t("wizardSaveNote")
+          .replace("{count}", String(count))
+          .replace("{plural}", count === 1 ? "" : "s")}{" "}
         <strong>
-          {state.mode === "recommended" ? "Voice setup" : "Custom routing"}
+          {state.mode === "recommended"
+            ? t("wizardVoiceSetup")
+            : t("wizardCustomRouting")}
         </strong>
-        . Presets populate defaults only — every field stays editable in
-        Sources.
+        .
       </p>
       {error !== null && (
         <p className="field-errors" role="alert">
@@ -1123,11 +1139,11 @@ function SaveStep({ state }: { state: WizardState }) {
           <li key={draft.config.sourceId}>
             <strong>{draft.config.displayName}</strong> —{" "}
             {draft.config.captureTarget.kind === "endpoint"
-              ? (draft.config.captureTarget.endpointId ?? "no endpoint yet")
+              ? (draft.config.captureTarget.endpointId ?? t("wizardNoEndpoint"))
               : `process ${draft.config.captureTarget.processName}`}
             {draft.config.monitoring.enabled
-              ? `, monitored at ${String(Math.round(draft.config.monitoring.volume * 100))}%`
-              : ", monitoring off"}
+              ? `, ${t("wizardMonitoringAt")} ${String(Math.round(draft.config.monitoring.volume * 100))}%`
+              : `, ${t("wizardMonitoringOff")}`}
           </li>
         ))}
       </ul>

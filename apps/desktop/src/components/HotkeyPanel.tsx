@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { Keyboard } from "lucide-react";
 
+import { useT } from "../features/i18n/store";
 import type { HotkeyErrors } from "../overlay/bridge";
 import {
   HOTKEY_ACTIONS,
@@ -22,6 +23,7 @@ export function HotkeyPanel({
   const [draft, setDraft] = useState(hotkeys);
   const [localErrors, setLocalErrors] = useState<HotkeyErrors>({});
   const [saved, setSaved] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     setDraft(hotkeys);
@@ -57,13 +59,13 @@ export function HotkeyPanel({
       const normalized = shortcut.toLocaleLowerCase();
 
       if (!shortcut.includes("+")) {
-        nextErrors[action] = "Use modifiers and a key, separated by +.";
+        nextErrors[action] = t("hotkeyNeedsModifier");
         continue;
       }
 
       const duplicate = used.get(normalized);
       if (duplicate !== undefined) {
-        nextErrors[action] = "Choose a shortcut not used above.";
+        nextErrors[action] = t("hotkeyDuplicate");
       } else {
         used.set(normalized, action);
       }
@@ -83,17 +85,17 @@ export function HotkeyPanel({
           <Keyboard size={18} />
         </span>
         <span>
-          <strong>Global hotkeys</strong>
+          <strong>{t("settingsGlobalHotkeys")}</strong>
         </span>
       </summary>
 
       <form className="hotkey-form" onSubmit={handleSubmit} noValidate>
-        {HOTKEY_ACTIONS.map(({ action, label }) => {
+        {HOTKEY_ACTIONS.map(({ action, labelKey }) => {
           const error = errors[action];
           const errorId = `hotkey-${action}-error`;
           return (
             <div className="field" key={action}>
-              <label htmlFor={`hotkey-${action}`}>{label}</label>
+              <label htmlFor={`hotkey-${action}`}>{t(labelKey)}</label>
               <input
                 id={`hotkey-${action}`}
                 type="text"
@@ -117,11 +119,11 @@ export function HotkeyPanel({
 
         <div className="form-actions">
           <button className="button secondary" type="submit">
-            Save hotkeys
+            {t("settingsSaveHotkeys")}
           </button>
           {saved && (
             <span className="save-confirmation" role="status">
-              Saved locally
+              {t("settingsSavedLocally")}
             </span>
           )}
         </div>

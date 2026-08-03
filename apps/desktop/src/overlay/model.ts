@@ -151,12 +151,18 @@ export const DEFAULT_OVERLAY_SNAPSHOT: OverlaySnapshot = {
 
 export const HOTKEY_ACTIONS: readonly {
   action: HotkeyAction;
-  label: string;
+  labelKey:
+    | "hotkeyToggleOverlay"
+    | "hotkeyToggleTranslation"
+    | "hotkeyToggleEditMode"
+    | "hotkeyClearCaptions"
+    | "hotkeyIncreaseText"
+    | "hotkeyDecreaseText";
 }[] = [
-  { action: "toggleOverlay", label: "Toggle overlay" },
-  { action: "toggleTranslation", label: "Toggle translation" },
-  { action: "toggleEditMode", label: "Edit mode" },
-  { action: "clearCaptions", label: "Clear captions" },
-  { action: "increaseText", label: "Increase text" },
-  { action: "decreaseText", label: "Decrease text" },
+  { action: "toggleOverlay", labelKey: "hotkeyToggleOverlay" },
+  { action: "toggleTranslation", labelKey: "hotkeyToggleTranslation" },
+  { action: "toggleEditMode", labelKey: "hotkeyToggleEditMode" },
+  { action: "clearCaptions", labelKey: "hotkeyClearCaptions" },
+  { action: "increaseText", labelKey: "hotkeyIncreaseText" },
+  { action: "decreaseText", labelKey: "hotkeyDecreaseText" },
 ];

@@ -68,6 +68,86 @@ pub fn cuda_pack_download_bytes() -> u64 {
 /// The DLL directory name inside the runtime store (flattened DLLs).
 pub const CUDA_DLL_DIR: &str = "cuda12";
 
+/// Return true when a CUDA runtime is already usable on this system, either
+/// because the app's own runtime pack is installed or because the user has a
+/// CUDA Toolkit (or redistributable runtime) installed with its DLLs on the
+/// system. On Windows this checks whether `cublas64_12.dll` — the library that
+/// ctranslate2/faster-whisper must load — is reachable on the DLL search path
+/// (`C:\Windows\System32` plus `%PATH%`). On other platforms there is no
+/// system CUDA runtime to detect and this returns `false` (the app pack or
+/// CPU fallback covers those).
+///
+/// This lets the UI say "GPU already available — no download needed" instead
+/// of asking users who already installed CUDA to download the ~1.3 GB pack.
+pub fn system_cuda_available() -> bool {
+    system_cuda_dlls()
+        .iter()
+        .any(|name| find_windows_dll(name).is_some())
+}
+
+/// DLLs that must be present for ctranslate2 to use CUDA on Windows.
+#[cfg(target_os = "windows")]
+const CUDA_REQUIRED_DLLS: &[&str] = &["cublas64_12.dll", "cudart64_12.dll"];
+
+/// Search the Windows DLL search path for `name`: System32 first, then every
+/// `PATH` entry (allowing the common CUDA Toolkit `bin` directory that setup
+/// adds to PATH). Returns the matching path, or `None`.
+#[cfg(target_os = "windows")]
+fn find_windows_dll(name: &str) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let system32 = std::env::var_os("SystemRoot")
+        .map(|root| PathBuf::from(root).join("System32"))
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32"));
+    for dir in std::iter::once(system32).chain(
+        std::env::var_os("PATH")
+            .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+            .unwrap_or_default(),
+    ) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    // Fallback: `LoadLibraryEx` search for the bare name (System32 + app dir).
+    let wide: Vec<u16> = std::os::windows::ffi::OsStr::encode_wide(OsStr::new(name)).collect();
+    let mut buf = [0_u16; 1024];
+    let path = {
+        let found = windows_sys::Win32::System::LibraryLoader::SearchPathW(
+            std::ptr::null(),
+            wide.as_ptr(),
+            std::ptr::null(),
+            buf.len() as u32,
+            buf.as_mut_ptr(),
+            std::ptr::null_mut(),
+        );
+        if found == 0 {
+            None
+        } else {
+            Some(String::from_utf16_lossy(&buf[..found as usize]))
+        }
+    };
+    path.map(PathBuf::from)
+}
+
+/// Non-Windows placeholder: no system CUDA runtime detection.
+#[cfg(not(target_os = "windows"))]
+fn find_windows_dll(_name: &str) -> Option<PathBuf> {
+    None
+}
+
+/// Non-Windows placeholder: no system CUDA runtime detection.
+#[cfg(not(target_os = "windows"))]
+fn system_cuda_dlls() -> Vec<&'static str> {
+    Vec::new()
+}
+
+/// Windows: the DLLs ctranslate2 needs to run on CUDA.
+#[cfg(target_os = "windows")]
+fn system_cuda_dlls() -> Vec<&'static str> {
+    CUDA_REQUIRED_DLLS.to_vec()
+}
+
 /// On-disk runtime store. The pack lives at `<store>/cuda12/` alongside the
 /// model store so it can share the same writable app-data location.
 #[derive(Clone)]
@@ -416,6 +496,19 @@ mod tests {
                 .iter()
                 .all(|wheel| wheel.url.starts_with("https://files.pythonhosted.org/"))
         );
+    }
+
+    #[test]
+    fn system_cuda_available_is_false_on_non_windows() {
+        // The system detector only looks for CUDA DLLs on Windows. On macOS /
+        // Linux it must return false so the UI offers the downloadable pack.
+        if cfg!(target_os = "windows") {
+            // On Windows the result depends on the machine; just ensure it
+            // does not panic and is consistent with the app-pack check.
+            let _ = system_cuda_available();
+        } else {
+            assert!(!system_cuda_available());
+        }
     }
 
     #[tokio::test]

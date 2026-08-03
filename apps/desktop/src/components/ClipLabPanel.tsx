@@ -8,6 +8,7 @@ import {
   type ClipResult,
   type SourceMode,
 } from "../clip/model";
+import { useT } from "../features/i18n/store";
 import { isDesktopRuntime } from "../overlay/bridge";
 import { Select } from "./Select";
 
@@ -20,6 +21,7 @@ export function ClipLabPanel() {
   const [state, setState] = useState<"idle" | "running" | "complete">("idle");
   const [result, setResult] = useState<ClipResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
   useEffect(() => {
     if (!isDesktopRuntime()) {
@@ -54,8 +56,7 @@ export function ClipLabPanel() {
     };
   }, []);
 
-  const displayName =
-    path?.split(/[\\/]/).at(-1) ?? "Drop an MP4, MOV, MKV, or audio file";
+  const displayName = path?.split(/[\\/]/).at(-1) ?? t("clipDropPlaceholder");
 
   const analyze = async () => {
     if (path === null) {
@@ -81,10 +82,10 @@ export function ClipLabPanel() {
     >
       <div className="section-heading">
         <div>
-          <h2 id="clip-title">Test a friends’ comms clip</h2>
+          <h2 id="clip-title">{t("clipLabTitle")}</h2>
         </div>
         <span className={`mode-badge ${provider === "demo" ? "edit" : ""}`}>
-          {provider === "demo" ? "Demo providers" : "Local models"}
+          {provider === "demo" ? t("clipDemoProviders") : t("clipLocalModels")}
         </span>
       </div>
 
@@ -103,10 +104,10 @@ export function ClipLabPanel() {
           </span>
         </button>
         <div className="field">
-          <label htmlFor="clip-language">Source speech</label>
+          <label htmlFor="clip-language">{t("clipSourceSpeech")}</label>
           <Select
             id="clip-language"
-            label="Source speech"
+            label={t("clipSourceSpeech")}
             value={sourceMode}
             onChange={(value) => {
               setSourceMode(value as SourceMode);
@@ -120,17 +121,17 @@ export function ClipLabPanel() {
           />
         </div>
         <div className="field">
-          <label htmlFor="clip-provider">Inference</label>
+          <label htmlFor="clip-provider">{t("clipInference")}</label>
           <Select
             id="clip-provider"
-            label="Inference"
+            label={t("clipInference")}
             value={provider}
             onChange={(value) => {
               setProvider(value as "demo" | "local");
             }}
             options={[
-              { value: "demo", label: "Demo plumbing" },
-              { value: "local", label: "Verified local models" },
+              { value: "demo", label: t("clipDemoPlumbing") },
+              { value: "local", label: t("clipVerifiedLocal") },
             ]}
           />
         </div>
@@ -139,7 +140,7 @@ export function ClipLabPanel() {
       {error !== null && (
         <div className="inline-alert error" role="alert">
           <div>
-            <strong>Clip analysis failed</strong>
+            <strong>{t("clipAnalyzeFailed")}</strong>
             <p>{error}</p>
           </div>
         </div>
@@ -156,11 +157,9 @@ export function ClipLabPanel() {
           {state === "running" ? (
             <LoaderCircle className="spin" aria-hidden="true" size={16} />
           ) : null}
-          {state === "running" ? "Analyzing locally…" : "Analyze clip"}
+          {state === "running" ? t("clipAnalyzing") : t("clipAnalyze")}
         </button>
-        <span className="capture-safety">
-          Read-only · local-only · memory-only
-        </span>
+        <span className="capture-safety">{t("clipSafety")}</span>
       </div>
 
       {result !== null && (
@@ -174,10 +173,7 @@ export function ClipLabPanel() {
             </span>
           </div>
           {result.captions.length === 0 ? (
-            <p className="clip-empty">
-              No speech-like segments were detected. Drop another clip or check
-              that its audio is audible.
-            </p>
+            <p className="clip-empty">{t("clipNoSegments")}</p>
           ) : (
             <ol>
               {result.captions.map((caption) => (
@@ -194,7 +190,7 @@ export function ClipLabPanel() {
                     {result.mode === "demo" ? "Demo" : "Local"} ·{" "}
                     {caption.provider}
                     {caption.warnings.includes("LOW_CONFIDENCE")
-                      ? " · Low confidence"
+                      ? ` · ${t("clipLowConfidence")}`
                       : ""}
                   </small>
                 </li>

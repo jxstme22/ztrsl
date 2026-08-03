@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 
 import { useAudioMeter } from "../audio/useAudioMeter";
+import { useT } from "../features/i18n/store";
 import { Select } from "./Select";
 
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -18,13 +19,14 @@ type AudioDevicePanelProps = {
 export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
   const meterWidth = `${String(Math.min(100, audio.level.peak * 100))}%`;
   const isSimulator = audio.catalog?.platform === "development";
+  const t = useT();
 
   return (
     <section className="audio-card" id="audio" aria-labelledby="audio-title">
       <div className="section-heading">
         <div>
           <h2 id="audio-title">
-            {isSimulator ? "Generated signal meter" : "Voice-chat input meter"}
+            {isSimulator ? t("audioGeneratedMeter") : t("audioInputMeter")}
           </h2>
         </div>
         <button
@@ -33,18 +35,15 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
           onClick={() => void audio.refresh()}
         >
           <RefreshCw aria-hidden="true" size={16} />
-          Refresh
+          {t("audioRefresh")}
         </button>
       </div>
 
       {audio.catalog?.platform === "development" && (
         <div className="inline-alert" role="status">
           <div>
-            <strong>Simulator — not a real audio device</strong>
-            <p>
-              Select the generated signal below to test the meter. Real incoming
-              voice-chat devices appear only in the Windows build.
-            </p>
+            <strong>{t("audioSimulator")}</strong>
+            <p>{t("audioSimulatorNote")}</p>
           </div>
         </div>
       )}
@@ -53,7 +52,7 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
         <div className="inline-alert error phase-note" role="alert">
           <CircleAlert aria-hidden="true" size={18} />
           <div>
-            <strong>Audio meter unavailable</strong>
+            <strong>{t("audioMeterUnavailable")}</strong>
             <p>{audio.error}</p>
           </div>
         </div>
@@ -62,13 +61,19 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
       <div className="audio-layout">
         <div className="field">
           <label htmlFor="capture-endpoint">
-            {isSimulator ? "Generated test source" : "Capture endpoint"}
+            {isSimulator
+              ? t("audioGeneratedSource")
+              : t("audioCaptureEndpoint")}
           </label>
           <Select
             id="capture-endpoint"
-            label={isSimulator ? "Generated test source" : "Capture endpoint"}
+            label={
+              isSimulator
+                ? t("audioGeneratedSource")
+                : t("audioCaptureEndpoint")
+            }
             value={audio.selectedEndpointId ?? ""}
-            placeholder="Choose an endpoint…"
+            placeholder={t("wizardChooseEndpoint")}
             onChange={(value) => {
               audio.selectEndpoint(value || null);
             }}
@@ -84,18 +89,18 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
           <div className="meter-label">
             <span>
               <Activity aria-hidden="true" size={16} />
-              {isSimulator ? "Generated level" : "Capture level"}
+              {isSimulator ? t("audioGeneratedLevel") : t("audioCaptureLevel")}
             </span>
             <output aria-live="polite">
               {audio.active
                 ? `${String(Math.round(audio.level.peak * 100))}%`
-                : "Off"}
+                : t("audioOff")}
             </output>
           </div>
           <div
             className="audio-meter"
             role="meter"
-            aria-label="Capture level"
+            aria-label={t("audioCaptureLevel")}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(audio.level.peak * 100)}
@@ -112,7 +117,9 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
             <span>
               {audio.selectedEndpoint?.nativeFormat?.channels ?? "—"} channel(s)
             </span>
-            <span>{audio.level.droppedFrames} dropped</span>
+            <span>
+              {audio.level.droppedFrames} {t("audioDropped")}
+            </span>
           </div>
         </div>
       </div>
@@ -125,7 +132,7 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
             onClick={() => void audio.stop()}
           >
             <Square aria-hidden="true" size={15} />
-            Stop meter
+            {t("audioStopMeter")}
           </button>
         ) : (
           <button
@@ -135,13 +142,11 @@ export function AudioDevicePanel({ audio }: AudioDevicePanelProps) {
             onClick={() => void audio.start()}
           >
             <AudioLines aria-hidden="true" size={17} />
-            Start meter
+            {t("audioStartMeter")}
           </button>
         )}
         <span className="capture-safety">
-          {isSimulator
-            ? "Generated in memory · no microphone · no playback"
-            : "Capture meter only · no playback · no recording"}
+          {isSimulator ? t("audioGeneratedSafety") : t("audioCaptureSafety")}
         </span>
       </div>
     </section>

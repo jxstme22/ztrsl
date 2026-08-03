@@ -2259,6 +2259,12 @@ input[type="range"]::-moz-range-thumb {
   font-size: 11.5px;
   color: var(--faint);
 }
+.lst-gpu-system-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
 .lst-gpu-progress {
   min-width: 0;
 }

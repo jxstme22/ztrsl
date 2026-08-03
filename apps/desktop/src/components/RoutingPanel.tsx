@@ -1,11 +1,13 @@
 import { AudioLines, Headphones, Square } from "lucide-react";
 
 import { useRoutingTest } from "../routing/useRoutingTest";
+import { useT } from "../features/i18n/store";
 import { Select } from "./Select";
 
 export function RoutingPanel() {
   const routing = useRoutingTest();
   const isSimulator = routing.platform === "development";
+  const t = useT();
 
   return (
     <section
@@ -16,20 +18,18 @@ export function RoutingPanel() {
       <div className="section-heading">
         <div>
           <h2 id="routing-title">
-            {isSimulator
-              ? "Silent pipeline simulator"
-              : "Monitoring and inference branch"}
+            {isSimulator ? t("routingSimulatorTitle") : t("routingBranchTitle")}
           </h2>
         </div>
         <span className="mode-badge">
-          {routing.active ? "Routing active" : "Stopped"}
+          {routing.active ? t("routingActive") : t("routingStopped")}
         </span>
       </div>
 
       {routing.error !== null && (
         <div className="inline-alert error" role="alert">
           <div>
-            <strong>Routing test unavailable</strong>
+            <strong>{t("routingUnavailable")}</strong>
             <p>{routing.error}</p>
           </div>
         </div>
@@ -38,11 +38,17 @@ export function RoutingPanel() {
       <div className="routing-grid">
         <div className="field">
           <label htmlFor="routing-capture">
-            {isSimulator ? "Generated input" : "Capture source"}
+            {isSimulator
+              ? t("routingGeneratedInput")
+              : t("routingCaptureSource")}
           </label>
           <Select
             id="routing-capture"
-            label={isSimulator ? "Generated input" : "Capture source"}
+            label={
+              isSimulator
+                ? t("routingGeneratedInput")
+                : t("routingCaptureSource")
+            }
             value={routing.captureId}
             placeholder="Choose capture…"
             onChange={(value) => {
@@ -59,11 +65,17 @@ export function RoutingPanel() {
         </div>
         <div className="field">
           <label htmlFor="routing-playback">
-            {isSimulator ? "Silent output sink" : "Monitoring output"}
+            {isSimulator
+              ? t("routingSilentOutput")
+              : t("routingMonitoringOutput")}
           </label>
           <Select
             id="routing-playback"
-            label={isSimulator ? "Silent output sink" : "Monitoring output"}
+            label={
+              isSimulator
+                ? t("routingSilentOutput")
+                : t("routingMonitoringOutput")
+            }
             value={routing.playbackId}
             placeholder="Choose headphones…"
             onChange={(value) => {
@@ -82,7 +94,9 @@ export function RoutingPanel() {
           <div className="meter-label">
             <span>
               <Headphones aria-hidden="true" size={16} />
-              {isSimulator ? "Simulated monitor branch" : "Monitor branch"}
+              {isSimulator
+                ? t("routingSimulatedMonitor")
+                : t("routingMonitorBranch")}
             </span>
             <output>{Math.round(routing.snapshot.monitorPeak * 100)}%</output>
           </div>
@@ -116,7 +130,9 @@ export function RoutingPanel() {
       <div className="range-field monitor-volume">
         <div className="range-label">
           <label htmlFor="monitor-volume">
-            {isSimulator ? "Simulated monitor gain" : "Monitor volume"}
+            {isSimulator
+              ? t("routingSimulatedGain")
+              : t("routingMonitorVolume")}
           </label>
           <output htmlFor="monitor-volume">
             {Math.round(routing.volume * 100)}%
@@ -153,13 +169,13 @@ export function RoutingPanel() {
             onClick={() => void routing.start()}
           >
             <AudioLines aria-hidden="true" size={17} />
-            {isSimulator ? "Run pipeline simulator" : "Start routing"}
+            {isSimulator ? t("routingRunSimulator") : t("routingStart")}
           </button>
         )}
         <span className="capture-safety">
           {isSimulator
             ? "Generated input · silent sink · no audible playback"
-            : "Ordinary Windows audio endpoints only"}
+            : t("routingEndpointsOnly")}
         </span>
       </div>
     </section>

@@ -35,6 +35,7 @@ function SourceDiagnosticCard({
   displayName: string;
   tag: string;
 }) {
+  const t = useT();
   return (
     <article
       className="diag-source-card"
@@ -46,7 +47,7 @@ function SourceDiagnosticCard({
         </h4>
         <span className={`pill ${source.active ? "on" : ""}`}>
           <span aria-hidden="true" />
-          {source.active ? "Active" : "Stopped"}
+          {source.active ? t("diagSourceActive") : t("diagSourceStopped")}
         </span>
       </div>
       <div className="diag-metric-row">

@@ -567,7 +567,7 @@ export function LiveTranslationPanel({
         </div>
 
         <div className="field">
-          <label htmlFor="live-translation">Translation source</label>
+          <label htmlFor="live-translation">{t("liveTranslationSource")}</label>
           <Select
             id="live-translation"
             label={t("liveTranslationSource")}
@@ -633,7 +633,7 @@ export function LiveTranslationPanel({
       {asrProvider === "groq-whisper" && (
         <div className="live-http-config">
           <div className="field">
-            <label htmlFor="groq-api-key">Groq API key</label>
+            <label htmlFor="groq-api-key">{t("liveGroqApiKey")}</label>
             <input
               id="groq-api-key"
               type="password"
@@ -667,7 +667,7 @@ export function LiveTranslationPanel({
       {translationProvider === "libretranslate" && (
         <div className="live-http-config">
           <div className="field">
-            <label htmlFor="lt-endpoint">LibreTranslate endpoint URL</label>
+            <label htmlFor="lt-endpoint">{t("liveLibreTranslateUrl")}</label>
             <input
               id="lt-endpoint"
               type="url"
@@ -681,7 +681,7 @@ export function LiveTranslationPanel({
             />
           </div>
           <div className="field">
-            <label htmlFor="lt-api-key">API key (optional)</label>
+            <label htmlFor="lt-api-key">{t("liveApiKeyOptional")}</label>
             <input
               id="lt-api-key"
               type="password"
@@ -700,7 +700,7 @@ export function LiveTranslationPanel({
       {translationProvider === "custom-http" && (
         <div className="live-http-config">
           <div className="field">
-            <label htmlFor="custom-tx-endpoint">Custom HTTP endpoint URL</label>
+            <label htmlFor="custom-tx-endpoint">{t("liveCustomHttpUrl")}</label>
             <input
               id="custom-tx-endpoint"
               type="url"
@@ -733,7 +733,7 @@ export function LiveTranslationPanel({
       {!configComplete && (
         <div className="inline-alert" role="status">
           <div>
-            <strong>Provider configuration needed</strong>
+            <strong>{t("liveProviderConfigNeeded")}</strong>
             <p>Enter the required API key or endpoint above.</p>
           </div>
         </div>
@@ -742,20 +742,20 @@ export function LiveTranslationPanel({
       <label className="live-monitor-toggle">
         <input
           type="checkbox"
-          aria-label="Monitor captured audio (audible playback)"
+          aria-label={t("liveMonitorCapturedAudio")}
           checked={monitorEnabled}
           disabled={listening || busy}
           onChange={toggleMonitor}
         />
         <span>
-          <strong>Monitor captured audio</strong>
+          <strong>{t("liveMonitorCapturedAudio")}</strong>
         </span>
       </label>
 
       {monitorEnabled && sameEndpoint && (
         <div className="inline-alert error" role="alert">
           <div>
-            <strong>Capture and monitor use the same device</strong>
+            <strong>{t("liveSameDeviceWarning")}</strong>
             <p>Pick a different playback device, or turn monitoring off.</p>
           </div>
         </div>
@@ -786,7 +786,7 @@ export function LiveTranslationPanel({
       {(listening || live.lastCaption !== null) && (
         <div className="readout" aria-live="polite">
           {live.lastCaption === null ? (
-            <p className="readout-empty">Listening for a complete phrase…</p>
+            <p className="readout-empty">{t("liveListeningForPhrase")}</p>
           ) : (
             <>
               <p className="readout-source">{live.lastCaption.source_text}</p>
@@ -795,7 +795,7 @@ export function LiveTranslationPanel({
           )}
           <dl className="metrics">
             <div>
-              <dt>Device</dt>
+              <dt>{t("liveDevice")}</dt>
               <dd>{live.snapshot.asrRuntime ?? "—"}</dd>
             </div>
             <div>
@@ -803,7 +803,7 @@ export function LiveTranslationPanel({
               <dd>{live.snapshot.metrics.captionsReceived}</dd>
             </div>
             <div>
-              <dt>ASR</dt>
+              <dt>{t("liveAsrLabel")}</dt>
               <dd>
                 {live.lastCaption === null
                   ? "—"

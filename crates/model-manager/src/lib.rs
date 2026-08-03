@@ -35,7 +35,7 @@ pub use provider::{
 };
 pub use runtime::{
     CUDA_12_RUNTIME_PACK, CUDA_DLL_DIR, CudaWheel, GpuRuntimeInstaller, GpuRuntimeStore,
-    cuda_pack_download_bytes,
+    cuda_pack_download_bytes, system_cuda_available,
 };
 pub use signed_catalog::{public_key_for, sign_payload, verify_catalog_signature};
 pub use store::{InstalledModel, ModelStore};

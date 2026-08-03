@@ -1,4 +1,5 @@
 import type { LanguageProfile, LanguageStrictness } from "./model";
+import type { UIKey } from "../features/i18n/strings";
 
 /**
  * Desktop mirror of the sidecar language profile catalog (Phase 7, spec §6.2).
@@ -66,19 +67,22 @@ export const PROFILE_IDS: LanguageProfile[] = Object.keys(
 
 export const STRICTNESS_META: Record<
   LanguageStrictness,
-  { label: string; description: string }
+  { label: string; description: string; descriptionKey: UIKey }
 > = {
   off: {
     label: "Off",
     description: "Accept everything and translate it.",
+    descriptionKey: "strictnessOffNote",
   },
   balanced: {
     label: "Balanced",
     description: "Filter clear mismatches and junk transcripts.",
+    descriptionKey: "strictnessBalancedNote",
   },
   strict: {
     label: "Strict",
     description: "Suppress anything that is not the profile's language.",
+    descriptionKey: "strictnessStrictNote",
   },
 };
 

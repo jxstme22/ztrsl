@@ -141,7 +141,7 @@ describe("SetupWizard", () => {
     expect(persisted[0]?.captureTarget.kind).toBe("endpoint");
     expect(persisted[0]?.captureTarget.endpointId).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Open Sources/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Audio sources/ }));
     expect(onFinish).toHaveBeenCalledTimes(1);
   });
 });

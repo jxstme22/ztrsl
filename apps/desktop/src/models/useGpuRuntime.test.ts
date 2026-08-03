@@ -19,6 +19,7 @@ const INSTALLED = {
   installing: false,
   installedSizeBytes: 42,
   downloadSizeBytes: 100,
+  systemAvailable: true,
   wheels: [{ package: "cuBLAS", sizeBytes: 60 }],
 };
 
@@ -27,6 +28,7 @@ const EMPTY = {
   installing: false,
   installedSizeBytes: 0,
   downloadSizeBytes: 0,
+  systemAvailable: false,
   wheels: [],
 };
 

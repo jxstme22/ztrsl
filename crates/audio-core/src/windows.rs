@@ -880,32 +880,35 @@ fn run_loopback_capture(
                 break;
             }
             let silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0;
-            if silent || data_ptr.is_null() || num_frames == 0 {
+            if num_frames == 0 {
                 let _ = unsafe { capture_client.ReleaseBuffer(num_frames) };
                 break;
             }
             // SAFETY: GetBuffer hands `num_frames` of interleaved float32
-            // samples for the lifetime until ReleaseBuffer.
-            let samples_f32: &[f32] = unsafe {
-                std::slice::from_raw_parts(
-                    data_ptr as *const f32,
-                    usize::try_from(num_frames).unwrap_or(0) * channel_count,
-                )
+            // samples for the lifetime until ReleaseBuffer. For a SILENT buffer
+            // `data_ptr` may be null and the data is not valid; the helper
+            // synthesizes zeros instead, so a quiet endpoint still delivers
+            // frames (a few seconds of silence must never read as a stall).
+            let samples_f32: &[f32] = if silent || data_ptr.is_null() {
+                &[]
+            } else {
+                unsafe {
+                    std::slice::from_raw_parts(
+                        data_ptr as *const f32,
+                        usize::try_from(num_frames).unwrap_or(0) * channel_count,
+                    )
+                }
             };
-            let mono = downmix_to_mono_slice_f32(samples_f32, channel_count);
-            if !mono.is_empty() {
-                let mono_len = u64::try_from(mono.len()).unwrap_or(u64::MAX);
-                let timestamp_ns =
-                    captured_samples.saturating_mul(1_000_000_000) / u64::from(sample_rate);
-                captured_samples = captured_samples.saturating_add(mono_len);
-                let frame = AudioFrame {
-                    sequence,
-                    capture_monotonic_ns: timestamp_ns,
-                    sample_rate,
-                    channels: 1,
-                    samples: mono,
-                };
-                sequence = sequence.saturating_add(1);
+            let frame = build_loopback_mono_frame(
+                silent,
+                num_frames,
+                samples_f32,
+                channel_count,
+                sample_rate,
+                &mut captured_samples,
+                &mut sequence,
+            );
+            if !frame.samples.is_empty() {
                 if sender.try_send(frame).is_err() {
                     dropped_frames.fetch_add(1, Ordering::Relaxed);
                 }
@@ -938,6 +941,39 @@ fn downmix_to_mono_slice_f32(samples: &[f32], channels: usize) -> Vec<f32> {
         .chunks_exact(channels)
         .map(|frame| frame.iter().copied().sum::<f32>() * inv)
         .collect()
+}
+
+/// Produce a mono `AudioFrame` for a loopback buffer. A `SILENT` buffer (a
+/// quiet endpoint) yields a zero-filled frame rather than being dropped, so a
+/// few seconds of "nobody is talking" is never mistaken for a stalled capture.
+/// Non-silent buffers are downmixed to mono. Advances the sample/timestamp and
+/// sequence counters.
+fn build_loopback_mono_frame(
+    silent: bool,
+    num_frames: u32,
+    samples_f32: &[f32],
+    channel_count: usize,
+    sample_rate: u32,
+    captured_samples: &mut u64,
+    sequence: &mut u64,
+) -> AudioFrame {
+    let mono = if silent {
+        vec![0.0_f32; num_frames as usize]
+    } else {
+        downmix_to_mono_slice_f32(samples_f32, channel_count)
+    };
+    let mono_len = u64::try_from(mono.len()).unwrap_or(u64::MAX);
+    let timestamp_ns = captured_samples.saturating_mul(1_000_000_000) / u64::from(sample_rate);
+    *captured_samples = captured_samples.saturating_add(mono_len);
+    let frame = AudioFrame {
+        sequence: *sequence,
+        capture_monotonic_ns: timestamp_ns,
+        sample_rate,
+        channels: 1,
+        samples: mono,
+    };
+    *sequence = sequence.saturating_add(1);
+    frame
 }
 
 /// Loopback buffer size (milliseconds). Larger = fewer wakeups, more latency.
@@ -1003,4 +1039,90 @@ fn map_state(state: DEVICE_STATE) -> EndpointState {
 
 fn platform_error(error: windows::core::Error) -> AudioError {
     AudioError::Platform(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn silent_buffer_produces_zero_filled_frame() {
+        // A quiet endpoint: WASAPI marks the buffer SILENT. The loopback worker
+        // must still emit a frame so the live loop never mistakes a few seconds
+        // of silence for a stalled capture.
+        let mut captured_samples = 0_u64;
+        let mut sequence = 0_u64;
+        let frame = build_loopback_mono_frame(
+            true,
+            480,
+            &[],
+            2,
+            48_000,
+            &mut captured_samples,
+            &mut sequence,
+        );
+        assert_eq!(frame.samples.len(), 480);
+        assert!(frame.samples.iter().all(|sample| *sample == 0.0));
+        assert_eq!(frame.channels, 1);
+        assert_eq!(frame.sample_rate, 48_000);
+        assert_eq!(captured_samples, 480);
+        assert_eq!(sequence, 1);
+        // Monotonic timestamp advances by the frame duration (10 ms at 48 kHz).
+        assert_eq!(frame.capture_monotonic_ns, 10_000_000);
+    }
+
+    #[test]
+    fn non_silent_buffer_downmixes_stereo_to_mono() {
+        let mut captured_samples = 0_u64;
+        let mut sequence = 0_u64;
+        // Left = 0.4, right = 0.6 => mono 0.5.
+        let stereo = [0.4_f32, 0.6_f32, 0.0_f32, 0.0_f32];
+        let frame = build_loopback_mono_frame(
+            false,
+            2,
+            &stereo,
+            2,
+            48_000,
+            &mut captured_samples,
+            &mut sequence,
+        );
+        assert_eq!(frame.samples.len(), 2);
+        assert!((frame.samples[0] - 0.5).abs() < 1e-6);
+        assert!(frame.samples[1].abs() < 1e-6);
+        assert_eq!(captured_samples, 2);
+        assert_eq!(sequence, 1);
+    }
+
+    #[test]
+    fn sequence_and_timestamps_advance_across_frames() {
+        let mut captured_samples = 0_u64;
+        let mut sequence = 0_u64;
+        for _ in 0..3 {
+            build_loopback_mono_frame(
+                true,
+                480,
+                &[],
+                2,
+                48_000,
+                &mut captured_samples,
+                &mut sequence,
+            );
+        }
+        assert_eq!(sequence, 3);
+        assert_eq!(captured_samples, 1440);
+        // 30 ms of audio at 48 kHz.
+        assert_eq!(
+            build_loopback_mono_frame(
+                true,
+                480,
+                &[],
+                2,
+                48_000,
+                &mut captured_samples,
+                &mut sequence
+            )
+            .capture_monotonic_ns,
+            40_000_000
+        );
+    }
 }

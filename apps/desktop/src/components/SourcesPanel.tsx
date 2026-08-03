@@ -5,6 +5,7 @@ import { useAudioMeter } from "../audio/useAudioMeter";
 import { ColorPicker } from "./ColorPicker";
 import { Select } from "./Select";
 import { useT } from "../features/i18n/store";
+import type { UIKey } from "../features/i18n/strings";
 import { type AsrProvider } from "../live/bridge";
 import { renderLabel } from "../sources/labels";
 import { SOURCE_PRESETS, createSourceFromPreset } from "../sources/presets";
@@ -85,22 +86,22 @@ function useSourceConfigs() {
 
 export const LABEL_STYLE_OPTIONS: readonly {
   value: CaptionLabelStyle;
-  label: string;
+  labelKey: UIKey;
 }[] = [
-  { value: "brackets", label: "Brackets — [TEAM]" },
-  { value: "colon", label: "Colon — TEAM:" },
-  { value: "bullet", label: "Bullet — • TEAM" },
-  { value: "stacked", label: "Stacked — label above" },
-  { value: "hidden", label: "Hidden — no label" },
+  { value: "brackets", labelKey: "labelStyleBrackets" },
+  { value: "colon", labelKey: "labelStyleColon" },
+  { value: "bullet", labelKey: "labelStyleBullet" },
+  { value: "stacked", labelKey: "labelStyleStacked" },
+  { value: "hidden", labelKey: "labelStyleHidden" },
 ];
 
 export const CAPTION_ALIGNMENT_OPTIONS: readonly {
   value: CaptionAlignment;
-  label: string;
+  labelKey: UIKey;
 }[] = [
-  { value: "left", label: "Left" },
-  { value: "center", label: "Center" },
-  { value: "right", label: "Right" },
+  { value: "left", labelKey: "sourcesAlignLeft" },
+  { value: "center", labelKey: "sourcesAlignCenter" },
+  { value: "right", labelKey: "sourcesAlignRight" },
 ];
 
 export const PRESET_OPTIONS = SOURCE_PRESETS.map((preset) => ({
@@ -175,7 +176,10 @@ function SourceCard({
             onChange={(value) => {
               onChange({ labelStyle: value as CaptionLabelStyle });
             }}
-            options={LABEL_STYLE_OPTIONS}
+            options={LABEL_STYLE_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
           />
         </label>
 
@@ -187,7 +191,10 @@ function SourceCard({
             onChange={(value) => {
               onChange({ captionAlignment: value as CaptionAlignment });
             }}
-            options={CAPTION_ALIGNMENT_OPTIONS}
+            options={CAPTION_ALIGNMENT_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
           />
         </label>
 
@@ -217,7 +224,7 @@ function SourceCard({
             options={STRICTNESS_OPTIONS}
           />
           <small className="field-note">
-            {STRICTNESS_META[source.strictness].description}
+            {t(STRICTNESS_META[source.strictness].descriptionKey)}
           </small>
         </label>
 
@@ -309,7 +316,7 @@ function MacosSetupHint() {
     return (
       <div className="inline-alert ok" role="status">
         <div>
-          <strong>BlackHole detected</strong>
+          <strong>{t("sourcesBlackHoleDetected")}</strong>
           <p>
             Route VALORANT voice-chat output to “BlackHole 2ch” in the game's
             audio settings, then capture its input here. Your microphone is

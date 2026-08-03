@@ -6,7 +6,7 @@ Hear Tagalog, Cebuano, or Chinese callouts, *read* them in English as they happe
 and never send a second of audio to the cloud.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-Windows%2011-7dd3fc" alt="Platform: Windows 11"/>
+  <img src="https://img.shields.io/badge/platform-Windows%2011%20%26%20macOS-7dd3fc" alt="Platform: Windows 11 + macOS"/>
   <img src="https://img.shields.io/badge/latency-low--latency--local-4ade80" alt="Local low latency"/>
   <img src="https://img.shields.io/badge/privacy-no%20cloud-4ade80" alt="No cloud"/>
   <img src="https://img.shields.io/badge/license-Apache--2.0-dc4d5e" alt="Apache 2.0"/>
@@ -36,6 +36,59 @@ It never touches the game: no injection, no memory reads, no automation.
 > [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
 > **Status:** beta. It works end-to-end; signing + clean-machine tests are the
 > remaining 1.0 work.
+
+---
+
+## Minimum requirements
+
+### Windows
+
+| Component | Minimum | Recommended |
+|---|---|---|
+| OS | Windows 11 x64 (Windows 10 may work, untested) | Windows 11 x64 |
+| CPU | 4 cores | 6+ cores |
+| RAM | 8 GB | 16 GB |
+| Storage | 4 GB free | 10 GB free (models + optional CUDA pack) |
+| GPU | None needed (CPU fallback) | NVIDIA GPU with **CUDA 12** runtime |
+| Virtual cable | **VB-CABLE** (free, vb-audio.com) for game-voice capture | — |
+
+- **GPU:** the app can run entirely on CPU. For GPU speed, either let the app
+  download its **CUDA runtime pack** (~1.3 GB, one-time, from the Models tab)
+  or have the **CUDA 12 Toolkit** already installed — the app detects both and
+  won't re-download.
+- **Voice capture:** VB-CABLE routes VALORANT/Discord voice into the app. The
+  app never bundles the driver.
+
+### macOS (Apple Silicon)
+
+| Component | Minimum | Recommended |
+|---|---|---|
+| Mac | Apple Silicon (M1/M2/M3/M4) | M3 / M4 |
+| macOS | macOS 13+ | latest |
+| RAM | 8 GB | 16 GB |
+| Storage | 3 GB free | 8 GB free (models) |
+| Virtual device | **BlackHole** (free, github.com/ExistentialAudio/BlackHole) for game-voice capture | — |
+| Permission | Microphone access (first capture) | — |
+
+- **ASR:** runs on the Metal GPU/ANE via **mlx-whisper** (~440 MB model) — no
+  CUDA needed.
+- **Translation:** NLLB runs on CPU (~340 ms/sentence on M4), well within
+  caption latency.
+- **Voice capture:** install BlackHole and route VALORANT voice-chat output to
+  it; the app captures its input (no screen-recording permission required).
+
+### Cloud API (optional, Windows + macOS)
+
+Local models are fully free and offline. If you prefer a hosted **speech
+recognition** API instead, the app supports **Groq** (free tier):
+
+1. Create a free account at <https://console.groq.com>.
+2. Go to <https://console.groq.com/keys> → **Create API Key**.
+3. Copy the `gsk_…` key into the Live tab under **Groq Whisper (API)** and press
+  Start.
+
+> While Groq is selected, recognized audio is sent to Groq's servers. Everything
+> else (local Whisper/NLLB/MLX) stays 100% on your machine.
 
 ---
 
@@ -253,6 +306,12 @@ python scripts/install_models.py nllb --accept-license
 python scripts/install_models.py madlad --accept-license   # optional, CPU-only
 ```
 
+On macOS, also install the Apple Silicon ASR model:
+
+```bash
+python scripts/install_models.py mlx --accept-license      # Metal ASR, ~440 MB
+```
+
 Can't reach Hugging Face? The Models tab can use `hf-mirror.com` (or
 `LST_REGION=cn`), and offline packs install with zero network.
 
@@ -265,6 +324,7 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 | Model | Kind | License |
 |---|---|---|
 | faster-whisper large-v3 / turbo | ASR | MIT |
+| MLX Whisper large-v3-turbo q4 (macOS) | ASR | MIT |
 | OmniLingual CTC 300M | ASR | Apache-2.0 |
 | NLLB-200 distilled 600M | Translation | **CC-BY-NC-4.0** (non-commercial) |
 | MADLAD-400 3B | Translation | Apache-2.0 |
@@ -292,7 +352,7 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## Roadmap to 1.0
 
-Current release: **v0.3.0** (beta — multi-source). Working toward 1.0:
+Current release: **v0.5.2** (beta — macOS support, full i18n, UI polish). Working toward 1.0:
 
 - [ ] code signing (Windows SmartScreen)
 - [ ] clean-machine installer walkthrough (the last hardware gate)
