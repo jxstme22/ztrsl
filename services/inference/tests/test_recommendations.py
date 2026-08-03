@@ -68,7 +68,7 @@ def test_uninstalled_recommendation_is_honest() -> None:
         profile_id="tagalog",
         strictness="strict",
         hardware="cpu",
-        installed_asr=set(),
-        installed_translation=set(),
+        installed_asr=frozenset(),
+        installed_translation=frozenset(),
     )
     assert any("not installed" in line for line in rec.rationale)

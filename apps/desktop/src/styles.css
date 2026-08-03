@@ -2055,6 +2055,22 @@ input[type="range"]::-moz-range-thumb {
   color: #f5c07a;
   border-color: rgba(255, 190, 90, 0.28);
 }
+.lst-badge-local {
+  background: rgba(124, 211, 252, 0.1);
+  color: #7dd3fc;
+  border-color: rgba(124, 211, 252, 0.28);
+}
+.lst-model-local-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--stroke-strong);
+  background: var(--field);
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .lst-error-text {
   color: #f2879b;
   font-size: 12.5px;

@@ -35,6 +35,40 @@ describe("models schemas", () => {
     expect(result.models[0]?.kind).toBe("asr");
     expect(result.models[0]?.status).toBe("installed");
     expect(result.inUse).toContain("whisper-large-v3-turbo");
+    expect(result.known).toEqual([]);
+  });
+
+  it("parses known local-export models (NCSpeech)", () => {
+    const result = modelsListSchema.parse({
+      models: [],
+      inUse: [],
+      known: [
+        {
+          id: "ncspeech-tl-fastconformer-hybrid-large",
+          name: "NCSpeech Tagalog (CTC)",
+          kind: "asr",
+          runtime: "sherpa-onnx",
+          recommended: false,
+          description: "Fixed-language Tagalog (local NeMo export)",
+          licenseSpdx: "CC-BY-4.0",
+          licenseNotice: "local export",
+          downloadSizeBytes: 0,
+          source: "local-export",
+          revision: "export",
+          fileCount: 0,
+          capabilities: {
+            languageCapability: "forced",
+            recommendedProfiles: [],
+            vramClass: "low",
+          },
+          status: "installed",
+          installedSizeBytes: 0,
+        },
+      ],
+    });
+    expect(result.known).toHaveLength(1);
+    expect(result.known[0]?.capabilities.languageCapability).toBe("forced");
+    expect(result.known[0]?.status).toBe("installed");
   });
 
   it("rejects an unknown status", () => {

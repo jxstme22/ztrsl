@@ -224,6 +224,7 @@ function ModelCard({
   progress,
   inUse,
   instantiating,
+  localOnly = false,
   onInstallClick,
   onDeleteClick,
 }: {
@@ -231,6 +232,8 @@ function ModelCard({
   progress: ModelProgress | null;
   inUse: boolean;
   instantiating: boolean;
+  /** v0.4: a locally-exported model (NCSpeech) — no download button. */
+  localOnly?: boolean;
   onInstallClick: (model: ModelInfo) => void;
   onDeleteClick: (model: ModelInfo) => void;
 }) {
@@ -243,6 +246,9 @@ function ModelCard({
       <div className="lst-model-card-head">
         <h3>{model.name}</h3>
         {model.recommended && <span className="lst-badge">Recommended</span>}
+        {localOnly && (
+          <span className="lst-badge lst-badge-local">Local export</span>
+        )}
         {model.licenseSpdx === "CC-BY-NC-4.0" && (
           <span className="lst-badge lst-badge-warn">Non-commercial</span>
         )}
@@ -297,6 +303,10 @@ function ModelCard({
           >
             Cancel
           </button>
+        ) : localOnly ? (
+          <span className="lst-model-local-hint">
+            Requires local export
+          </span>
         ) : (
           <button
             type="button"
@@ -492,6 +502,30 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
         <h3 className="section-heading">Available to install</h3>
         {cards(models.available)}
       </section>
+      {(models.knownInstalled.length > 0 || models.knownAvailable.length > 0) && (
+        <section className="lst-model-section" aria-label="Local exports">
+          <h3 className="section-heading">Local exports (NCSpeech)</h3>
+          <p className="lst-page-description">
+            Fixed-language CTC models generated on this PC via
+            <code> scripts/export_ncspeech_onnx.py</code>. They are not
+            downloaded through the catalog.
+          </p>
+          <div className="lst-model-grid">
+            {[...models.knownInstalled, ...models.knownAvailable].map((model) => (
+              <ModelCard
+                key={model.id}
+                model={model}
+                progress={models.progress[model.id] ?? null}
+                inUse={models.list.inUse.includes(model.id)}
+                instantiating={instantiating === model.id}
+                localOnly
+                onInstallClick={() => undefined}
+                onDeleteClick={() => undefined}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       {action !== null && (
         <ConfirmModelDialog
           action={action}

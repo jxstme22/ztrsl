@@ -13,15 +13,15 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol, cast
 
-from local_squad_inference.clip import ClipResult, process_clip
+from local_squad_inference.clip import ClipDecoder, ClipResult, process_clip
 from local_squad_inference.evaluation.taxonomy import (
     TACTICAL_ERRORS,
     TacticalError,
     error_label,
 )
-from local_squad_inference.media import MediaMetadata
+from local_squad_inference.providers import FileAsrProvider
 
 # Provider configuration names recognized by the sidecar builders.
 ASR_PROVIDERS = ("whisper-turbo", "whisper-full", "ncspeech", "ncspeech-zh", "demo")
@@ -38,17 +38,16 @@ KNOWN_CONFIGS: tuple[tuple[str, str, str], ...] = (
 
 
 class ProviderBuilders(Protocol):
-    """Injectable provider constructors so tests can run without models."""
+    """Injectable provider constructors so tests can run without models.
 
-    def asr(self, name: str): ...
+    Returns are duck-typed (`AsrProvider`/`TranslationProvider`-like); the
+    runner only uses `transcribe_file`/`transcribe`/`translate` via
+    `hasattr`/`getattr`, so fakes with partial methods are acceptable.
+    """
 
-    def translation(self, name: str): ...
+    def asr(self, name: str) -> Any: ...
 
-
-class ClipDecoder(Protocol):
-    def inspect(self, source: Path) -> MediaMetadata: ...
-
-    def chunks(self, source: Path): ...
+    def translation(self, name: str) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -174,7 +173,11 @@ def run_config(
         source,
         source_mode,
         decoder=decoder,
-        file_asr=asr_provider if hasattr(asr_provider, "transcribe_file") else None,
+        file_asr=(
+            cast(FileAsrProvider, asr_provider)
+            if hasattr(asr_provider, "transcribe_file")
+            else None
+        ),
         asr=asr_provider,
         translation=translation_provider,
         mode=mode,

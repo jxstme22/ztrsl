@@ -234,6 +234,10 @@ fn resolve_bundled_paths(app: &tauri::AppHandle) -> Option<BundledPaths> {
 struct ModelsList {
     models: Vec<ModelInfo>,
     in_use: Vec<String>,
+    /// v0.4: known-but-not-cataloged models (e.g. NCSpeech CTC exports that
+    /// are generated locally via scripts/export_ncspeech_onnx.py rather than
+    /// downloaded). `available` means "exported on disk", not "downloadable".
+    known: Vec<ModelInfo>,
 }
 
 #[derive(Debug, Serialize)]
@@ -285,6 +289,45 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
     ids
 }
 
+/// v0.4 known-but-not-cataloged models: locally exported CTC ASR models
+/// (NCSpeech family) generated via `scripts/export_ncspeech_onnx.py`. They
+/// are NOT downloadable through the catalog — the UI must show them without
+/// a download action.
+const KNOWN_MODELS: &[(&str, &str, &str, &str, &str)] = &[
+    (
+        "ncspeech-tl-fastconformer-hybrid-large",
+        "NCSpeech Tagalog (CTC)",
+        "asr",
+        "sherpa-onnx",
+        "Fixed-language Tagalog speech recognition (local NeMo export, CC-BY-4.0)",
+    ),
+    (
+        "ncspeech-zh-citrinet-1024-gamma",
+        "Citrinet Mandarin (CTC)",
+        "asr",
+        "sherpa-onnx",
+        "Fixed-language Mandarin speech recognition (local NeMo export, CC-BY-4.0)",
+    ),
+    (
+        "ncspeech-zh-parakeet-ctc-0.6b",
+        "Parakeet Mandarin (CTC)",
+        "asr",
+        "sherpa-onnx",
+        "Fixed-language Mandarin speech recognition (local NeMo export, CC-BY-4.0)",
+    ),
+];
+
+/// True when a model directory exists for `id` in either layout (catalog
+/// `model_root/<id>` or the local-export `model_root/artifacts/<id>`).
+fn model_dir_exists(root: &std::path::Path, id: &str) -> bool {
+    root.join(id).join("manifest.json").is_file()
+        || root
+            .join("artifacts")
+            .join(id)
+            .join("manifest.json")
+            .is_file()
+}
+
 #[tauri::command]
 async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsList, String> {
     let state = models.state.lock().map_err(lock_error)?;
@@ -309,9 +352,42 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
             installed_size_bytes: installed_size,
         });
     }
+    // v0.4 known models (NCSpeech local exports): surfaced from disk so the
+    // user can see them, but never offered as a download.
+    let known = KNOWN_MODELS
+        .iter()
+        .map(|(id, name, kind, runtime, description)| {
+            let installed = model_dir_exists(state.store.root(), id);
+            let size = installed_sizes.get(*id).copied().unwrap_or(0);
+            ModelInfo {
+                view: model_manager::CatalogEntryView {
+                    id: (*id).to_owned(),
+                    name: (*name).to_owned(),
+                    kind: (*kind).to_owned(),
+                    runtime: (*runtime).to_owned(),
+                    recommended: false,
+                    description: (*description).to_owned(),
+                    license_spdx: "CC-BY-4.0".to_owned(),
+                    license_notice: "local export; see NOTICE".to_owned(),
+                    download_size_bytes: size,
+                    source: "local-export".to_owned(),
+                    revision: "export".to_owned(),
+                    file_count: 0,
+                    capabilities: model_manager::CapabilitiesView {
+                        language_capability: "forced".to_owned(),
+                        recommended_profiles: Vec::new(),
+                        vram_class: "low".to_owned(),
+                    },
+                },
+                status: if installed { "installed" } else { "available" }.to_owned(),
+                installed_size_bytes: size,
+            }
+        })
+        .collect();
     Ok(ModelsList {
         models: models_info,
         in_use: state.in_use.iter().cloned().collect(),
+        known,
     })
 }
 
@@ -1996,7 +2072,45 @@ pub fn run() {
 mod tests {
     use audio_core::{AudioSource, SYNTHETIC_ENDPOINT_ID};
 
-    use super::{AppStatus, AudioRuntimeState};
+    use super::{AppStatus, AudioRuntimeState, KNOWN_MODELS, model_dir_exists};
+
+    #[test]
+    fn known_models_are_catalog_free_but_detected_from_disk() {
+        let root = std::env::temp_dir().join(format!("lst-known-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(
+            root.join("artifacts")
+                .join("ncspeech-tl-fastconformer-hybrid-large"),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("artifacts")
+                .join("ncspeech-tl-fastconformer-hybrid-large")
+                .join("manifest.json"),
+            "{}",
+        )
+        .unwrap();
+
+        // The exported (artifacts/) layout is detected.
+        assert!(model_dir_exists(
+            &root,
+            "ncspeech-tl-fastconformer-hybrid-large"
+        ));
+        // The catalog layout is also detected.
+        assert!(!model_dir_exists(&root, "ncspeech-zh-citrinet-1024-gamma"));
+        std::fs::create_dir_all(root.join("ncspeech-zh-citrinet-1024-gamma")).unwrap();
+        std::fs::write(
+            root.join("ncspeech-zh-citrinet-1024-gamma")
+                .join("manifest.json"),
+            "{}",
+        )
+        .unwrap();
+        assert!(model_dir_exists(&root, "ncspeech-zh-citrinet-1024-gamma"));
+
+        // The known set carries the three NCSpeech variants.
+        assert_eq!(KNOWN_MODELS.len(), 3);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn phase_five_status_defaults_to_capture_off() {

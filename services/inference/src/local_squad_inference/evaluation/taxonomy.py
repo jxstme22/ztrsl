@@ -55,7 +55,7 @@ CRITICAL_TACTICAL_ERRORS: frozenset[TacticalError] = frozenset(
 )
 
 # Human-readable labels (content-free, for the UI).
-ERROR_LABELS: dict[TacticalError, str] = {
+ERROR_LABELS: dict[str, str] = {
     "correct": "Correct",
     "mostly_correct": "Mostly correct",
     "wrong_language": "Wrong language",
@@ -79,4 +79,5 @@ def is_critical(error: str) -> bool:
 
 
 def error_label(error: str) -> str:
-    return ERROR_LABELS.get(error, "Unknown")
+    label = ERROR_LABELS.get(error)
+    return label if label is not None else "Unknown"

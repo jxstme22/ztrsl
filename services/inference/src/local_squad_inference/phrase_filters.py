@@ -146,7 +146,7 @@ class PhraseFilterSet:
                     source_id=str(item["source_id"]),
                     text=str(item["text"]),
                     match_mode=str(item.get("match_mode", "exact")),  # type: ignore[arg-type]
-                    threshold=float(item.get("threshold", DEFAULT_SIMILARITY_THRESHOLD)),
+                    threshold=float(str(item.get("threshold", DEFAULT_SIMILARITY_THRESHOLD))),
                     enabled=bool(item.get("enabled", True)),
                 )
             )

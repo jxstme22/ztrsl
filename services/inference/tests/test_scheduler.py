@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 
 from local_squad_inference.scheduler import (
+    InferenceJob,
     InferenceScheduler,
     make_job,
 )
@@ -39,7 +40,7 @@ def final_job(
     *,
     priority: int = 100,
     created_ns: int | None = None,
-) -> object:
+) -> InferenceJob:
     return make_job(
         utterance(utterance_id, source_id),
         is_final=True,
@@ -55,7 +56,7 @@ def provisional_job(
     *,
     revision: int,
     priority: int = 100,
-) -> object:
+) -> InferenceJob:
     return make_job(
         utterance(utterance_id, source_id, final=False),
         is_final=False,
@@ -64,8 +65,8 @@ def provisional_job(
     )
 
 
-def drain(scheduler: InferenceScheduler) -> list[object]:
-    jobs: list[object] = []
+def drain(scheduler: InferenceScheduler) -> list[InferenceJob]:
+    jobs: list[InferenceJob] = []
     while True:
         job = scheduler.take(timeout=0.01)
         if job is None:

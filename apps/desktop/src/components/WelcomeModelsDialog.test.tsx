@@ -32,6 +32,7 @@ function modelsState(): ModelUiState {
         },
       ],
       inUse: [],
+      known: [],
     },
     loading: false,
     progress: {},
@@ -44,6 +45,8 @@ function modelsState(): ModelUiState {
     isInstalling: () => false,
     installed: [],
     available: [],
+    knownInstalled: [],
+    knownAvailable: [],
     downloadEndpoint: {
       endpoint: "https://huggingface.co",
       mirror: false,

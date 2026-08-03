@@ -60,6 +60,7 @@ const AVAILABLE = {
     },
   ],
   inUse: [],
+  known: [],
 };
 
 describe("useModels", () => {
@@ -184,6 +185,7 @@ describe("useModels", () => {
         },
       ],
       inUse: [],
+  known: [],
     });
     act(() => {
       handler?.({

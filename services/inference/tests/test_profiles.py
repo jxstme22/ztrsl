@@ -4,6 +4,7 @@ import pytest
 
 from local_squad_inference.profiles import (
     SHORT_CALLOUT_MS,
+    Strictness,
     apply_language_gate,
     get_profile,
     profile_catalog,
@@ -28,16 +29,17 @@ def test_catalog_has_all_required_profiles() -> None:
 
 
 def test_off_accepts_everything() -> None:
-    for profile_id, kwargs in (
-        ("tagalog", dict(detected_language="en", confidence=0.001)),
-        ("mandarin", dict(detected_language="en", confidence=0.01)),
-        ("auto", dict(detected_language="fil", confidence=0.05)),
+    for profile_id, detected_language, confidence in (
+        ("tagalog", "en", 0.001),
+        ("mandarin", "en", 0.01),
+        ("auto", "fil", 0.05),
     ):
         decision = apply_language_gate(
             profile_id,
             "off",
             source_text="whatever foreign speech",
-            **kwargs,
+            detected_language=detected_language,
+            confidence=confidence,
         )
         assert decision.applied == "off"
         assert decision.reason is None
@@ -72,7 +74,9 @@ def test_short_callout_passes_in_less_strict_modes() -> None:
 
 
 @pytest.mark.parametrize("strictness", ["balanced", "strict"])
-def test_short_callout_only_suppresses_on_catastrophic_confidence(strictness) -> None:
+def test_short_callout_only_suppresses_on_catastrophic_confidence(
+    strictness: Strictness,
+) -> None:
     decision = apply_language_gate(
         "mandarin",
         strictness,
@@ -98,16 +102,24 @@ def test_shorter_than_threshold_uses_short_callout_branch() -> None:
 
 
 def test_language_mismatch_flagged_balanced_suppressed_strict() -> None:
-    common = dict(
+    balanced = apply_language_gate(
+        "mandarin",
+        "balanced",
         source_text="das ist ein test",
         confidence=0.9,
         detected_language="de",
         utterance_duration_ms=1200,
     )
-    balanced = apply_language_gate("mandarin", "balanced", **common)
     assert balanced.applied == "flagged"
     assert balanced.reason == "language_mismatch"
-    strict = apply_language_gate("mandarin", "strict", **common)
+    strict = apply_language_gate(
+        "mandarin",
+        "strict",
+        source_text="das ist ein test",
+        confidence=0.9,
+        detected_language="de",
+        utterance_duration_ms=1200,
+    )
     assert strict.applied == "suppressed"
     assert strict.reason == "language_mismatch"
 
@@ -139,16 +151,24 @@ def test_english_rejected_when_profile_does_not_allow() -> None:
 
 
 def test_confidence_floor_flags_balanced_suppresses_strict() -> None:
-    common = dict(
+    balanced = apply_language_gate(
+        "cebuano",
+        "balanced",
         source_text="maayong adlaw",
         confidence=0.15,
         detected_language="ceb",
         utterance_duration_ms=1200,
     )
-    balanced = apply_language_gate("cebuano", "balanced", **common)
     assert balanced.applied == "flagged"
     assert balanced.reason == "low_confidence"
-    strict = apply_language_gate("cebuano", "strict", **common)
+    strict = apply_language_gate(
+        "cebuano",
+        "strict",
+        source_text="maayong adlaw",
+        confidence=0.15,
+        detected_language="ceb",
+        utterance_duration_ms=1200,
+    )
     assert strict.applied == "suppressed"
     assert strict.reason == "low_confidence"
 

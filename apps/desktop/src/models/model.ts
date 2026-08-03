@@ -36,6 +36,8 @@ export type ModelInfo = z.infer<typeof modelInfoSchema>;
 export const modelsListSchema = z.object({
   models: z.array(modelInfoSchema),
   inUse: z.array(z.string()),
+  /** v0.4: known-but-not-cataloged models (NCSpeech local exports). */
+  known: z.array(modelInfoSchema).default([]),
 });
 
 export type ModelsList = z.infer<typeof modelsListSchema>;
@@ -43,6 +45,7 @@ export type ModelsList = z.infer<typeof modelsListSchema>;
 export const EMPTY_MODELS_LIST: ModelsList = {
   models: [],
   inUse: [],
+  known: [],
 };
 
 export const modelProgressSchema = z.object({

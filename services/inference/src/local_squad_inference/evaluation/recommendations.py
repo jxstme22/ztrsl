@@ -54,8 +54,8 @@ def recommend(
     strictness: str,
     hardware: HardwareClass,
     resource_policy: ResourcePolicy = "balanced",
-    installed_asr: set[str] = frozenset(),
-    installed_translation: set[str] = frozenset(),
+    installed_asr: frozenset[str] = frozenset(),
+    installed_translation: frozenset[str] = frozenset(),
     accuracy_winner_asr: str | None = None,
 ) -> Recommendation:
     """Pick an ASR/MT pair and explain why. Installed-run-time awareness only

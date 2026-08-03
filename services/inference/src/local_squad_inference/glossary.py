@@ -175,7 +175,7 @@ class Glossary:
                 source=str(item["source"]),
                 target=str(item["target"]),
                 scope=str(item.get("scope", "global")),  # type: ignore[arg-type]
-                scope_key=item.get("scope_key"),
+                scope_key=(str(item["scope_key"]) if item.get("scope_key") is not None else None),
                 note=str(item.get("note", "")),
             )
             for item in payload

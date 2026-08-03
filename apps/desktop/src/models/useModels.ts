@@ -37,6 +37,9 @@ export type ModelUiState = {
   isInstalling: (id: string) => boolean;
   installed: ModelInfo[];
   available: ModelInfo[];
+  /** v0.4: locally-exported models (NCSpeech) detected on disk. */
+  knownInstalled: ModelInfo[];
+  knownAvailable: ModelInfo[];
   /** Effective Hugging Face download endpoint (mirror-aware). */
   downloadEndpoint: DownloadEndpointInfo;
   /** Persist a user-chosen download endpoint; "" resets to auto. */
@@ -177,6 +180,16 @@ export function useModels(desktopOnly = true): ModelUiState {
     [list.models],
   );
 
+  const knownInstalled = useMemo(
+    () => list.known.filter((model) => model.status === "installed"),
+    [list.known],
+  );
+
+  const knownAvailable = useMemo(
+    () => list.known.filter((model) => model.status !== "installed"),
+    [list.known],
+  );
+
   const available = useMemo(
     () =>
       list.models
@@ -210,6 +223,8 @@ export function useModels(desktopOnly = true): ModelUiState {
     isInstalling,
     installed,
     available,
+    knownInstalled,
+    knownAvailable,
     downloadEndpoint,
     setDownloadEndpoint: updateDownloadEndpoint,
     providerStatus,

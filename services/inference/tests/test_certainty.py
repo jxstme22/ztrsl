@@ -1,6 +1,6 @@
 """v0.4 Phase 5: certainty state tests."""
 
-from local_squad_inference.overlap import OverlapSample, classify_overlap
+from local_squad_inference.overlap import OverlapSample, OverlapStatus, classify_overlap
 from local_squad_inference.profiles import GateDecision
 from local_squad_inference.protocol import CaptionCertainty, CaptionPayload
 from local_squad_inference.sidecar import _certainty_for, _OverlapTracker
@@ -61,22 +61,32 @@ def test_low_confidence_adds_reason() -> None:
 
 
 def test_heavy_overlap_suppresses() -> None:
-    class _Status:
-        verdict = "suppressed"
-
+    status = OverlapStatus(
+        policy="suppress_heavy_overlap",
+        ratio=0.9,
+        overlap_ms=500,
+        mild=True,
+        heavy=True,
+        verdict="suppressed",
+    )
     caption = base_caption()
-    certainty = _certainty_for(caption, GateDecision(applied="passed"), lambda source_id: _Status())
+    certainty = _certainty_for(caption, GateDecision(applied="passed"), lambda _: status)
     assert certainty is not None
     assert certainty.state == "suppressed"
     assert certainty.suppression_reason == "heavy_overlap"
 
 
 def test_mild_overlap_marks_uncertain() -> None:
-    class _Status:
-        verdict = "uncertain"
-
+    status = OverlapStatus(
+        policy="mark_uncertain",
+        ratio=0.3,
+        overlap_ms=400,
+        mild=True,
+        heavy=False,
+        verdict="uncertain",
+    )
     caption = base_caption()
-    certainty = _certainty_for(caption, GateDecision(applied="passed"), lambda source_id: _Status())
+    certainty = _certainty_for(caption, GateDecision(applied="passed"), lambda _: status)
     assert certainty is not None
     assert certainty.state == "uncertain"
     assert "overlapping_speech" in certainty.uncertainty_reasons

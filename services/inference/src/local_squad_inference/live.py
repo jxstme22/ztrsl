@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from local_squad_inference.glossary import Glossary
 from local_squad_inference.phrase_filters import PhraseFilterResult, PhraseFilterSet
-from local_squad_inference.protocol import AudioPacket, CaptionPayload
+from local_squad_inference.protocol import AudioPacket, AudioPacketV2, CaptionPayload, SourceMode
 from local_squad_inference.providers import AsrProvider, TranslationProvider
 from local_squad_inference.vad import (
     AudioUtterance,
@@ -45,7 +45,7 @@ class _SourceVadState:
     byte-identical to v0.2."""
 
     source_id: str | None
-    source_mode: str
+    source_mode: SourceMode
     manager: EnergyUtteranceManager
     stream_origin_ns: int | None = None
     clock_origin_ns: int | None = None
@@ -68,7 +68,7 @@ def source_key_of(packet: Any) -> str | None:
         from local_squad_inference.protocol import encode_source_id_hex
 
         return encode_source_id_hex(raw)
-    return raw
+    return str(raw)
 
 
 class LivePipeline:
@@ -309,7 +309,7 @@ class LivePipeline:
             if (caption := self._transcribe_utterance(utterance)) is not None
         )
 
-    def feed(self, packet: AudioPacket) -> tuple[CaptionPayload, ...]:
+    def feed(self, packet: AudioPacket | AudioPacketV2) -> tuple[CaptionPayload, ...]:
         return self.infer_utterances(self.feed_utterances(packet))
 
     def flush_utterances(self, source_id: str | None = None) -> list[AudioUtterance]:

@@ -1,15 +1,16 @@
 """v0.4 Phase 1: Accuracy Lab comparison + report tests (no models)."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from local_squad_inference.clip import MediaMetadata
 from local_squad_inference.evaluation.accuracy_lab import (
     annotate_report,
     compare_clips,
     report_error_matrix,
 )
+from local_squad_inference.media import MediaMetadata
 from local_squad_inference.providers import AsrResult, TranslationResult
 
 
@@ -22,7 +23,7 @@ class FakeDecoder:
             has_audio=True,
         )
 
-    def chunks(self, source: Path):
+    def chunks(self, source: Path) -> Iterator[tuple[float, ...]]:
         yield (0.1,) * 800
         yield (0.0,) * 800
 
@@ -30,7 +31,7 @@ class FakeDecoder:
 class FakeAsr:
     model_id = "fake-asr"
 
-    def transcribe_file(self, source, source_mode):
+    def transcribe_file(self, source: Path, source_mode: str) -> list[object]:
         return [
             type(
                 "Seg",
@@ -62,10 +63,10 @@ class FakeTranslation:
 
 
 class FakeBuilders:
-    def asr(self, name):
+    def asr(self, name: str) -> FakeAsr:
         return FakeAsr()
 
-    def translation(self, name):
+    def translation(self, name: str) -> FakeTranslation:
         return FakeTranslation()
 
 
@@ -126,4 +127,4 @@ def test_annotate_rejects_unknown_category(clip: Path) -> None:
 
 def test_compare_rejects_unknown_source_mode(clip: Path) -> None:
     with pytest.raises(ValueError):
-        compare_clips(clip, "klingon", FakeBuilders())  # type: ignore[arg-type]
+        compare_clips(clip, "klingon", FakeBuilders())

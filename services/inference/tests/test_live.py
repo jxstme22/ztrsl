@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from local_squad_inference.live import LivePipeline
-from local_squad_inference.protocol import AudioPacket
+from local_squad_inference.protocol import AudioPacket, AudioPacketV2
 from local_squad_inference.providers import AsrResult, TranslationResult
 from local_squad_inference.vad import AudioUtterance, VadConfig
 
@@ -285,9 +285,7 @@ def packet_v2(
     sequence: int,
     samples: tuple[float, ...],
     source_id: str,
-) -> AudioPacket:
-    from local_squad_inference.protocol import AudioPacketV2
-
+) -> AudioPacketV2:
     return AudioPacketV2(
         session_id=b"0123456789abcdef",
         sequence=sequence,

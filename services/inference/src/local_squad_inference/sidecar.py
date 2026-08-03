@@ -31,6 +31,7 @@ from local_squad_inference.overlap import (
     MINIMUM_OVERLAP_MS,
     OverlapPolicy,
     OverlapSample,
+    OverlapStatus,
     classify_overlap,
 )
 from local_squad_inference.profiles import FilterApplied, GateDecision, apply_language_gate
@@ -41,6 +42,7 @@ from local_squad_inference.protocol import (
     PROTOCOL_V2,
     PROTOCOL_VERSION,
     AudioPacket,
+    AudioPacketV2,
     CaptionCertainty,
     CaptionPayload,
     ClipComparePayload,
@@ -54,6 +56,7 @@ from local_squad_inference.protocol import (
     SourceRegistryPayload,
     SourceSnapshot,
     Strictness,
+    SuppressionReason,
     UncertaintyReason,
     dump_caption,
     encode_source_id_hex,
@@ -156,7 +159,7 @@ def stamp_v2_caption(
     caption: CaptionPayload,
     source_registry: dict[str, SourceRegistryEntry],
     source_snapshots: dict[str, SourceSnapshot],
-    overlap_status: Callable[[str], object] | None = None,
+    overlap_status: Callable[[str], OverlapStatus] | None = None,
 ) -> CaptionPayload:
     """Return a copy of the caption with the registry presentation
     snapshot, strictness, language-gate result, and v0.4 certainty attached.
@@ -226,7 +229,7 @@ class _OverlapTracker:
             if len(spans) > 16:
                 del spans[: len(spans) - 16]
 
-    def status_for(self, source_id: str) -> object:
+    def status_for(self, source_id: str) -> OverlapStatus:
         """OverlapStatus for a source (policy applied). Defaults to
         `process_normally` so no policy ever blocks a source by accident."""
         with self._lock:
@@ -248,10 +251,44 @@ class _OverlapTracker:
         return classify_overlap(samples, policy)
 
 
+def _suppression_reason(reason: str | None) -> SuppressionReason:
+    """Map a language-gate reason onto the v0.4 suppression-reason vocabulary."""
+    if reason in {
+        "heavy_overlap",
+        "low_confidence",
+        "unexpected_language",
+        "phrase_filter",
+        "clipping",
+    }:
+        return reason  # type: ignore[return-value]
+    if reason in {"language_mismatch", "low_confidence_short"}:
+        return "low_confidence"
+    return "low_confidence"
+
+
+def _make_stamp(
+    source_registry: dict[str, SourceRegistryEntry],
+    source_snapshots: dict[str, SourceSnapshot],
+    live_worker: LivePipelineWorker | None,
+) -> Callable[[CaptionPayload], CaptionPayload]:
+    """Build the v2 caption-stamping callable for a live session, binding the
+    per-source overlap lookup. Returns identity when no worker is present."""
+
+    def stamp(caption: CaptionPayload) -> CaptionPayload:
+        return stamp_v2_caption(
+            caption,
+            source_registry,
+            source_snapshots,
+            overlap_status=(live_worker._overlap.status_for if live_worker is not None else None),
+        )
+
+    return stamp
+
+
 def _certainty_for(
     caption: CaptionPayload,
     decided: GateDecision,
-    overlap_status: Callable[[str], object] | None,
+    overlap_status: Callable[[str], OverlapStatus] | None,
 ) -> CaptionCertainty | None:
     """v0.4 certainty (BUILD_PLAN_V0_4 §4). Builds a certainty state from the
     language-gate outcome and the per-source overlap verdict. Final captions
@@ -264,7 +301,7 @@ def _certainty_for(
         return CaptionCertainty(
             state="suppressed",
             uncertainty_reasons=[],
-            suppression_reason=decided.reason or "low_confidence",
+            suppression_reason=_suppression_reason(decided.reason),
         )
     reasons: list[UncertaintyReason] = []
     if decided.applied == "flagged":
@@ -273,7 +310,7 @@ def _certainty_for(
         reasons.append("low_asr_confidence")
     if overlap_status is not None:
         status = overlap_status(source_id)
-        verdict = getattr(status, "verdict", None)
+        verdict = status.verdict
         if verdict == "suppressed":
             return CaptionCertainty(
                 state="suppressed",
@@ -632,7 +669,7 @@ class LivePipelineWorker:
         for worker in self._workers:
             worker.start()
 
-    def submit(self, packet: AudioPacket) -> None:
+    def submit(self, packet: AudioPacket | AudioPacketV2) -> None:
         # Latest-wins: when the VAD is behind, keep the most recent audio
         # (the speech that is happening right now) instead of the oldest.
         while True:
@@ -776,7 +813,7 @@ class LivePipelineWorker:
         )
 
     def _run_vad(self) -> None:
-        next_provisional_at_ns: dict[str, int | None] = {}
+        next_provisional_at_ns: dict[str | None, int | None] = {}
         while True:
             try:
                 packet = self._input.get(timeout=0.05)
@@ -1079,6 +1116,8 @@ async def handle_connection(
                             if entry is not None
                             else None
                         )
+                        if live_pipeline is None or live_worker is None:
+                            continue
                         live_pipeline.start_source(source_hex, source_mode=source_mode)
                         live_worker.submit(packet_v2)
                         continue
@@ -1391,14 +1430,14 @@ async def handle_connection(
                         )
                     )
                     continue
-                metrics = await asyncio.to_thread(live_worker.scheduler_metrics)
+                scheduler_metrics = await asyncio.to_thread(live_worker.scheduler_metrics)
                 await connection.send(
                     json.dumps(
                         envelope(
                             "scheduler.metrics",
                             control.message_id,
                             control.session_id,
-                            asdict(metrics),
+                            asdict(scheduler_metrics),
                             version=negotiated_version,
                         )
                     )
@@ -1445,18 +1484,7 @@ async def handle_connection(
                             send_lock,
                             version=negotiated_version,
                             stamp=(
-                                (
-                                    lambda caption, worker=live_worker: stamp_v2_caption(
-                                        caption,
-                                        source_registry,
-                                        source_snapshots,
-                                        overlap_status=(
-                                            worker._overlap.status_for
-                                            if worker is not None
-                                            else None
-                                        ),
-                                    )
-                                )
+                                _make_stamp(source_registry, source_snapshots, live_worker)
                                 if negotiated_version == PROTOCOL_V2
                                 else None
                             ),
@@ -1502,16 +1530,16 @@ async def handle_connection(
                     )
                 )
             elif control.type == "live.stop":
-                captions: tuple[CaptionPayload, ...] = ()
+                stop_captions: tuple[CaptionPayload, ...] = ()
                 if live_worker is not None:
                     if drain_task is not None:
                         drain_task.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
                             await drain_task
                         drain_task = None
-                    captions, dropped_packets = live_worker.stop()
+                    stop_captions, dropped_packets = live_worker.stop()
                     live_worker = None
-                    metrics = (
+                    stop_metrics: dict[str, object] = (
                         asdict(live_pipeline.metrics)
                         if live_pipeline is not None
                         else {
@@ -1523,10 +1551,10 @@ async def handle_connection(
                             "utterances_dropped": 0,
                         }
                     )
-                    metrics["packets_dropped"] = dropped_packets
+                    stop_metrics["packets_dropped"] = dropped_packets
                     live_pipeline = None
                 else:
-                    metrics = {
+                    stop_metrics = {
                         "packets_received": 0,
                         "utterances_completed": 0,
                         "captions_emitted": 0,
@@ -1534,7 +1562,7 @@ async def handle_connection(
                         "packets_dropped": 0,
                         "utterances_dropped": 0,
                     }
-                for index, caption in enumerate(captions, start=1):
+                for index, caption in enumerate(stop_captions, start=1):
                     await connection.send(
                         json.dumps(
                             envelope(
@@ -1552,7 +1580,7 @@ async def handle_connection(
                             "live.stopped",
                             control.message_id,
                             control.session_id,
-                            {"metrics": metrics},
+                            {"metrics": stop_metrics},
                             version=negotiated_version,
                         )
                     )
@@ -1616,10 +1644,10 @@ async def handle_connection(
                 compare_request = ClipComparePayload.model_validate(control.payload)
 
                 class _SidecarBuilders:
-                    def asr(self, name: str):
+                    def asr(self, name: str) -> AsrProvider:
                         return build_asr_provider(name)
 
-                    def translation(self, name: str):
+                    def translation(self, name: str) -> TranslationProvider:
                         return build_translation_provider(name)
 
                 configs = (

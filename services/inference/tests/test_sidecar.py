@@ -7,7 +7,7 @@ from array import array
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
@@ -197,7 +197,7 @@ def test_v2_multi_source_captions_are_independent_and_rename_isolated() -> None:
                 assert provisional["type"] == "caption.provisional"
                 assert final["type"] == "caption.final"
                 assert provisional["payload"]["caption_id"] == final["payload"]["caption_id"]
-                return provisional["payload"]
+                return cast(dict[str, Any], provisional["payload"])
 
             team = await roundtrip(1, TEAM_SOURCE)
             discord = await roundtrip(2, DISCORD_SOURCE)
@@ -404,7 +404,7 @@ def test_worker_vad_stays_realtime_while_inference_is_slow() -> None:
             self.fed += 1
             return [FakeUtterance(sequence=packet.sequence, utterance_id=str(packet.sequence))]
 
-        def infer_utterances(self, utterances: list[FakeUtterance]) -> tuple[tuple[int, ...], ...]:
+        def infer_utterances(self, utterances: list[FakeUtterance]) -> tuple[FakeUtterance, ...]:
             self.inferred += len(utterances)
             time.sleep(0.25)
             return tuple(utterances)
