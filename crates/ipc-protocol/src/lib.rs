@@ -237,6 +237,14 @@ pub struct SourcePresentationUpdatePayload {
     pub source_snapshot: SourceSnapshot,
 }
 
+/// Payload for per-source controls (Phase 5): `source.flush`,
+/// `source.stop`, and `source.diagnostics.request` all carry only the
+/// immutable `source_id`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourceControlPayload {
+    pub source_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClipResultPayload {
     pub metadata: ClipMetadata,

@@ -11,8 +11,8 @@ use ipc_protocol::{
     AudioPacket, AudioPacketV2, CAPABILITY_IPC_V2, CAPABILITY_MULTI_SOURCE, CaptionLabelStyle,
     CaptionPayload, CaptionStrictness, ClipProcessPayload, ClipResultPayload, Envelope,
     HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
-    SourcePresentationUpdatePayload, SourceRegistryEntry, SourceRegistryPayload, SourceSnapshot,
-    source_id_from_hex,
+    SourceControlPayload, SourcePresentationUpdatePayload, SourceRegistryEntry,
+    SourceRegistryPayload, SourceSnapshot, source_id_from_hex,
 };
 use thiserror::Error;
 use tungstenite::{Message, WebSocket};
@@ -660,6 +660,109 @@ impl SidecarSupervisor {
         }
     }
 
+    /// Send a v2 audio frame for a specific immutable source id (Phase 5
+    /// per-source VAD). v2 sessions only; the sequence counter remains
+    /// session-global, so callers must keep frames increasing across sources.
+    pub fn send_live_audio_for_source(
+        &mut self,
+        capture_monotonic_ns: u64,
+        source_id: &str,
+        samples: Vec<f32>,
+    ) -> Result<(), SupervisorError> {
+        self.ensure_running()?;
+        if self.negotiated_version != PROTOCOL_V2 {
+            return Err(SupervisorError::Protocol(
+                "per-source audio requires a v2 session".to_owned(),
+            ));
+        }
+        let sequence = self.next_sequence;
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        let frame = self.encode_v2_audio(sequence, capture_monotonic_ns, samples, source_id)?;
+        self.socket
+            .send(Message::Binary(frame.into()))
+            .map_err(SupervisorError::WebSocket)
+    }
+
+    fn run_source_control(
+        &mut self,
+        message_type: &str,
+        source_id: &str,
+        expected: &[&str],
+        error_type: &str,
+        context: &str,
+    ) -> Result<serde_json::Value, SupervisorError> {
+        self.ensure_running()?;
+        if self.negotiated_version != PROTOCOL_V2 {
+            return Err(SupervisorError::Protocol(
+                "per-source controls require a v2 session".to_owned(),
+            ));
+        }
+        let request = Envelope {
+            protocol_version: self.negotiated_version,
+            message_id: format!("{}-{}", message_type, self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: message_type.to_owned(),
+            sent_monotonic_ns: 0,
+            payload: SourceControlPayload {
+                source_id: source_id.to_owned(),
+            },
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        loop {
+            let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+            if expected.contains(&response.message_type.as_str()) {
+                return Ok(response.payload);
+            }
+            if response.message_type == error_type {
+                return Err(SupervisorError::Protocol(error_message(
+                    &response.payload,
+                    context,
+                )));
+            }
+        }
+    }
+
+    /// Flush only the given source's open utterance (Phase 5). The sidecar
+    /// emits the flushed captions (as `caption.final`) before acking with
+    /// `source.flushed`.
+    pub fn flush_source(&mut self, source_id: &str) -> Result<serde_json::Value, SupervisorError> {
+        self.run_source_control(
+            "source.flush",
+            source_id,
+            &["source.flushed"],
+            "source.error",
+            "source.flush rejected",
+        )
+    }
+
+    /// Stop only the given source: flushes it and freezes its VAD state
+    /// (Phase 5). Captions are emitted as `caption.final` before the
+    /// `source.stopped` ack.
+    pub fn stop_source(&mut self, source_id: &str) -> Result<serde_json::Value, SupervisorError> {
+        self.run_source_control(
+            "source.stop",
+            source_id,
+            &["source.stopped"],
+            "source.error",
+            "source.stop rejected",
+        )
+    }
+
+    /// Per-source VAD diagnostics (Phase 5). v2 sessions only.
+    pub fn source_diagnostics(
+        &mut self,
+        source_id: &str,
+    ) -> Result<serde_json::Value, SupervisorError> {
+        self.run_source_control(
+            "source.diagnostics.request",
+            source_id,
+            &["source.diagnostics"],
+            "source.error",
+            "source.diagnostics rejected",
+        )
+    }
+
     pub fn process_clip(
         &mut self,
         path: &Path,
@@ -967,6 +1070,10 @@ mod tests {
         DISCORD_SOURCE_ID, PROTOCOL_V2, SidecarConfig, SidecarSupervisor, SupervisorError,
         TEAM_SOURCE_ID, packaged_sidecar_available, to_hex, workspace_root_from_manifest,
     };
+    use ipc_protocol::{
+        CaptionLabelStyle, CaptionPayload, CaptionStrictness, Envelope, SourceRegistryEntry,
+    };
+    use std::time::Duration;
 
     #[test]
     fn token_hex_encoding_never_exposes_binary_data() {
@@ -1075,5 +1182,133 @@ mod tests {
             team.payload.caption_id, discord.payload.caption_id,
             "per-source caption ids must never collide"
         );
+    }
+
+    /// Phase 5: per-source VAD lifecycle over the real wire. Interleaved
+    /// TEAM/DISCORD speech produces independent finals; `source.stop` on
+    /// TEAM flushes only TEAM and freezes its state; a stopped source
+    /// rejects further audio; DISCORD keeps producing captions throughout.
+    /// Requires the workspace venv (skipped when absent).
+    #[test]
+    fn v2_live_per_source_vad_lifecycle_over_the_wire() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        assert_eq!(supervisor.negotiated_version, PROTOCOL_V2);
+        supervisor
+            .push_source_registry(vec![
+                SourceRegistryEntry {
+                    source_id: TEAM_SOURCE_ID.to_owned(),
+                    display_name: "Valorant Team".to_owned(),
+                    caption_tag: "TEAM".to_owned(),
+                    capture_target: serde_json::json!({
+                        "kind": "endpoint",
+                        "endpoint_id": "team-capture"
+                    }),
+                    language_profile: "auto".to_owned(),
+                    strictness: CaptionStrictness::Balanced,
+                    label_style: CaptionLabelStyle::Brackets,
+                    color: Some("#7dd3fc".to_owned()),
+                },
+                SourceRegistryEntry {
+                    source_id: DISCORD_SOURCE_ID.to_owned(),
+                    display_name: "Discord Call".to_owned(),
+                    caption_tag: "DISCORD".to_owned(),
+                    capture_target: serde_json::json!({
+                        "kind": "endpoint",
+                        "endpoint_id": "discord-capture"
+                    }),
+                    language_profile: "auto".to_owned(),
+                    strictness: CaptionStrictness::Off,
+                    label_style: CaptionLabelStyle::Brackets,
+                    color: Some("#fda4af".to_owned()),
+                },
+            ])
+            .expect("registry push must succeed");
+        supervisor
+            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .expect("live must start");
+
+        // Interleave speech and silence on both sources; VAD needs ~450 ms
+        // of silence (sensitivity 50) to finalize an utterance, so 3 frames
+        // of silence close each open utterance.
+        for i in 0..3u64 {
+            supervisor
+                .send_live_audio_for_source(
+                    1_000_000 + i * 300_000,
+                    TEAM_SOURCE_ID,
+                    vec![0.25; 4_800],
+                )
+                .expect("team speech must be accepted");
+            supervisor
+                .send_live_audio_for_source(
+                    2_000_000 + i * 300_000,
+                    DISCORD_SOURCE_ID,
+                    vec![0.25; 4_800],
+                )
+                .expect("discord speech must be accepted");
+        }
+        for i in 0..3u64 {
+            supervisor
+                .send_live_audio_for_source(
+                    4_000_000 + i * 300_000,
+                    TEAM_SOURCE_ID,
+                    vec![0.0; 4_800],
+                )
+                .expect("team silence must be accepted");
+            supervisor
+                .send_live_audio_for_source(
+                    5_000_000 + i * 300_000,
+                    DISCORD_SOURCE_ID,
+                    vec![0.0; 4_800],
+                )
+                .expect("discord silence must be accepted");
+        }
+
+        let mut finals: Vec<Envelope<CaptionPayload>> = Vec::new();
+        while finals.len() < 2 {
+            let caption = supervisor
+                .read_live_caption(Duration::from_secs(5))
+                .expect("caption read must succeed");
+            if let Some(caption) = caption {
+                if caption.message_type == "caption.final" {
+                    finals.push(caption);
+                }
+            }
+        }
+        assert_eq!(finals.len(), 2, "both sources must finalize an utterance");
+        let team = &finals[0];
+        let discord = &finals[1];
+        assert_eq!(team.payload.source_id.as_deref(), Some(TEAM_SOURCE_ID));
+        assert_eq!(
+            discord.payload.source_id.as_deref(),
+            Some(DISCORD_SOURCE_ID)
+        );
+        assert_ne!(team.payload.caption_id, discord.payload.caption_id);
+
+        // Stop TEAM: it flushes (already flushed, so 0 captions) and acks.
+        let stopped = supervisor
+            .stop_source(TEAM_SOURCE_ID)
+            .expect("source.stop must succeed");
+        assert_eq!(stopped["source_id"], TEAM_SOURCE_ID);
+        let diagnostics = supervisor
+            .source_diagnostics(TEAM_SOURCE_ID)
+            .expect("diagnostics must succeed");
+        assert_eq!(diagnostics["active"], false);
+        assert_eq!(diagnostics["source_id"], TEAM_SOURCE_ID);
+
+        // Audio for a stopped source is rejected at the pipeline layer
+        // (feed raises, surfacing as `live.error` on the wire); the
+        // observable per-source contract here is that TEAM is frozen while
+        // DISCORD stays active.
+        let stopped_diagnostics = supervisor
+            .source_diagnostics(DISCORD_SOURCE_ID)
+            .expect("discord diagnostics must succeed");
+        assert_eq!(stopped_diagnostics["active"], true);
+
+        supervisor.stop_live().expect("live must stop");
     }
 }

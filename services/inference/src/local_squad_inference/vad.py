@@ -8,6 +8,33 @@ from typing import Any, Protocol
 
 SAMPLE_RATE = 16_000
 
+# One Silero ONNX session per process, shared by every per-source detector:
+# the session is stateless (the recurrent state lives on the detector), and
+# the sidecar drives all sources from a single VAD thread. Without this, a
+# multi-source session would load the model once per source.
+_SHARED_SILERO_SESSION: Any | None = None
+
+
+def shared_silero_session(model_path: Path | None = None) -> Any:
+    """Return the process-wide Silero ONNX session, creating it once."""
+    global _SHARED_SILERO_SESSION
+    if _SHARED_SILERO_SESSION is None:
+        import onnxruntime
+        from faster_whisper.utils import get_assets_path
+
+        path = model_path or Path(get_assets_path()) / "silero_vad_v6.onnx"
+        options = onnxruntime.SessionOptions()
+        options.inter_op_num_threads = 1
+        options.intra_op_num_threads = 1
+        options.enable_cpu_mem_arena = False
+        options.log_severity_level = 4
+        _SHARED_SILERO_SESSION = onnxruntime.InferenceSession(
+            str(path),
+            providers=["CPUExecutionProvider"],
+            sess_options=options,
+        )
+    return _SHARED_SILERO_SESSION
+
 
 @dataclass(frozen=True)
 class VadConfig:
@@ -54,6 +81,10 @@ class AudioUtterance:
     ended_ns: int
     is_final: bool
     forced_end: bool
+    # v2: the immutable source this speech belongs to. None for v1
+    # single-source sessions. Stamped on the utterance so jobs, metrics,
+    # and captions can be attributed without ambient pipeline state.
+    source_id: str | None = None
 
 
 class SpeechDetector(Protocol):
@@ -77,21 +108,17 @@ class SileroSpeechDetector:
     frame_samples = 512
     context_samples = 64
 
-    def __init__(self, *, threshold: float = 0.5, model_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        threshold: float = 0.5,
+        model_path: Path | None = None,
+        shared_session: Any | None = None,
+    ) -> None:
         import numpy
-        import onnxruntime
-        from faster_whisper.utils import get_assets_path
 
-        path = model_path or Path(get_assets_path()) / "silero_vad_v6.onnx"
-        options = onnxruntime.SessionOptions()
-        options.inter_op_num_threads = 1
-        options.intra_op_num_threads = 1
-        options.enable_cpu_mem_arena = False
-        options.log_severity_level = 4
-        self._session: Any = onnxruntime.InferenceSession(
-            str(path),
-            providers=["CPUExecutionProvider"],
-            sess_options=options,
+        self._session = (
+            shared_silero_session(model_path) if shared_session is None else shared_session
         )
         self._numpy: Any = numpy
         self._threshold = threshold
@@ -145,8 +172,14 @@ class EnergyUtteranceManager:
         self,
         config: VadConfig | None = None,
         speech_detector: SpeechDetector | None = None,
+        *,
+        namespace: str = "",
     ) -> None:
+        """`namespace` prefixes generated utterance ids so per-source
+        managers never collide (`clip-utterance-N` stays byte-identical for
+        the default empty namespace — v1 behavior unchanged)."""
         self.config = config or VadConfig()
+        self.namespace = namespace
         self.frame_samples = SAMPLE_RATE * self.config.frame_ms // 1_000
         self._speech_detector = speech_detector or EnergySpeechDetector(self.config.speech_rms)
         self._pending: list[float] = []
@@ -185,6 +218,11 @@ class EnergyUtteranceManager:
             return []
         return [self._finish(forced=False)]
 
+    @property
+    def utterance_sequence(self) -> int:
+        """Count of finalized utterances, for per-source diagnostics."""
+        return self._utterance_sequence
+
     def provisional_utterance(self) -> AudioUtterance | None:
         """Snapshot of the in-progress utterance for provisional ASR.
 
@@ -199,14 +237,20 @@ class EnergyUtteranceManager:
         started_ns = self._active_started_sample * 1_000_000_000 // SAMPLE_RATE
         ended_ns = (self._active_started_sample + len(samples)) * 1_000_000_000 // SAMPLE_RATE
         return AudioUtterance(
-            utterance_id=f"clip-utterance-{self._utterance_sequence + 1}",
+            utterance_id=self._make_utterance_id(self._utterance_sequence + 1),
             pcm_f32=samples,
             sample_rate=SAMPLE_RATE,
             started_ns=started_ns,
             ended_ns=ended_ns,
             is_final=False,
             forced_end=False,
+            source_id=self.namespace or None,
         )
+
+    def _make_utterance_id(self, sequence: int) -> str:
+        if not self.namespace:
+            return f"clip-utterance-{sequence}"
+        return f"{self.namespace}-clip-utterance-{sequence}"
 
     def _feed_frame(self, frame: tuple[float, ...]) -> AudioUtterance | None:
         frame_start = self._total_samples
@@ -261,11 +305,12 @@ class EnergyUtteranceManager:
             self._pre_roll.extend(overlap_frames)
             self._speech_frames = max(0, self.config.min_speech_ms // self.config.frame_ms - 1)
         return AudioUtterance(
-            utterance_id=f"clip-utterance-{self._utterance_sequence}",
+            utterance_id=self._make_utterance_id(self._utterance_sequence),
             pcm_f32=samples,
             sample_rate=SAMPLE_RATE,
             started_ns=started_ns,
             ended_ns=ended_ns,
             is_final=True,
             forced_end=forced,
+            source_id=self.namespace or None,
         )

@@ -158,6 +158,13 @@ class SourcePresentationUpdatePayload(StrictModel):
     source_snapshot: SourceSnapshot
 
 
+class SourceControlPayload(StrictModel):
+    """Payload for per-source controls (source.flush, source.stop,
+    source.diagnostics.request). Phase 5 per-source VAD lifecycle."""
+
+    source_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
 class ClipProcessPayload(StrictModel):
     path: str = Field(min_length=1, max_length=4096)
     source_mode: Literal["filipino", "cebuano", "chinese", "mixed"]

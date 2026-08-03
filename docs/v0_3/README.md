@@ -12,8 +12,8 @@ Status legend: ☐ not started · ◐ in progress · ☑ complete
 | 1 | [Source configuration, names/tags, migration](PHASE_01_SOURCES_AND_IDENTITY.md) | ☑ |
 | 2 | [IPC v2](PHASE_02_IPC_V2.md) | ☐ |
 | 3 | [Multiple audio pipelines](PHASE_03_MULTI_PIPELINES.md) | ☐ |
-| 4 | [VB-CABLE and setup wizard](PHASE_04_SETUP_WIZARD.md) | ☐ |
-| 5 | [Per-source VAD](PHASE_05_PER_SOURCE_VAD.md) | ☐ |
+| 4 | [VB-CABLE and setup wizard](PHASE_04_SETUP_WIZARD.md) | ☑ |
+| 5 | [Per-source VAD](PHASE_05_PER_SOURCE_VAD.md) | ☑ |
 | 6 | [Shared scheduler](PHASE_06_SHARED_SCHEDULER.md) | ☐ |
 | 7 | [Language profiles and strictness](PHASE_07_LANGUAGE_STRICTNESS.md) | ☐ |
 | 8 | [Source-aware overlay](PHASE_08_SOURCE_AWARE_OVERLAY.md) | ☐ |

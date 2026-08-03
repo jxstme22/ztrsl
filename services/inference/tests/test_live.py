@@ -265,3 +265,166 @@ def test_live_pipeline_rejects_wrong_audio_format() -> None:
         assert "16 kHz mono" in str(error)
     else:
         raise AssertionError("invalid live audio format should fail")
+
+
+# ---- Phase 5: per-source VAD state ---------------------------------------
+
+TEAM_ID = "11111111111111111111111111111111"
+DISCORD_ID = "22222222222222222222222222222222"
+
+FAST_VAD = VadConfig(
+    frame_ms=30,
+    min_speech_ms=60,
+    pre_roll_ms=60,
+    min_silence_ms=90,
+    max_utterance_ms=1_000,
+)
+
+
+def packet_v2(
+    sequence: int,
+    samples: tuple[float, ...],
+    source_id: str,
+) -> AudioPacket:
+    from local_squad_inference.protocol import AudioPacketV2
+
+    return AudioPacketV2(
+        session_id=b"0123456789abcdef",
+        sequence=sequence,
+        capture_monotonic_ns=1_000_000_000 + sequence * 20_000_000,
+        sample_rate=16_000,
+        channels=1,
+        flags=0,
+        source_id=bytes.fromhex(source_id),
+        samples=samples,
+    )
+
+
+def make_pipeline() -> LivePipeline:
+    return LivePipeline(
+        FakeAsr(),
+        FakeTranslation(),
+        vad_config=FAST_VAD,
+        use_silero=False,
+    )
+
+
+def test_two_sources_keep_independent_utterance_state() -> None:
+    pipeline = make_pipeline()
+    pipeline.start_source(TEAM_ID)
+    pipeline.start_source(DISCORD_ID)
+
+    # Interleaved speech: both open utterances at the same time.
+    assert pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID)) == ()
+    assert pipeline.feed(packet_v2(2, (0.1,) * 4_800, DISCORD_ID)) == ()
+    team = pipeline.feed(packet_v2(3, (0.0,) * 4_800, TEAM_ID))
+    discord = pipeline.feed(packet_v2(4, (0.0,) * 4_800, DISCORD_ID))
+
+    assert len(team) == 1 and len(discord) == 1
+    assert team[0].status == "final"
+    assert team[0].source_id == TEAM_ID
+    assert discord[0].source_id == DISCORD_ID
+    assert team[0].utterance_id != discord[0].utterance_id
+    assert team[0].caption_id != discord[0].caption_id
+
+
+def test_start_source_is_idempotent_and_presentation_edit_does_not_reset_vad() -> None:
+    pipeline = make_pipeline()
+    assert pipeline.start_source(TEAM_ID) is True
+    assert pipeline.start_source(TEAM_ID) is False
+
+    # An utterance is already open when the registry is re-pushed (what
+    # happens on a mid-session rename). The VAD must keep the utterance.
+    assert pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID)) == ()
+    assert pipeline.start_source(TEAM_ID) is False
+    captions = pipeline.feed(packet_v2(2, (0.0,) * 4_800, TEAM_ID))
+
+    assert len(captions) == 1
+    assert captions[0].utterance_id.endswith("-clip-utterance-1")
+    assert captions[0].source_id == TEAM_ID
+
+
+def test_stop_source_flushes_only_that_source() -> None:
+    pipeline = make_pipeline()
+    pipeline.start_source(TEAM_ID)
+    pipeline.start_source(DISCORD_ID)
+    assert pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID)) == ()
+    assert pipeline.feed(packet_v2(2, (0.1,) * 4_800, DISCORD_ID)) == ()
+
+    captions, metrics = pipeline.stop_source(TEAM_ID)
+    assert len(captions) == 1
+    assert captions[0].source_id == TEAM_ID
+    assert metrics.packets_received == 1
+
+    # TEAM state is gone: new packets raise until restarted.
+    try:
+        pipeline.feed(packet_v2(3, (0.0,) * 4_800, TEAM_ID))
+    except ValueError as error:
+        assert "unknown source" in str(error)
+    else:
+        raise AssertionError("stopped source must not accept packets")
+
+    # DISCORD is untouched and still completes its utterance.
+    discord = pipeline.feed(packet_v2(4, (0.0,) * 4_800, DISCORD_ID))
+    assert len(discord) == 1
+    assert discord[0].source_id == DISCORD_ID
+
+    # A later packet restarts TEAM with fresh state (its own speech only).
+    pipeline.start_source(TEAM_ID)
+    assert pipeline.feed(packet_v2(5, (0.1,) * 4_800, TEAM_ID)) == ()
+    restarted = pipeline.feed(packet_v2(6, (0.0,) * 4_800, TEAM_ID))
+    assert len(restarted) == 1
+    assert restarted[0].source_id == TEAM_ID
+    # The restarted session began after DISCORD's final, so its first
+    # utterance carries a higher capture timestamp than TEAM's old one.
+    assert restarted[0].started_monotonic_ns > captions[0].started_monotonic_ns
+
+
+def test_flush_source_keeps_vad_state_and_continues_sequence() -> None:
+    pipeline = make_pipeline()
+    pipeline.start_source(TEAM_ID)
+    assert pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID)) == ()
+
+    first = pipeline.flush_source(TEAM_ID)
+    assert len(first) == 1
+    assert first[0].utterance_id.endswith("-clip-utterance-1")
+
+    # State is kept: the next utterance continues the same session.
+    assert pipeline.feed(packet_v2(2, (0.1,) * 4_800, TEAM_ID)) == ()
+    second = pipeline.feed(packet_v2(3, (0.0,) * 4_800, TEAM_ID))
+    assert len(second) == 1
+    assert second[0].utterance_id.endswith("-clip-utterance-2")
+    assert second[0].source_id == TEAM_ID
+
+
+def test_unknown_source_packets_raise_and_controls_are_noops() -> None:
+    pipeline = make_pipeline()
+    try:
+        pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID))
+    except ValueError as error:
+        assert "unknown source" in str(error)
+    else:
+        raise AssertionError("unstarted source must be rejected")
+
+    assert pipeline.stop_source(TEAM_ID) == ((), pipeline.metrics_for(TEAM_ID))
+    assert pipeline.flush_source(TEAM_ID) == ()
+
+
+def test_per_source_metrics_and_diagnostics() -> None:
+    pipeline = make_pipeline()
+    pipeline.start_source(TEAM_ID)
+    pipeline.start_source(DISCORD_ID)
+    pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID))
+    pipeline.feed(packet_v2(2, (0.1,) * 4_800, TEAM_ID))
+    pipeline.feed(packet_v2(3, (0.1,) * 4_800, DISCORD_ID))
+
+    assert pipeline.metrics_for(TEAM_ID).packets_received == 2
+    assert pipeline.metrics_for(DISCORD_ID).packets_received == 1
+    assert pipeline.metrics.packets_received == 3
+    assert pipeline.metrics_for("0" * 32).packets_received == 0
+
+    team_diag = pipeline.diagnostics_for(TEAM_ID)
+    assert team_diag["active"] is True
+    assert team_diag["open_utterance_samples"] > 0
+    assert team_diag["packets_received"] == 2
+    assert pipeline.diagnostics_for("0" * 32)["active"] is False

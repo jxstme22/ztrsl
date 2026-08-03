@@ -1,6 +1,6 @@
 # Phase 4 — VB-CABLE and Source Setup Wizard
 
-**Status:** ☐ not started
+**Status:** ☑ complete (11-step wizard in `apps/desktop/src/setup/`, committed `73eea86`; 128 desktop tests passing)
 
 ## Acceptance criteria (spec §17 Phase 4)
 

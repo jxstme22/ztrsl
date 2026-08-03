@@ -634,3 +634,137 @@ def test_user_selected_wav_runs_through_clip_pipeline(tmp_path: Path) -> None:
             stop.set()
 
     asyncio.run(with_server(scenario))
+
+
+def speech_packet_v2(sequence: int, source_id: str, amplitude: float) -> AudioPacketV2:
+    """4800 samples (300 ms at 16 kHz) of speech-shaped or silent audio for
+    a v2 live session. Sequence numbers are per-session, so callers must
+    keep them globally increasing across sources."""
+    return AudioPacketV2(
+        session_id=b"0123456789abcdef",
+        sequence=sequence,
+        capture_monotonic_ns=sequence * 300_000_000,
+        sample_rate=16_000,
+        channels=1,
+        flags=0,
+        source_id=bytes.fromhex(source_id),
+        samples=tuple([amplitude] * 4_800),
+    )
+
+
+def test_v2_live_two_sources_keep_independent_utterances_and_rename_does_not_split() -> None:
+    """Phase 5 acceptance: two sources speaking simultaneously produce
+    independent utterances, and a mid-utterance rename neither resets nor
+    splits the in-flight utterance."""
+
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello_v2("launch-token"))
+            accepted: dict[str, Any] = json.loads(await websocket.recv())
+            assert accepted["payload"]["protocol_version"] == 2
+            await websocket.send(control("registry-1", "source.registry", registry_payload()))
+            assert json.loads(await websocket.recv())["type"] == "source.registry.accepted"
+
+            await websocket.send(
+                control(
+                    "live-start-1",
+                    "live.start",
+                    {
+                        "source_mode": "filipino",
+                        "target_language": "en",
+                        "provider": "demo",
+                        "resource_profile": "quality",
+                        "vad_sensitivity": 50,
+                    },
+                )
+            )
+            assert json.loads(await websocket.recv())["type"] == "live.started"
+
+            # Both sources open an utterance simultaneously.
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(1, TEAM_SOURCE, 0.25)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(2, DISCORD_SOURCE, 0.25)))
+            # Rename TEAM while its utterance is still open.
+            await websocket.send(
+                control(
+                    "presentation-1",
+                    "source.presentation.update",
+                    {
+                        "source_id": TEAM_SOURCE,
+                        "source_snapshot": {
+                            "display_name": "Team (Renamed)",
+                            "caption_tag": "TM2",
+                            "label_style": "colon",
+                            "color": "#7dd3fc",
+                        },
+                    },
+                )
+            )
+            assert json.loads(await websocket.recv())["type"] == "source.presentation.accepted"
+            # Close both utterances with silence.
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(3, TEAM_SOURCE, 0.0)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(4, DISCORD_SOURCE, 0.0)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(5, TEAM_SOURCE, 0.0)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(6, DISCORD_SOURCE, 0.0)))
+
+            finals: dict[str, dict[str, Any]] = {}
+            while len(finals) < 2:
+                message: dict[str, Any] = json.loads(await websocket.recv())
+                assert message["type"] in ("caption.provisional", "caption.final")
+                if message["type"] == "caption.final":
+                    payload = message["payload"]
+                    assert payload["source_id"] is not None
+                    finals[payload["source_id"]] = payload
+            assert set(finals) == {TEAM_SOURCE, DISCORD_SOURCE}
+            # The rename landed mid-utterance: exactly one final per source,
+            # and TEAM's final already carries the new tag.
+            assert finals[TEAM_SOURCE]["source_snapshot"]["caption_tag"] == "TM2"
+            assert finals[DISCORD_SOURCE]["source_snapshot"]["caption_tag"] == "DISCORD"
+            assert finals[TEAM_SOURCE]["caption_id"] != finals[DISCORD_SOURCE]["caption_id"]
+            assert finals[TEAM_SOURCE]["source_mode"] == "filipino"
+
+            # Per-source diagnostics: both sessions are active and have
+            # completed exactly one utterance.
+            await websocket.send(
+                control("diag-1", "source.diagnostics.request", {"source_id": TEAM_SOURCE})
+            )
+            team_diag: dict[str, Any] = json.loads(await websocket.recv())
+            assert team_diag["type"] == "source.diagnostics"
+            assert team_diag["payload"]["active"] is True
+            assert team_diag["payload"]["utterances_completed"] == 1
+            await websocket.send(
+                control("diag-2", "source.diagnostics.request", {"source_id": DISCORD_SOURCE})
+            )
+            discord_diag: dict[str, Any] = json.loads(await websocket.recv())
+            assert discord_diag["payload"]["active"] is True
+            assert discord_diag["payload"]["utterances_completed"] == 1
+
+            # Stop TEAM: only its state is flushed away; DISCORD keeps
+            # working, and a TEAM restart creates a fresh session.
+            await websocket.send(control("stop-1", "source.stop", {"source_id": TEAM_SOURCE}))
+            stopped: dict[str, Any] = json.loads(await websocket.recv())
+            assert stopped["type"] == "source.stopped"
+            assert stopped["payload"]["metrics"]["utterances_completed"] == 1
+            await websocket.send(
+                control("diag-3", "source.diagnostics.request", {"source_id": TEAM_SOURCE})
+            )
+            stopped_diag: dict[str, Any] = json.loads(await websocket.recv())
+            assert stopped_diag["payload"]["active"] is False
+            assert stopped_diag["payload"]["utterances_completed"] == 1
+
+            # DISCORD still captures after TEAM stopped.
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(7, DISCORD_SOURCE, 0.25)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(8, DISCORD_SOURCE, 0.0)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(9, DISCORD_SOURCE, 0.0)))
+            discord_after: dict[str, Any] = json.loads(await websocket.recv())
+            while discord_after["type"] != "caption.final":
+                discord_after = json.loads(await websocket.recv())
+            assert discord_after["payload"]["source_id"] == DISCORD_SOURCE
+
+            await websocket.send(control("live-stop-1", "live.stop", {}))
+            while True:
+                message = json.loads(await websocket.recv())
+                if message["type"] == "live.stopped":
+                    break
+            stop.set()
+
+    asyncio.run(with_server(scenario))

@@ -25,7 +25,7 @@ from local_squad_inference.http_translation import (
     HTTP_PROVIDER_FACTORIES,
     HttpTranslationError,
 )
-from local_squad_inference.live import LivePipeline
+from local_squad_inference.live import LivePipeline, LivePipelineMetrics, source_key_of
 from local_squad_inference.protocol import (
     AUDIO_HEADER_V2,
     MAX_AUDIO_MESSAGE_BYTES,
@@ -38,6 +38,7 @@ from local_squad_inference.protocol import (
     ControlEnvelope,
     HelloPayload,
     LiveStartPayload,
+    SourceControlPayload,
     SourcePresentationUpdatePayload,
     SourceRegistryEntry,
     SourceRegistryPayload,
@@ -65,6 +66,40 @@ from local_squad_inference.vad import AudioUtterance, vad_config_from_sensitivit
 SendJson = Callable[[dict[str, object]], Awaitable[None]]
 
 logger = logging.getLogger("local_squad_inference.sidecar")
+
+
+def profile_source_mode(
+    language_profile: str,
+) -> Literal["filipino", "chinese", "english"]:
+    """Map a registry language profile to the ASR source mode. Only Chinese
+    diverges today; Filipino-family profiles (filipino/tagalog/cebuano) all
+    use the Filipino ASR mode. Per-source strictness and filters land in a
+    later phase."""
+    if language_profile == "chinese":
+        return "chinese"
+    return "filipino"
+
+
+def stamp_v2_caption(
+    caption: CaptionPayload,
+    source_registry: dict[str, SourceRegistryEntry],
+    source_snapshots: dict[str, SourceSnapshot],
+) -> CaptionPayload:
+    """Return a copy of the caption with the registry presentation
+    snapshot and strictness attached, so live captions stay
+    source-correct after mid-session renames. Unknown sources keep the
+    caption's own fields (unchanged copy)."""
+    if caption.source_id is None:
+        return caption
+    entry = source_registry.get(caption.source_id)
+    if entry is None:
+        return caption
+    return caption.model_copy(
+        update={
+            "source_snapshot": source_snapshots.get(entry.source_id) or entry_snapshot(entry),
+            "strictness": entry.strictness,
+        }
+    )
 
 
 def _configure_file_logging() -> None:
@@ -350,13 +385,21 @@ class LivePipelineWorker:
         num_inference: int = 2,
     ) -> None:
         self._pipeline = pipeline
-        self._input: queue.Queue[AudioPacket | None] = queue.Queue(maxsize=max_pending)
+        self._input: queue.Queue[AudioPacket | object | None] = queue.Queue(maxsize=max_pending)
         self._jobs: queue.Queue[AudioUtterance | None] = queue.Queue(maxsize=max_pending_utterances)
         # Provisional decodes use a single latest-wins slot: a newer snapshot
         # of the same utterance supersedes an older pending one, and workers
         # drain this queue before the finals queue because provisionals are
         # cheap and time-sensitive.
         self._provisional: queue.Queue[AudioUtterance] = queue.Queue(maxsize=1)
+        # Per-source controls (flush/stop) are executed on the VAD thread:
+        # the utterance managers are not thread-safe, and every manager is
+        # touched only from the VAD thread. The control handler blocks on
+        # the event until the VAD thread has finished the flush, then runs
+        # inference on its own thread (providers are concurrency-safe).
+        self._control: queue.Queue[tuple[str, str, threading.Event, dict[str, object]]] = (
+            queue.Queue()
+        )
         self._results: queue.Queue[tuple[CaptionPayload, ...] | Exception] = queue.Queue()
         self._dropped_packets = 0
         self._stopped = False
@@ -396,6 +439,47 @@ class LivePipelineWorker:
             return self._results.get_nowait()
         except queue.Empty:
             return None
+
+    def flush_source(self, source_id: str, *, timeout: float = 10.0) -> tuple[CaptionPayload, ...]:
+        """Flush one source's open utterance on the VAD thread and infer it.
+        The source's VAD state is kept, so speech continues the session."""
+        utterances = self._run_source_control("flush", source_id, timeout)
+        return self._pipeline.infer_utterances(utterances)
+
+    def stop_source(
+        self,
+        source_id: str,
+        *,
+        timeout: float = 10.0,
+    ) -> tuple[tuple[CaptionPayload, ...], LivePipelineMetrics]:
+        """Flush one source and drop its VAD state on the VAD thread. Only
+        that source is affected; a later packet restarts it fresh."""
+        utterances = self._run_source_control("stop", source_id, timeout)
+        captions = self._pipeline.infer_utterances(utterances)
+        return captions, self._pipeline.metrics_for(source_id)
+
+    def source_diagnostics(self, source_id: str) -> dict[str, object]:
+        return self._pipeline.diagnostics_for(source_id)
+
+    def _run_source_control(
+        self,
+        operation: str,
+        source_id: str,
+        timeout: float,
+    ) -> list[AudioUtterance]:
+        """Run a per-source VAD operation on the VAD thread and wait for the
+        result. Unknown sources yield an empty list without error, so the
+        controls are idempotent no-ops when a source was never started."""
+        event = threading.Event()
+        result: dict[str, object] = {}
+        self._control.put((operation, source_id, event, result))
+        if not event.wait(timeout=timeout):
+            raise TimeoutError(f"{operation} for source {source_id} timed out")
+        utterances = result.get("utterances")
+        if utterances is None:
+            return []
+        assert isinstance(utterances, list)
+        return utterances
 
     def wait_next(self, timeout: float) -> tuple[CaptionPayload, ...] | Exception | None:
         try:
@@ -448,7 +532,7 @@ class LivePipelineWorker:
                     self._jobs.get_nowait()
                 except queue.Empty:
                     return
-                self._pipeline.note_utterances_dropped(1)
+                self._pipeline.note_utterances_dropped(1, source_id=utterance.source_id)
 
     def _enqueue_provisional(self, utterance: AudioUtterance) -> None:
         # Latest-wins: keep the newest snapshot of the open utterance.
@@ -463,9 +547,16 @@ class LivePipelineWorker:
                     return
 
     def _run_vad(self) -> None:
-        next_provisional_at_ns: int | None = None
+        next_provisional_at_ns: dict[str, int | None] = {}
         while True:
-            packet = self._input.get()
+            try:
+                packet = self._input.get(timeout=0.05)
+            except queue.Empty:
+                # Idle: keep draining per-source controls so a source.stop
+                # is honored even when no audio is arriving.
+                self._drain_controls()
+                continue
+            self._drain_controls()
             if packet is None:
                 break
             try:
@@ -476,8 +567,9 @@ class LivePipelineWorker:
                 continue
             for utterance in utterances:
                 self._enqueue_utterance(utterance)
+            source_key = source_key_of(packet)
             try:
-                snapshot = self._pipeline.provisional_utterance()
+                snapshot = self._pipeline.provisional_utterance(source_key)
             except Exception as error:  # surfaced to the client as live.error
                 logger.exception("VAD provisional snapshot failed: %s", error)
                 self._results.put(error)
@@ -485,14 +577,16 @@ class LivePipelineWorker:
             now_ns = time.monotonic_ns()
             if snapshot is not None:
                 speech_elapsed_ns = snapshot.ended_ns - snapshot.started_ns
-                due = next_provisional_at_ns is None or now_ns >= next_provisional_at_ns
+                due_ns = next_provisional_at_ns.get(source_key)
+                due = due_ns is None or now_ns >= due_ns
                 if speech_elapsed_ns >= PROVISIONAL_MIN_SPEECH_NS and due:
                     self._enqueue_provisional(snapshot)
-                    next_provisional_at_ns = now_ns + PROVISIONAL_CADENCE_NS
+                    next_provisional_at_ns[source_key] = now_ns + PROVISIONAL_CADENCE_NS
             else:
-                next_provisional_at_ns = None
+                next_provisional_at_ns[source_key] = None
+        self._drain_controls()
         try:
-            utterances = self._pipeline.flush_utterances()
+            utterances = self._pipeline.flush_all_utterances()
         except Exception as error:
             self._results.put(error)
             utterances = []
@@ -507,6 +601,22 @@ class LivePipelineWorker:
                     # Workers keep consuming jobs, so a slot always
                     # frees eventually; never drop a sentinel.
                     continue
+
+    def _drain_controls(self) -> None:
+        while True:
+            try:
+                operation, source_id, event, result = self._control.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                if operation == "flush":
+                    result["utterances"] = self._pipeline.flush_source_utterances(source_id)
+                elif operation == "stop":
+                    result["utterances"] = self._pipeline.stop_source_utterances(source_id)
+            except Exception as error:  # surfaced to the control caller
+                result["error"] = error
+            finally:
+                event.set()
 
     def _take_job(self) -> AudioUtterance | None:
         # Provisional snapshots arrive on a separate latest-wins queue, and a
@@ -543,6 +653,7 @@ async def drain_live_results(
     worker: LivePipelineWorker,
     send_lock: asyncio.Lock,
     version: int = PROTOCOL_VERSION,
+    stamp: Callable[[CaptionPayload], CaptionPayload] | None = None,
 ) -> None:
     """Delivers worker results as they arrive, without blocking the event loop.
 
@@ -550,6 +661,10 @@ async def drain_live_results(
     the audio that triggered them), so they must be drained independently of
     incoming messages — otherwise the first caption after a quiet period would
     sit in the queue forever.
+
+    `stamp` (v2 sessions) attaches the registry-backed presentation snapshot
+    and strictness to each caption before it goes on the wire, so live
+    captions stay source-correct even after mid-session renames.
     """
     sequence = 0
     finalized_ids: set[str] = set()
@@ -584,6 +699,8 @@ async def drain_live_results(
                 continue
             if caption.status == "final":
                 finalized_ids.add(caption.caption_id)
+            if stamp is not None:
+                caption = stamp(caption)
             sequence += 1
             async with send_lock:
                 await connection.send(
@@ -694,10 +811,21 @@ async def handle_connection(
                         return
                     last_sequence = packet_v2.sequence
                     if live_worker is not None:
-                        # v2 live inference (real providers) lands in a later
-                        # phase; the fake provider never builds a worker.
-                        await connection.close(code=1008, reason="v2 live not supported")
-                        return
+                        # v2 live: route per immutable source id. The VAD
+                        # state is created lazily on first packet and kept
+                        # across registry/presentation updates; `start_source`
+                        # is a no-op for an already-active source, so a rename
+                        # never resets an in-flight utterance.
+                        source_hex = encode_source_id_hex(packet_v2.source_id)
+                        entry = source_registry.get(source_hex)
+                        source_mode = (
+                            profile_source_mode(entry.language_profile)
+                            if entry is not None
+                            else None
+                        )
+                        live_pipeline.start_source(source_hex, source_mode=source_mode)
+                        live_worker.submit(packet_v2)
+                        continue
                     snapshot, strictness = snapshot_for(packet_v2.source_id)
                     for index, caption in enumerate(
                         fake_captions_v2(
@@ -850,6 +978,134 @@ async def handle_connection(
                         )
                     )
                 )
+            elif control.type == "source.flush":
+                if negotiated_version != PROTOCOL_V2:
+                    await connection.close(code=1008, reason="v2 control in v1 session")
+                    return
+                payload = SourceControlPayload.model_validate(control.payload)
+                if live_worker is None:
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "source.error",
+                                control.message_id,
+                                control.session_id,
+                                {
+                                    "code": "NO_LIVE_SESSION",
+                                    "message": "no live session to flush a source",
+                                    "recoverable": True,
+                                },
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                    continue
+                captions = await asyncio.to_thread(
+                    live_worker.flush_source,
+                    payload.source_id,
+                )
+                for index, caption in enumerate(captions, start=1):
+                    caption = stamp_v2_caption(caption, source_registry, source_snapshots)
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                f"caption.{caption.status}",
+                                f"source-final-{index}",
+                                control.session_id,
+                                dump_caption(caption, include_v2=negotiated_version >= PROTOCOL_V2),
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "source.flushed",
+                            control.message_id,
+                            control.session_id,
+                            {
+                                "source_id": payload.source_id,
+                                "captions": len(captions),
+                            },
+                            version=negotiated_version,
+                        )
+                    )
+                )
+            elif control.type == "source.stop":
+                if negotiated_version != PROTOCOL_V2:
+                    await connection.close(code=1008, reason="v2 control in v1 session")
+                    return
+                payload = SourceControlPayload.model_validate(control.payload)
+                if live_worker is None:
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "source.error",
+                                control.message_id,
+                                control.session_id,
+                                {
+                                    "code": "NO_LIVE_SESSION",
+                                    "message": "no live session to stop a source",
+                                    "recoverable": True,
+                                },
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                    continue
+                captions, metrics = await asyncio.to_thread(
+                    live_worker.stop_source,
+                    payload.source_id,
+                )
+                metrics_dict = asdict(metrics)
+                for index, caption in enumerate(captions, start=1):
+                    caption = stamp_v2_caption(caption, source_registry, source_snapshots)
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                f"caption.{caption.status}",
+                                f"source-final-{index}",
+                                control.session_id,
+                                dump_caption(caption, include_v2=negotiated_version >= PROTOCOL_V2),
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "source.stopped",
+                            control.message_id,
+                            control.session_id,
+                            {"source_id": payload.source_id, "metrics": metrics_dict},
+                            version=negotiated_version,
+                        )
+                    )
+                )
+            elif control.type == "source.diagnostics.request":
+                if negotiated_version != PROTOCOL_V2:
+                    await connection.close(code=1008, reason="v2 control in v1 session")
+                    return
+                payload = SourceControlPayload.model_validate(control.payload)
+                diagnostics: dict[str, object]
+                if live_worker is None:
+                    diagnostics = {"source_id": payload.source_id, "active": False}
+                else:
+                    diagnostics = await asyncio.to_thread(
+                        live_worker.source_diagnostics,
+                        payload.source_id,
+                    )
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "source.diagnostics",
+                            control.message_id,
+                            control.session_id,
+                            diagnostics,
+                            version=negotiated_version,
+                        )
+                    )
+                )
             elif control.type == "live.start":
                 live_request = LiveStartPayload.model_validate(control.payload)
                 try:
@@ -883,6 +1139,15 @@ async def handle_connection(
                             live_worker,
                             send_lock,
                             version=negotiated_version,
+                            stamp=(
+                                (
+                                    lambda caption: stamp_v2_caption(
+                                        caption, source_registry, source_snapshots
+                                    )
+                                )
+                                if negotiated_version == PROTOCOL_V2
+                                else None
+                            ),
                         )
                     )
                 except Exception as error:
