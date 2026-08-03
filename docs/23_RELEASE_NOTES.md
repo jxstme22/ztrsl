@@ -1,6 +1,23 @@
-# 23 — Release Notes (v0.4.0)
+# 23 — Release Notes (v0.4.1)
 
-## Caption accuracy, overlap awareness, and trust
+## v0.4.1 — headless background processes
+
+Fixes the bad-launch UX: a terminal/console window used to appear alongside
+the app and closing it killed the app. The Python inference sidecar and the
+MADLAD translation runner now spawn **headless** on Windows
+(`CREATE_NO_WINDOW`), so no console appears and closing it can no longer kill
+the app.
+
+Also in v0.4.1:
+
+- **NCSpeech models now appear on the Models tab** — the three locally-exported
+  CTC models (NCSpeech Tagalog, Citrinet Mandarin, Parakeet Mandarin) are
+  surfaced as a "Local exports" section, detected from disk, with honest
+  "Local export" status (they are generated locally, not downloaded).
+- **CI mypy gate fixed** — all type errors in the v0.4 caption-trust modules
+  and tests are resolved.
+
+## v0.4.0 — Caption accuracy, overlap awareness, and trust
 
 v0.4.0 focuses on the hard cases *inside* a valid source: overlapping
 speakers, wrong tactical terms, uncertain output, phrase noise, glossary
