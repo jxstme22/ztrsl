@@ -42,4 +42,29 @@ describe("overlay settings storage", () => {
     expect(serialized).not.toContain("transcript");
     expect(serialized).not.toContain("audio");
   });
+
+  it("migrates schemaVersion 1 documents to v2 with safe lane defaults", () => {
+    const legacy = {
+      schemaVersion: 1,
+      monitorId: null,
+      xNormalized: 0.4,
+      yNormalized: 0.7,
+      widthNormalized: 0.8,
+      fontScale: 1.1,
+      backgroundOpacity: 0.5,
+      showSource: false,
+      hotkeys: DEFAULT_OVERLAY_SETTINGS.hotkeys,
+    };
+    const storage = {
+      getItem: () => JSON.stringify(legacy),
+    };
+
+    const migrated = loadOverlaySettings(storage);
+    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.simultaneousPolicy).toBe("show-both");
+    expect(migrated.primarySourceId).toBeNull();
+    expect(migrated.hiddenSourceIds).toEqual([]);
+    expect(migrated.showSource).toBe(false);
+    expect(migrated.fontScale).toBe(1.1);
+  });
 });

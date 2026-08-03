@@ -1,6 +1,22 @@
 import { z } from "zod";
 
+import { captionLabelStyleSchema } from "../sources/model";
+
 export const captionStatusSchema = z.enum(["provisional", "final", "error"]);
+
+/** Presentation snapshot of the source that produced a caption (Phase 8).
+ * Rendered labels come from here — never from a mutable source table — and
+ * are escaped data, never HTML. */
+export const captionSourceSchema = z.object({
+  sourceId: z.string().regex(/^[0-9a-f]{32}$/),
+  captionTag: z.string().min(1).max(32),
+  labelStyle: captionLabelStyleSchema,
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/)
+    .nullable(),
+});
+export type CaptionSource = z.infer<typeof captionSourceSchema>;
 
 export const captionSchema = z.object({
   id: z.string().min(1).max(128),
@@ -10,12 +26,22 @@ export const captionSchema = z.object({
   englishText: z.string().max(500),
   createdAtMs: z.number().nonnegative(),
   expiresAtMs: z.number().nonnegative(),
+  /** Source presentation snapshot when this caption came from a v2 source. */
+  source: captionSourceSchema.optional(),
 });
 
 export type Caption = z.infer<typeof captionSchema>;
 
 export const overlayModeSchema = z.enum(["play", "edit"]);
 export type OverlayMode = z.infer<typeof overlayModeSchema>;
+
+/** How the overlay treats simultaneous captions from different sources. */
+export const simultaneousPolicySchema = z.enum([
+  "show-both",
+  "newest-wins",
+  "primary-wins",
+]);
+export type SimultaneousPolicy = z.infer<typeof simultaneousPolicySchema>;
 
 export const hotkeyActionSchema = z.enum([
   "toggleOverlay",
@@ -40,7 +66,7 @@ export const hotkeySettingsSchema = z.object({
 export type HotkeySettings = z.infer<typeof hotkeySettingsSchema>;
 
 export const overlaySettingsSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   monitorId: z.string().max(256).nullable(),
   xNormalized: z.number().min(0).max(1),
   yNormalized: z.number().min(0).max(1),
@@ -48,6 +74,14 @@ export const overlaySettingsSchema = z.object({
   fontScale: z.number().min(0.8).max(1.6),
   backgroundOpacity: z.number().min(0.35).max(0.9),
   showSource: z.boolean(),
+  /** Which source owns the primary caption lane (immutable id). Null = auto. */
+  primarySourceId: z
+    .string()
+    .regex(/^[0-9a-f]{32}$/)
+    .nullable(),
+  /** Source ids (immutable) whose captions are hidden in the overlay. */
+  hiddenSourceIds: z.array(z.string().regex(/^[0-9a-f]{32}$/)),
+  simultaneousPolicy: simultaneousPolicySchema,
   hotkeys: hotkeySettingsSchema,
 });
 
@@ -73,7 +107,7 @@ export const DEFAULT_HOTKEYS: HotkeySettings = {
 };
 
 export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   monitorId: null,
   xNormalized: 0.5,
   yNormalized: 0.72,
@@ -81,6 +115,9 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   fontScale: 1,
   backgroundOpacity: 0.45,
   showSource: true,
+  primarySourceId: null,
+  hiddenSourceIds: [],
+  simultaneousPolicy: "show-both",
   hotkeys: DEFAULT_HOTKEYS,
 };
 

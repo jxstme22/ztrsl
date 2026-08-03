@@ -1,11 +1,13 @@
 import type { OverlaySnapshot } from "../overlay/model";
+import { selectVisibleCaptions } from "../overlay/reducer";
+import { renderLabel } from "../sources/labels";
 import { fitScaleForLength } from "./captionFit";
 
 type CaptionStackProps = {
   snapshot: OverlaySnapshot;
   preview?: boolean;
-  /** "stack" shows every caption as a row; "latest" renders only the newest
-      caption so each subtitle replaces the previous one. */
+  /** "stack" shows every visible lane as a row; "latest" renders only the
+      newest caption so each subtitle replaces the previous one. */
   mode?: "stack" | "latest";
 };
 
@@ -19,9 +21,12 @@ export function CaptionStack({
     "--caption-opacity": snapshot.settings.backgroundOpacity,
   } as React.CSSProperties;
 
-  const last = snapshot.captions[snapshot.captions.length - 1];
-  const captions =
-    mode === "latest" && last !== undefined ? [last] : snapshot.captions;
+  const lanes = selectVisibleCaptions(
+    snapshot.captions,
+    snapshot.settings,
+  );
+  const last = lanes[lanes.length - 1];
+  const captions = mode === "latest" && last !== undefined ? [last] : lanes;
 
   if (captions.length === 0) {
     return preview ? (
@@ -36,31 +41,44 @@ export function CaptionStack({
     <div
       className="caption-stack"
       data-mode={mode}
+      data-lanes={captions.length}
       style={style}
       aria-live="polite"
     >
-      {captions.map((caption) => (
-        <article
-          className="caption-entry"
-          data-status={caption.status}
-          key={caption.id}
-          style={
-            {
-              "--caption-fit-scale": fitScaleForLength(
-                caption.englishText.length,
-              ),
-            } as React.CSSProperties
-          }
-        >
-          {snapshot.settings.showSource && (
-            <p className="caption-source">{caption.sourceText}</p>
-          )}
-          <p className="caption-english">{caption.englishText}</p>
-          <span className="caption-state">
-            {caption.status === "provisional" ? "Listening" : "Final"}
-          </span>
-        </article>
-      ))}
+      {captions.map((caption) => {
+        const label = renderLabel(
+          caption.source?.captionTag ?? "",
+          caption.source?.labelStyle ?? "brackets",
+        );
+        return (
+          <article
+            className="caption-entry"
+            data-status={caption.status}
+            data-source={caption.source?.sourceId}
+            key={caption.id}
+            style={
+              {
+                "--caption-fit-scale": fitScaleForLength(
+                  caption.englishText.length,
+                ),
+              } as React.CSSProperties
+            }
+          >
+            {label.label !== null && (
+              <p className="caption-tag" data-stacked={label.stacked || undefined}>
+                {label.label}
+              </p>
+            )}
+            {snapshot.settings.showSource && caption.sourceText !== "" && (
+              <p className="caption-source">{caption.sourceText}</p>
+            )}
+            <p className="caption-english">{caption.englishText}</p>
+            <span className="caption-state">
+              {caption.status === "provisional" ? "Listening" : "Final"}
+            </span>
+          </article>
+        );
+      })}
     </div>
   );
 }

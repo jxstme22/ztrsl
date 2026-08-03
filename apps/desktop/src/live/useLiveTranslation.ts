@@ -57,6 +57,15 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
           (payload.status === "final"
             ? readingDurationMs(payload.english_text)
             : 4_000),
+        source:
+          payload.source_id === undefined || payload.source_snapshot === undefined
+            ? undefined
+            : {
+                sourceId: payload.source_id,
+                captionTag: payload.source_snapshot.caption_tag,
+                labelStyle: payload.source_snapshot.label_style,
+                color: payload.source_snapshot.color,
+              },
       });
     }
   }, []);

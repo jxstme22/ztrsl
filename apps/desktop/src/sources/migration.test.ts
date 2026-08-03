@@ -8,7 +8,7 @@ import { isValidSourceId } from "./identity";
 const SEQUENTIAL_RANDOM = () => 0.5;
 
 const BASE_OVERLAY: OverlaySettings = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   monitorId: null,
   xNormalized: 0.5,
   yNormalized: 0.72,
@@ -16,6 +16,9 @@ const BASE_OVERLAY: OverlaySettings = {
   fontScale: 1,
   backgroundOpacity: 0.45,
   showSource: true,
+  primarySourceId: null,
+  hiddenSourceIds: [],
+  simultaneousPolicy: "show-both",
   hotkeys: {
     toggleOverlay: "CommandOrControl+Shift+T",
     toggleTranslation: "CommandOrControl+Shift+Y",

@@ -9,7 +9,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -28,7 +28,9 @@ import { useAudioMeter } from "./audio/useAudioMeter";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime } from "./overlay/bridge";
+import type { OverlaySettings } from "./overlay/model";
 import { useOverlayController } from "./overlay/useOverlayController";
+import { loadSourceConfigs } from "./sources/storage";
 import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
@@ -277,6 +279,7 @@ function LivePage({
 
 function SettingsPage({ controller }: { controller: Controller }) {
   const { snapshot } = controller;
+  const sources = useMemo(() => loadSourceConfigs().sources, []);
 
   return (
     <div className="page-stack">
@@ -322,6 +325,85 @@ function SettingsPage({ controller }: { controller: Controller }) {
               />
             </div>
           </div>
+
+          <div className="field-grid">
+            <label className="field">
+              <span>Simultaneous captions</span>
+              <select
+                value={snapshot.settings.simultaneousPolicy}
+                onChange={(event) => {
+                  controller.updateSettings({
+                    simultaneousPolicy: event.currentTarget
+                      .value as OverlaySettings["simultaneousPolicy"],
+                  });
+                }}
+              >
+                <option value="show-both">Show both lanes</option>
+                <option value="newest-wins">Newest caption wins</option>
+                <option value="primary-wins">Primary source wins</option>
+              </select>
+              <small className="field-note">
+                How overlapping speech from different sources is shown.
+              </small>
+            </label>
+
+            <label className="field">
+              <span>Primary source</span>
+              <select
+                value={snapshot.settings.primarySourceId ?? ""}
+                onChange={(event) => {
+                  controller.updateSettings({
+                    primarySourceId:
+                      event.currentTarget.value === ""
+                        ? null
+                        : event.currentTarget.value,
+                  });
+                }}
+              >
+                <option value="">Auto (newest first)</option>
+                {sources.map((source) => (
+                  <option key={source.sourceId} value={source.sourceId}>
+                    {source.displayName}
+                  </option>
+                ))}
+              </select>
+              <small className="field-note">
+                Which source owns the first lane under the simultaneous policy.
+              </small>
+            </label>
+          </div>
+
+          {sources.length > 1 && (
+            <div className="settings-block">
+              <h3>Hidden sources</h3>
+              {sources.map((source) => (
+                <div className="toggle-row" key={source.sourceId}>
+                  <div>
+                    <label htmlFor={`hide-${source.sourceId}`}>
+                      Hide {source.displayName}
+                    </label>
+                    <p>Stop this source's captions from appearing.</p>
+                  </div>
+                  <input
+                    id={`hide-${source.sourceId}`}
+                    className="switch"
+                    type="checkbox"
+                    checked={snapshot.settings.hiddenSourceIds.includes(
+                      source.sourceId,
+                    )}
+                    onChange={(event) => {
+                      const current = snapshot.settings.hiddenSourceIds;
+                      controller.updateSettings({
+                        hiddenSourceIds: event.currentTarget.checked
+                          ? [...current, source.sourceId]
+                          : current.filter((id) => id !== source.sourceId),
+                      });
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="sliders-grid">
             <div className="range-field">

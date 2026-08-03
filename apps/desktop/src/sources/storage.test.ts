@@ -107,6 +107,8 @@ describe("source config storage", () => {
     storage.setItem(OVERLAY_KEY, "{}");
     loadSourceConfigs(storage);
     expect(storage.getItem(OVERLAY_KEY)).toBe("{}");
-    expect(loadOverlaySettings(storage).schemaVersion).toBe(1);
+    // An empty stored document still loads the current (v2) defaults and the
+    // source loader must not have persisted anything to the overlay key.
+    expect(loadOverlaySettings(storage).schemaVersion).toBe(2);
   });
 });
