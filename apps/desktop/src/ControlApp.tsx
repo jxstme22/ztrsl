@@ -16,6 +16,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AudioDevicePanel } from "./components/AudioDevicePanel";
 import { CaptionStack } from "./components/CaptionStack";
 import { ClipLabPanel } from "./components/ClipLabPanel";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
@@ -25,6 +26,7 @@ import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
 import { SetupWizard } from "./setup/SetupWizard";
 import { useAudioMeter } from "./audio/useAudioMeter";
+import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime } from "./overlay/bridge";
@@ -41,10 +43,13 @@ type SectionId =
   | "sources"
   | "setup";
 
+const APP_VERSION = "0.3.0";
+
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
 type LiveController = ReturnType<typeof useLiveTranslation>;
 type ModelsController = ReturnType<typeof useModels>;
+type DiagnosticsController = ReturnType<typeof useDiagnostics>;
 
 const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
   { id: "live", label: "Live" },
@@ -70,6 +75,7 @@ export function ControlApp() {
   const audio = useAudioMeter();
   const live = useLiveTranslation(controller.ingestCaption);
   const models = useModels();
+  const diagnostics = useDiagnostics();
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
 
@@ -149,6 +155,8 @@ export function ControlApp() {
             <DiagnosticsPage
               audio={audio}
               onCaption={controller.ingestCaption}
+              diagnostics={diagnostics}
+              overlaySettings={controller.snapshot.settings}
             />
           )}
         </section>
@@ -504,12 +512,24 @@ function SettingsPage({ controller }: { controller: Controller }) {
 function DiagnosticsPage({
   audio,
   onCaption,
+  diagnostics,
+  overlaySettings,
 }: {
   audio: AudioController;
   onCaption: Controller["ingestCaption"];
+  diagnostics: DiagnosticsController;
+  overlaySettings: OverlaySettings;
 }) {
   return (
     <div className="page-stack">
+      <DiagnosticsPanel
+        snapshot={diagnostics.snapshot}
+        sourceConfigs={loadSourceConfigs()}
+        overlaySettings={overlaySettings}
+        appVersion={APP_VERSION}
+        platform="unknown"
+        onRunLeakage={() => void diagnostics.runLeakage()}
+      />
       <AudioDevicePanel audio={audio} />
       <RoutingPanel />
       <IpcPanel onCaption={onCaption} />

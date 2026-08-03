@@ -788,6 +788,116 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ---------------------------------------------------------------- */
+/* Diagnostics (Phase 10)                                            */
+/* ---------------------------------------------------------------- */
+
+.diag-block {
+  margin: 14px 0;
+}
+
+.diag-block .section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.diag-metric-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.diag-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.diag-metric-value {
+  color: var(--fg);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-metric-label {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.diag-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.diag-source-card {
+  padding: 12px 14px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.diag-source-card[data-active] {
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.diag-source-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.diag-source-head h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.diag-source-tag {
+  color: var(--accent, #7dd3fc);
+}
+
+.diag-empty {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.diag-hint {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.diag-hint.warn {
+  color: #fbbf24;
+}
+
+.diag-footnote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.inline-alert.ok {
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.inline-alert.ok strong {
+  color: #4ade80;
+}
+
+/* ---------------------------------------------------------------- */
 /* Alerts                                                            */
 /* ---------------------------------------------------------------- */
 
