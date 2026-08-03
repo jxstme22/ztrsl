@@ -16,8 +16,8 @@ Status legend: ☐ not started · ◐ in progress · ☑ complete
 | 5 | [Per-source VAD](PHASE_05_PER_SOURCE_VAD.md) | ☑ |
 | 6 | [Shared scheduler](PHASE_06_SHARED_SCHEDULER.md) | ☐ |
 | 7 | [Language profiles and strictness](PHASE_07_LANGUAGE_STRICTNESS.md) | ☐ |
-| 8 | [Source-aware overlay](PHASE_08_SOURCE_AWARE_OVERLAY.md) | ☐ |
-| 9 | [Model manager v2](PHASE_09_MODEL_MANAGER_V2.md) | ☐ |
+| 8 | [Source-aware overlay](PHASE_08_SOURCE_AWARE_OVERLAY.md) | ☑ |
+| 9 | [Model manager v2](PHASE_09_MODEL_MANAGER_V2.md) | ☑ |
 | 10 | [Diagnostics](PHASE_10_DIAGNOSTICS.md) | ☐ |
 | 11 | [Real-world validation](PHASE_11_REAL_WORLD_VALIDATION.md) | ☐ |
 | 12 | [Installer and documentation](PHASE_12_INSTALLER_AND_DOCS.md) | ☐ |

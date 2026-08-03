@@ -1,5 +1,5 @@
-import { Database, HardDriveDownload, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { Database, FolderOpen, HardDriveDownload, Trash2, X } from "lucide-react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ModelInfo, ModelProgress } from "../models/model";
@@ -26,6 +26,33 @@ export function formatBytes(bytes: number): string {
 
 function kindLabel(kind: string): string {
   return kind === "asr" ? "Speech recognition" : "Translation";
+}
+
+/** Honest capability labels (Phase 9, ADR-016): never overclaim a decoder
+ * lock. `forced` means a fixed-language CTC model; `preferred`/`post-filter`
+ * mean the decoder is multilingual and the language gate does the filtering. */
+function capabilityLabel(languageCapability: string): string {
+  switch (languageCapability) {
+    case "forced":
+      return "Fixed-language decoder";
+    case "preferred":
+      return "Language-biased (no hard lock)";
+    default:
+      return "Filters after recognition";
+  }
+}
+
+function vramLabel(vramClass: string): string {
+  switch (vramClass) {
+    case "low":
+      return "Low VRAM";
+    case "medium":
+      return "Medium VRAM";
+    case "high":
+      return "High VRAM";
+    default:
+      return vramClass;
+  }
 }
 
 export function ProgressBar({ event }: { event: ModelProgress }) {
@@ -232,6 +259,17 @@ function ModelCard({
         <span>·</span>
         <span>{model.licenseSpdx}</span>
       </div>
+      <div className="lst-model-meta">
+        <span>{capabilityLabel(model.capabilities.languageCapability)}</span>
+        <span>·</span>
+        <span>{vramLabel(model.capabilities.vramClass)}</span>
+        {model.capabilities.recommendedProfiles.length > 0 && (
+          <>
+            <span>·</span>
+            <span>Recommended for: {model.capabilities.recommendedProfiles.join(", ")}</span>
+          </>
+        )}
+      </div>
       {installing && <ProgressBar event={progress} />}
       {finishedError && <p className="lst-error-text">{progress.error}</p>}
       <div className="lst-model-card-actions">
@@ -278,7 +316,7 @@ function ModelCard({
 }
 
 function DownloadServerRow({ models }: { models: ModelUiState }) {
-  const { downloadEndpoint } = models;
+  const { downloadEndpoint, providerStatus } = models;
   const userPicked = downloadEndpoint.userOverride;
   const mirrorInUse = downloadEndpoint.mirror;
   return (
@@ -292,6 +330,14 @@ function DownloadServerRow({ models }: { models: ModelUiState }) {
               ? "Downloads go through Hugging Face directly."
               : "Downloads go through Hugging Face directly. Set HF_ENDPOINT or LST_HF_ENDPOINT to use a mirror."}
         </p>
+        {providerStatus.providers.length > 0 && (
+          <p className="lst-provider-order">
+            Provider order:{" "}
+            {providerStatus.providers
+              .map((provider) => provider.custom ? provider.host : provider.name)
+              .join(" → ")}
+          </p>
+        )}
       </div>
       <Select
         id="model-download-server"
@@ -308,6 +354,71 @@ function DownloadServerRow({ models }: { models: ModelUiState }) {
           },
         ]}
       />
+    </div>
+  );
+}
+
+function OfflinePackRow({ models }: { models: ModelUiState }) {
+  const [packDir, setPackDir] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [imported, setImported] = useState<string[] | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const runImport = async () => {
+    if (packDir.trim() === "" || busy) {
+      return;
+    }
+    setBusy(true);
+    setImported(null);
+    const ids = await models.importOfflinePack(packDir.trim());
+    setBusy(false);
+    setImported(ids);
+    if (ids.length > 0) {
+      setPackDir("");
+    }
+  };
+
+  return (
+    <div className="lst-download-server">
+      <div className="lst-download-server-copy">
+        <label htmlFor="model-offline-pack">Install offline model pack</label>
+        <p>
+          Point at a directory that already contains a manifest-verified model
+          pack. Artifacts are SHA-256 checked and installed with no network.
+        </p>
+      </div>
+      <input
+        id="model-offline-pack"
+        ref={inputRef}
+        type="text"
+        value={packDir}
+        placeholder="/path/to/model-pack"
+        onChange={(event) => {
+          setPackDir(event.currentTarget.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            void runImport();
+          }
+        }}
+      />
+      <button
+        type="button"
+        className="button"
+        disabled={packDir.trim() === "" || busy}
+        onClick={() => void runImport()}
+      >
+        <FolderOpen aria-hidden="true" size={14} />
+        {busy ? "Importing…" : "Import"}
+      </button>
+      {imported !== null && imported.length > 0 && (
+        <p className="lst-ok-text">
+          Installed: {imported.join(", ")}
+        </p>
+      )}
+      {imported !== null && imported.length === 0 && (
+        <p className="lst-error-text">Nothing was imported.</p>
+      )}
     </div>
   );
 }
@@ -369,6 +480,7 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
         fetched at install time.
       </p>
       <DownloadServerRow models={models} />
+      <OfflinePackRow models={models} />
       {models.error !== null && (
         <p className="lst-error-text">{models.error}</p>
       )}

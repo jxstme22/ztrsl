@@ -7,6 +7,8 @@
 
 use serde::Deserialize;
 
+use crate::capabilities::{CapabilitiesView, ModelCapabilities, capabilities_for};
+
 /// Embedded, verified catalog source.
 pub const CATALOG_JSON: &str = include_str!("../../../models/catalog.json");
 
@@ -73,9 +75,13 @@ pub struct CatalogEntry {
     /// Optional single archive that is downloaded, verified and extracted.
     #[serde(default)]
     pub archive: Option<CatalogArchive>,
+    /// Optional capability metadata (Phase 9). When absent, a conservative
+    /// default is derived so the UI never overclaims.
+    #[serde(default)]
+    pub capabilities: Option<ModelCapabilities>,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelKind {
     Asr,
@@ -133,6 +139,9 @@ pub struct CatalogEntryView {
     pub source: String,
     pub revision: String,
     pub file_count: usize,
+    /// Honest capability metadata (Phase 9): forced/preferred/post-filter
+    /// language handling, recommended profiles, VRAM class.
+    pub capabilities: CapabilitiesView,
 }
 
 impl ModelCatalog {
@@ -161,6 +170,7 @@ impl ModelCatalog {
                 source: entry.source.clone(),
                 revision: entry.revision.clone(),
                 file_count: entry.files.len() + usize::from(entry.archive.is_some()),
+                capabilities: CapabilitiesView::from(&capabilities_for(entry)),
             })
             .collect()
     }

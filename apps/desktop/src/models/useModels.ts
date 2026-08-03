@@ -4,6 +4,8 @@ import {
   cancelInstall,
   deleteModel,
   getDownloadEndpoint,
+  getProviderStatus,
+  importOfflinePack,
   installModel,
   listModels,
   onInstallProgress,
@@ -12,10 +14,12 @@ import {
 import {
   EMPTY_MODELS_LIST,
   EMPTY_DOWNLOAD_ENDPOINT,
+  EMPTY_PROVIDER_STATUS,
   type DownloadEndpointInfo,
   type ModelInfo,
   type ModelProgress,
   type ModelsList,
+  type ProviderStatus,
 } from "./model";
 import { loadModelsSettings, saveModelsSettings } from "./storage";
 
@@ -37,6 +41,10 @@ export type ModelUiState = {
   downloadEndpoint: DownloadEndpointInfo;
   /** Persist a user-chosen download endpoint; "" resets to auto. */
   setDownloadEndpoint: (endpoint: string) => Promise<void>;
+  /** Provider candidates + region for honest download status (Phase 9). */
+  providerStatus: ProviderStatus;
+  /** Import a verified offline model pack; resolves to imported ids. */
+  importOfflinePack: (packDir: string) => Promise<string[]>;
 };
 
 const SORT_ORDER: Record<string, number> = {
@@ -54,6 +62,8 @@ export function useModels(desktopOnly = true): ModelUiState {
   const [error, setError] = useState<string | null>(null);
   const [downloadEndpoint, setDownloadEndpointState] =
     useState<DownloadEndpointInfo>(EMPTY_DOWNLOAD_ENDPOINT);
+  const [providerStatus, setProviderStatus] =
+    useState<ProviderStatus>(EMPTY_PROVIDER_STATUS);
   const refreshRef = useRef<() => void>(() => undefined);
 
   const refresh = useCallback(async () => {
@@ -72,6 +82,14 @@ export function useModels(desktopOnly = true): ModelUiState {
       setDownloadEndpointState(await getDownloadEndpoint());
     } catch {
       setDownloadEndpointState(EMPTY_DOWNLOAD_ENDPOINT);
+    }
+  }, []);
+
+  const syncProviderStatus = useCallback(async () => {
+    try {
+      setProviderStatus(await getProviderStatus());
+    } catch {
+      setProviderStatus(EMPTY_PROVIDER_STATUS);
     }
   }, []);
 
@@ -105,6 +123,7 @@ export function useModels(desktopOnly = true): ModelUiState {
     } else {
       void syncDownloadEndpoint();
     }
+    void syncProviderStatus();
     void refresh();
     return onInstallProgress((event: ModelProgress) => {
       setProgress((previous) => ({ ...previous, [event.modelId]: event }));
@@ -112,7 +131,7 @@ export function useModels(desktopOnly = true): ModelUiState {
         refreshRef.current();
       }
     });
-  }, [desktopOnly, refresh, syncDownloadEndpoint]);
+  }, [desktopOnly, refresh, syncDownloadEndpoint, syncProviderStatus]);
 
   const startInstall = useCallback(async (id: string) => {
     setError(null);
@@ -166,6 +185,18 @@ export function useModels(desktopOnly = true): ModelUiState {
     [list.models],
   );
 
+  const importOffline = useCallback(async (packDir: string) => {
+    setError(null);
+    try {
+      const imported = await importOfflinePack(packDir);
+      await refresh();
+      return imported;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return [];
+    }
+  }, [refresh]);
+
   return {
     list,
     loading,
@@ -181,5 +212,7 @@ export function useModels(desktopOnly = true): ModelUiState {
     available,
     downloadEndpoint,
     setDownloadEndpoint: updateDownloadEndpoint,
+    providerStatus,
+    importOfflinePack: importOffline,
   };
 }

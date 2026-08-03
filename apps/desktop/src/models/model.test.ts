@@ -21,6 +21,11 @@ describe("models schemas", () => {
             "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo",
           revision: "0a363e9",
           fileCount: 5,
+          capabilities: {
+            languageCapability: "post-filter",
+            recommendedProfiles: [],
+            vramClass: "medium",
+          },
           status: "installed",
           installedSizeBytes: 1621665983,
         },

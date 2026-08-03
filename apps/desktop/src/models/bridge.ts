@@ -1,15 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "@tauri-apps/api/core";
+import { z } from "zod";
 
 import {
   EMPTY_MODELS_LIST,
+  EMPTY_PROVIDER_STATUS,
   downloadEndpointSchema,
   modelsListSchema,
   modelProgressSchema,
+  providerStatusSchema,
   type DownloadEndpointInfo,
   type ModelsList,
   type ModelProgress,
+  type ProviderStatus,
 } from "./model";
 
 export type ProgressHandler = (event: ModelProgress) => void;
@@ -24,6 +28,22 @@ export async function getDownloadEndpoint(): Promise<DownloadEndpointInfo> {
     };
   }
   return downloadEndpointSchema.parse(await invoke("models_download_endpoint"));
+}
+
+/** Provider candidates + region for honest download status (Phase 9). */
+export async function getProviderStatus(): Promise<ProviderStatus> {
+  if (!isTauri()) {
+    return EMPTY_PROVIDER_STATUS;
+  }
+  return providerStatusSchema.parse(await invoke("models_providers"));
+}
+
+/** Import a verified offline model pack without any network. */
+export async function importOfflinePack(packDir: string): Promise<string[]> {
+  if (!isTauri()) {
+    return [];
+  }
+  return z.array(z.string()).parse(await invoke("models_import_offline_pack", { packDir }));
 }
 
 /** Persist a user-chosen download endpoint; empty string resets to auto. */

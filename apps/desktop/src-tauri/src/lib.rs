@@ -314,6 +314,69 @@ fn models_download_endpoint(
     })
 }
 
+/// Provider + region status for honest UI (Phase 9, ADR-018). The desktop
+/// learns which download hosts are candidates, in failover order, and whether
+/// a custom mirror or a mainland-CN region changes that order.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderStatus {
+    region: String,
+    /// Candidate hosts in failover order (first = tried first).
+    providers: Vec<ProviderView>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderView {
+    name: String,
+    host: String,
+    custom: bool,
+}
+
+#[tauri::command]
+fn models_providers(models: tauri::State<'_, ModelRuntime>) -> Result<ProviderStatus, String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    let region = model_manager::region_from_env();
+    let region_name = match region {
+        model_manager::Region::Global => "global".to_owned(),
+        model_manager::Region::MainlandChina => "mainland-cn".to_owned(),
+    };
+    let custom = state.hf_endpoint.as_deref();
+    let providers = model_manager::provider_order(region, custom)
+        .iter()
+        .map(|provider| ProviderView {
+            name: match provider {
+                model_manager::Provider::HuggingFace => "huggingface".to_owned(),
+                model_manager::Provider::HfMirror => "hf-mirror".to_owned(),
+                model_manager::Provider::ModelScope => "modelscope".to_owned(),
+                model_manager::Provider::Custom(_) => "custom".to_owned(),
+            },
+            host: provider.default_host().to_owned(),
+            custom: matches!(provider, model_manager::Provider::Custom(_)),
+        })
+        .collect();
+    Ok(ProviderStatus {
+        region: region_name,
+        providers,
+    })
+}
+
+#[tauri::command]
+fn models_import_offline_pack(
+    models: tauri::State<'_, ModelRuntime>,
+    pack_dir: String,
+) -> Result<Vec<String>, String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    let root = state.store.root().to_path_buf();
+    let imported = model_manager::import_offline_pack(
+        std::path::Path::new(&pack_dir),
+        &model_manager::ModelStore::new(root),
+        None,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(imported)
+}
+
 #[tauri::command]
 fn models_set_download_endpoint(
     models: tauri::State<'_, ModelRuntime>,
@@ -1831,7 +1894,9 @@ pub fn run() {
             models_cancel_install,
             models_delete,
             models_download_endpoint,
-            models_set_download_endpoint
+            models_set_download_endpoint,
+            models_providers,
+            models_import_offline_pack
         ])
         .run(tauri::generate_context!());
 

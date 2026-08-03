@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::Error;
 use crate::catalog::{CatalogArchive, CatalogEntry, CatalogFile};
 use crate::downloader::{CancelHandle, DownloadProgress, Fetcher, ProgressFn};
+use crate::provider::{candidate_urls, region_from_env};
 use crate::store::ModelStore;
 
 /// Overall progress of an install, including download and extraction phases.
@@ -145,8 +146,7 @@ impl ModelInstaller {
                 file,
                 on_progress.clone(),
             );
-            self.fetcher
-                .fetch(&url, &destination, cancel, progress)
+            self.fetch_with_failover(&url, &destination, cancel, progress, &file.sha256)
                 .await?;
             if std::fs::metadata(&destination)?.len() != expected_size {
                 return Err(Error::Size {
@@ -159,6 +159,50 @@ impl ModelInstaller {
             downloaded += expected_size;
         }
         Ok(())
+    }
+
+    /// Download one pinned artifact across the provider chain (Phase 9,
+    /// ADR-018). Providers are tried in region order; only *transport*
+    /// failures fail over. A downloaded artifact that fails SHA-256
+    /// verification aborts the install — failover never substitutes a
+    /// different artifact.
+    async fn fetch_with_failover(
+        &self,
+        url: &str,
+        destination: &Path,
+        cancel: &CancelHandle,
+        on_progress: ProgressFn,
+        expected_sha256: &str,
+    ) -> Result<(), Error> {
+        let region = region_from_env();
+        let candidates = candidate_urls(url, region, Some(&self.hf_endpoint));
+        let mut last_error: Option<Error> = None;
+        for candidate in &candidates {
+            if cancel.is_cancelled() {
+                return Err(Error::Canceled);
+            }
+            let _ = std::fs::remove_file(destination);
+            match self
+                .fetcher
+                .fetch(candidate, destination, cancel, on_progress.clone())
+                .await
+            {
+                Ok(_) => {
+                    // The artifact must still verify against the pinned
+                    // checksum before we accept any provider's bytes.
+                    match crate::downloader::verify_file_sha256(destination, expected_sha256) {
+                        Ok(()) => return Ok(()),
+                        Err(error) => return Err(error),
+                    }
+                }
+                Err(error) => {
+                    last_error = Some(error);
+                }
+            }
+        }
+        Err(last_error.unwrap_or(Error::Transport(
+            "no download provider was reachable".to_owned(),
+        )))
     }
 
     fn plain_progress(
@@ -214,15 +258,9 @@ impl ModelInstaller {
                 total_bytes_total: total_bytes,
             });
         });
-        self.fetcher
-            .fetch(
-                &crate::catalog::rewrite_hf_url(&archive.url, &self.hf_endpoint),
-                &archive_path,
-                cancel,
-                progress,
-            )
+        let url = crate::catalog::rewrite_hf_url(&archive.url, &self.hf_endpoint);
+        self.fetch_with_failover(&url, &archive_path, cancel, progress, &archive.sha256)
             .await?;
-        crate::downloader::verify_file_sha256(&archive_path, &archive.sha256)?;
         if cancel.is_cancelled() {
             return Err(Error::Canceled);
         }
@@ -517,6 +555,54 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, Error::AlreadyInstalled { .. }));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_fails_over_to_next_provider_on_transport_error() {
+        // The upstream URL is unreachable; only the hf-mirror candidate has
+        // the pinned artifact. The installer must fall through providers in
+        // region order and still verify the checksum before committing.
+        let root =
+            std::env::temp_dir().join(format!("lst-install-failover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let fetcher: Arc<dyn Fetcher> = Arc::new(FakeFetcher::with(
+            "https://hf-mirror.com/test/repo/resolve/rev1/model.bin",
+            b"fake-data".to_vec(),
+        ));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher)
+            .with_hf_endpoint(crate::catalog::DEFAULT_HF_ENDPOINT.to_owned());
+        let entry = test_entry();
+        installer
+            .install(&entry, &CancelHandle::default(), Arc::new(|_| {}))
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read(root.join("test-model").join("model.bin")).unwrap(),
+            b"fake-data"
+        );
+        assert!(installer.store().is_installed("test-model"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_aborts_when_every_provider_is_unreachable() {
+        let root =
+            std::env::temp_dir().join(format!("lst-install-no-provider-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let fetcher: Arc<dyn Fetcher> = Arc::new(FakeFetcher::with(
+            "https://huggingface.co/test/repo/resolve/rev1/model.bin",
+            b"fake-data".to_vec(),
+        ));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher)
+            .with_hf_endpoint("https://example.test".to_owned());
+        let entry = test_entry();
+        let error = installer
+            .install(&entry, &CancelHandle::default(), Arc::new(|_| {}))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::Transport(_)));
+        assert!(!installer.store().is_installed("test-model"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

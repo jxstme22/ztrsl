@@ -16,6 +16,12 @@ vi.mock("./bridge", () => ({
 
 const mocked = vi.mocked(bridge);
 
+const mockCapabilities = {
+  languageCapability: "post-filter" as const,
+  recommendedProfiles: [],
+  vramClass: "medium" as const,
+};
+
 const AVAILABLE = {
   models: [
     {
@@ -31,6 +37,7 @@ const AVAILABLE = {
       source: "s",
       revision: "r",
       fileCount: 1,
+      capabilities: mockCapabilities,
       status: "available" as const,
       installedSizeBytes: 0,
     },
@@ -47,6 +54,7 @@ const AVAILABLE = {
       source: "s",
       revision: "r",
       fileCount: 1,
+      capabilities: mockCapabilities,
       status: "available" as const,
       installedSizeBytes: 0,
     },
@@ -153,6 +161,7 @@ describe("useModels", () => {
           source: "s",
           revision: "r",
           fileCount: 1,
+          capabilities: mockCapabilities,
           status: "installed",
           installedSizeBytes: 10,
         },
@@ -169,6 +178,7 @@ describe("useModels", () => {
           source: "s",
           revision: "r",
           fileCount: 1,
+          capabilities: mockCapabilities,
           status: "available",
           installedSizeBytes: 0,
         },

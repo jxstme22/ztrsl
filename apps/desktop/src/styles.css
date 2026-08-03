@@ -774,6 +774,19 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.45;
 }
 
+.lst-provider-order {
+  color: var(--faint);
+  font-size: 11px;
+  margin-top: 4px;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
+.lst-ok-text {
+  color: var(--ok, #4ade80);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
 /* ---------------------------------------------------------------- */
 /* Alerts                                                            */
 /* ---------------------------------------------------------------- */

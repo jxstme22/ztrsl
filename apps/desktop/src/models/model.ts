@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const capabilitiesSchema = z.object({
+  languageCapability: z.enum(["forced", "preferred", "post-filter"]),
+  recommendedProfiles: z.array(z.string()),
+  vramClass: z.enum(["low", "medium", "high"]),
+});
+
+export type Capabilities = z.infer<typeof capabilitiesSchema>;
+
 export const catalogEntrySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -13,6 +21,7 @@ export const catalogEntrySchema = z.object({
   source: z.string(),
   revision: z.string(),
   fileCount: z.number().int().nonnegative(),
+  capabilities: capabilitiesSchema,
 });
 
 export type CatalogEntry = z.infer<typeof catalogEntrySchema>;
@@ -64,4 +73,24 @@ export const EMPTY_DOWNLOAD_ENDPOINT: DownloadEndpointInfo = {
   endpoint: "https://huggingface.co",
   mirror: false,
   userOverride: false,
+};
+
+export const providerViewSchema = z.object({
+  name: z.string(),
+  host: z.string(),
+  custom: z.boolean(),
+});
+
+export type ProviderView = z.infer<typeof providerViewSchema>;
+
+export const providerStatusSchema = z.object({
+  region: z.enum(["global", "mainland-cn"]),
+  providers: z.array(providerViewSchema),
+});
+
+export type ProviderStatus = z.infer<typeof providerStatusSchema>;
+
+export const EMPTY_PROVIDER_STATUS: ProviderStatus = {
+  region: "global",
+  providers: [],
 };

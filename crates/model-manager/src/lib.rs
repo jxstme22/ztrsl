@@ -6,11 +6,19 @@
 //! artifact, verify all checksums, then atomically rename into the model
 //! store; a failed or cancelled install never leaves a partial model.
 
+mod capabilities;
 mod catalog;
 mod downloader;
 mod installer;
+mod offline_pack;
+mod provider;
+mod signed_catalog;
 mod store;
 
+pub use capabilities::{
+    CapabilitiesView, LanguageCapability, ModelCapabilities, VramClass, capabilities_for,
+    derived_capabilities,
+};
 pub use catalog::{
     CatalogArchive, CatalogEntry, CatalogEntryView, CatalogFile, DEFAULT_HF_ENDPOINT, ModelCatalog,
     ModelKind, huggingface_endpoint, rewrite_hf_url,
@@ -19,6 +27,12 @@ pub use downloader::{
     CancelHandle, DownloadProgress, Fetcher, ProgressFn, ReqwestFetcher, verify_file_sha256,
 };
 pub use installer::{InstallPhase, InstallProgress, InstallProgressFn, ModelInstaller};
+pub use offline_pack::import_offline_pack;
+pub use provider::{
+    Provider, Region, candidate_urls, provider_order, region_from_env, region_from_str,
+    rewrite_for_provider,
+};
+pub use signed_catalog::{public_key_for, sign_payload, verify_catalog_signature};
 pub use store::{InstalledModel, ModelStore};
 
 #[derive(Debug, thiserror::Error)]
@@ -55,4 +69,6 @@ pub enum Error {
     UnknownDirectory { path: String },
     #[error("install cancelled")]
     Canceled,
+    #[error("signature error: {0}")]
+    Signature(String),
 }
