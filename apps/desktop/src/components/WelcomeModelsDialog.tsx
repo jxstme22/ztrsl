@@ -29,7 +29,12 @@ const STEPS: readonly {
     title: "welcomeTranslate",
     text: "welcomeTranslateText",
   },
-  { number: "3", icon: Lock, title: "welcomePrivate", text: "welcomePrivateText" },
+  {
+    number: "3",
+    icon: Lock,
+    title: "welcomePrivate",
+    text: "welcomePrivateText",
+  },
 ];
 
 function ChoiceCard({
@@ -57,7 +62,9 @@ function ChoiceCard({
     <article className="lst-model-card lst-welcome-card">
       <div className="lst-model-card-head">
         <h3>{model.name}</h3>
-        {model.recommended && <span className="lst-badge">{t("recommended")}</span>}
+        {model.recommended && (
+          <span className="lst-badge">{t("recommended")}</span>
+        )}
       </div>
       <p className="lst-model-description">{model.description}</p>
       <div className="lst-model-meta">

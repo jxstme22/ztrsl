@@ -37,9 +37,7 @@ describe("SetupWizard", () => {
   it("renders the setup type step first", async () => {
     render(<SetupWizard onFinish={vi.fn()} />);
 
-    expect(
-      await stepHeading("Choose a setup type"),
-    ).toBeInTheDocument();
+    expect(await stepHeading("Choose a setup type")).toBeInTheDocument();
     expect(screen.getByText("Recommended")).toBeInTheDocument();
     expect(screen.getByText("Advanced")).toBeInTheDocument();
     expect(screen.getByText(/never bundles it/)).toBeInTheDocument();
@@ -53,9 +51,7 @@ describe("SetupWizard", () => {
     expect(
       screen.getAllByRole("heading", { name: "Valorant Team" }),
     ).toHaveLength(1);
-    expect(
-      screen.getAllByRole("heading", { name: "Discord" }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("heading", { name: "Discord" })).toHaveLength(1);
     expect(screen.getAllByLabelText("Caption preview").length).toBe(2);
   });
 

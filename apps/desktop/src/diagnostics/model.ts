@@ -67,8 +67,7 @@ export const EMPTY_DIAGNOSTICS: DiagnosticsSnapshot = {
 };
 
 export function schedulerCoalescingRate(metrics: SchedulerMetrics): number {
-  const submitted =
-    metrics.provisionalsSubmitted + metrics.finalsSubmitted;
+  const submitted = metrics.provisionalsSubmitted + metrics.finalsSubmitted;
   if (submitted === 0) {
     return 0;
   }

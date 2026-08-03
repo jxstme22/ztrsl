@@ -21,10 +21,7 @@ export function CaptionStack({
     "--caption-opacity": snapshot.settings.backgroundOpacity,
   } as React.CSSProperties;
 
-  const lanes = selectVisibleCaptions(
-    snapshot.captions,
-    snapshot.settings,
-  );
+  const lanes = selectVisibleCaptions(snapshot.captions, snapshot.settings);
   const last = lanes[lanes.length - 1];
   const captions = mode === "latest" && last !== undefined ? [last] : lanes;
 
@@ -70,7 +67,10 @@ export function CaptionStack({
             }
           >
             {label.label !== null && (
-              <p className="caption-tag" data-stacked={label.stacked || undefined}>
+              <p
+                className="caption-tag"
+                data-stacked={label.stacked || undefined}
+              >
                 {label.label}
               </p>
             )}

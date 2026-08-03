@@ -8,12 +8,17 @@ import {
   capabilityNote,
   providerCapability,
 } from "./profiles";
-import {
-  languageProfileSchema,
-  languageStrictnessSchema,
-} from "./model";
+import { languageProfileSchema, languageStrictnessSchema } from "./model";
 
-const PROFILES = ["tagalog", "taglish", "cebuano", "bislish", "mandarin", "chinese_english", "auto"] as const;
+const PROFILES = [
+  "tagalog",
+  "taglish",
+  "cebuano",
+  "bislish",
+  "mandarin",
+  "chinese_english",
+  "auto",
+] as const;
 
 describe("profile catalog mirror", () => {
   it("covers every schema profile with metadata", () => {
@@ -29,7 +34,11 @@ describe("profile catalog mirror", () => {
   });
 
   it("uses only the three strictness values", () => {
-    expect(languageStrictnessSchema.options).toEqual(["off", "balanced", "strict"]);
+    expect(languageStrictnessSchema.options).toEqual([
+      "off",
+      "balanced",
+      "strict",
+    ]);
   });
 
   it("auto recommends off; others recommend balanced", () => {

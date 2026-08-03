@@ -1,11 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Info,
-  Play,
-  Square,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Info, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAudioMeter } from "../audio/useAudioMeter";
@@ -71,7 +64,10 @@ const VB_CABLE_NOTICE =
 export function SetupWizard({ onFinish }: { onFinish: () => void }) {
   const audio = useAudioMeter();
   const [state, setState] = useState<WizardState>(() =>
-    initialWizardState(audio.catalog ?? emptyCatalog(), detectVbCable(emptyCatalog())),
+    initialWizardState(
+      audio.catalog ?? emptyCatalog(),
+      detectVbCable(emptyCatalog()),
+    ),
   );
 
   useEffect(() => {
@@ -119,7 +115,13 @@ export function SetupWizard({ onFinish }: { onFinish: () => void }) {
           {WIZARD_STEP_IDS.map((stepId, index) => (
             <li
               key={stepId}
-              className={index === stepIndex ? "current" : index < stepIndex ? "done" : ""}
+              className={
+                index === stepIndex
+                  ? "current"
+                  : index < stepIndex
+                    ? "done"
+                    : ""
+              }
             >
               <button
                 type="button"
@@ -249,17 +251,23 @@ function renderStep(
         />
       );
     case "select-capture":
-      return <CaptureMethodStep state={state} setState={setState} audio={audio} />;
+      return (
+        <CaptureMethodStep state={state} setState={setState} audio={audio} />
+      );
     case "valorant-routing":
       return <ValorantRoutingStep state={state} audio={audio} />;
     case "add-social":
       return <SocialSourceStep state={state} setState={setState} />;
     case "monitoring-output":
-      return <MonitoringOutputStep state={state} setState={setState} audio={audio} />;
+      return (
+        <MonitoringOutputStep state={state} setState={setState} audio={audio} />
+      );
     case "isolation-test":
       return <IsolationTestStep state={state} audio={audio} />;
     case "monitoring-test":
-      return <MonitoringTestStep state={state} setState={setState} audio={audio} />;
+      return (
+        <MonitoringTestStep state={state} setState={setState} audio={audio} />
+      );
     case "language-strictness":
       return <LanguageStep state={state} setState={setState} />;
     case "overlay-preview":
@@ -301,10 +309,15 @@ function SourceEditor({
   }
   const { config } = draft;
   return (
-    <section className="card" aria-labelledby={`wizard-source-${config.sourceId}`}>
+    <section
+      className="card"
+      aria-labelledby={`wizard-source-${config.sourceId}`}
+    >
       <div className="card-head">
         <h4 className="card-title" id={`wizard-source-${config.sourceId}`}>
-          {config.displayName.trim() === "" ? "Unnamed source" : config.displayName}
+          {config.displayName.trim() === ""
+            ? "Unnamed source"
+            : config.displayName}
         </h4>
         <span className="pill">
           <span aria-hidden="true" />
@@ -320,7 +333,9 @@ function SourceEditor({
             maxLength={48}
             onChange={(event) => {
               setState((s) =>
-                updateSource(s, draftIndex, { displayName: event.currentTarget.value }),
+                updateSource(s, draftIndex, {
+                  displayName: event.currentTarget.value,
+                }),
               );
             }}
           />
@@ -334,7 +349,9 @@ function SourceEditor({
             placeholder="TEAM"
             onChange={(event) => {
               setState((s) =>
-                updateSource(s, draftIndex, { captionTag: event.currentTarget.value }),
+                updateSource(s, draftIndex, {
+                  captionTag: event.currentTarget.value,
+                }),
               );
             }}
           />
@@ -355,7 +372,10 @@ function SourceEditor({
           />
         </div>
       </div>
-      <div className="preview-stage source-preview" aria-label="Caption preview">
+      <div
+        className="preview-stage source-preview"
+        aria-label="Caption preview"
+      >
         <p className="caption-english">
           {renderLabel(config.captionTag, config.labelStyle).label !== null && (
             <span className="caption-inline-label">
@@ -396,8 +416,7 @@ function SourcePickerStep({
             value={presetId}
             onChange={setPresetId}
             options={PRESET_OPTIONS.filter(
-              (option) =>
-                !(!includeDiscord && option.value === "discord"),
+              (option) => !(!includeDiscord && option.value === "discord"),
             )}
           />
           <button
@@ -413,7 +432,12 @@ function SourcePickerStep({
         </div>
       </section>
       {state.sources.map((draft, index) => (
-        <SourceEditor key={draft.config.sourceId} draftIndex={index} state={state} setState={setState} />
+        <SourceEditor
+          key={draft.config.sourceId}
+          draftIndex={index}
+          state={state}
+          setState={setState}
+        />
       ))}
     </>
   );
@@ -444,8 +468,8 @@ function CaptureMethodStep({
           Choose a capture method for each source
         </h3>
         <p className="card-note">
-          Nothing is selected automatically. Pick the exact endpoint or
-          process each voice channel comes from.
+          Nothing is selected automatically. Pick the exact endpoint or process
+          each voice channel comes from.
         </p>
         {!audio.catalog?.processCaptureSupported && (
           <p className="card-note wizard-note">
@@ -458,10 +482,14 @@ function CaptureMethodStep({
         const { config } = draft;
         const current =
           config.captureTarget.kind === "endpoint"
-            ? config.captureTarget.endpointId ?? ""
+            ? (config.captureTarget.endpointId ?? "")
             : "";
         return (
-          <section className="card" key={config.sourceId} aria-label={`Capture for ${config.displayName}`}>
+          <section
+            className="card"
+            key={config.sourceId}
+            aria-label={`Capture for ${config.displayName}`}
+          >
             <div className="card-head">
               <h4 className="card-title">{config.displayName}</h4>
               {draft.captureResolved ? (
@@ -575,15 +603,17 @@ function SocialSourceStep({
           Add a Discord or social source
         </h3>
         <p className="card-note">
-          Recommended: capture Discord as its own source so friends' voices
-          get their own caption lane.
+          Recommended: capture Discord as its own source so friends' voices get
+          their own caption lane.
         </p>
         <div className="action-row">
           <Select
             label="Preset"
             value={presetId}
             onChange={setPresetId}
-            options={PRESET_OPTIONS.filter((option) => option.value !== "valorant-team")}
+            options={PRESET_OPTIONS.filter(
+              (option) => option.value !== "valorant-team",
+            )}
           />
           <button
             className="button primary"
@@ -596,7 +626,10 @@ function SocialSourceStep({
             Add source
           </button>
         </div>
-        <div className="preview-stage source-preview" aria-label="Social caption preview">
+        <div
+          className="preview-stage source-preview"
+          aria-label="Social caption preview"
+        >
           <p className="caption-english">
             <span className="caption-inline-label">[DISCORD]</span> Let's go!
           </p>
@@ -606,7 +639,12 @@ function SocialSourceStep({
         .map((draft, index) => ({ draft, index }))
         .filter(({ draft }) => draft.presetId !== "valorant-team")
         .map(({ draft, index }) => (
-          <SourceEditor key={draft.config.sourceId} draftIndex={index} state={state} setState={setState} />
+          <SourceEditor
+            key={draft.config.sourceId}
+            draftIndex={index}
+            state={state}
+            setState={setState}
+          />
         ))}
     </>
   );
@@ -626,7 +664,9 @@ function MonitoringOutputStep({
       audio.renderEndpoints.map((endpoint) => ({
         value: endpoint.id,
         label: endpoint.friendlyName,
-        group: endpoint.isSynthetic ? "Simulator" : "Windows playback endpoints",
+        group: endpoint.isSynthetic
+          ? "Simulator"
+          : "Windows playback endpoints",
       })),
     [audio.renderEndpoints],
   );
@@ -649,7 +689,9 @@ function MonitoringOutputStep({
               value={state.monitorEndpointId ?? ""}
               placeholder="Choose an output…"
               onChange={(value) => {
-                setState((s) => setMonitorEndpoint(s, value === "" ? null : value));
+                setState((s) =>
+                  setMonitorEndpoint(s, value === "" ? null : value),
+                );
               }}
               options={outputOptions}
             />
@@ -659,10 +701,16 @@ function MonitoringOutputStep({
       {state.sources.map((draft, index) => {
         const { config } = draft;
         return (
-          <section className="card" key={config.sourceId} aria-label={`Monitoring for ${config.displayName}`}>
+          <section
+            className="card"
+            key={config.sourceId}
+            aria-label={`Monitoring for ${config.displayName}`}
+          >
             <div className="toggle-row">
               <div>
-                <label htmlFor={`monitor-${config.sourceId}`}>Monitor {config.displayName}</label>
+                <label htmlFor={`monitor-${config.sourceId}`}>
+                  Monitor {config.displayName}
+                </label>
                 <p>Hear this source in your headphones while playing.</p>
               </div>
               <input
@@ -764,12 +812,20 @@ function MeterCard({
       </div>
       <div className="action-row">
         {audio.active ? (
-          <button className="button secondary" type="button" onClick={() => void audio.stop()}>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => void audio.stop()}
+          >
             <Square aria-hidden="true" size={14} />
             Stop meter
           </button>
         ) : (
-          <button className="button secondary" type="button" onClick={() => void audio.start()}>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => void audio.start()}
+          >
             <Play aria-hidden="true" size={14} />
             Start meter
           </button>
@@ -804,8 +860,8 @@ function IsolationTestStep({
           Source isolation test
         </h3>
         <p className="card-note">
-          Each source must only ever hear its own voice channel. Play voice
-          into the cable and confirm only its meter moves.
+          Each source must only ever hear its own voice channel. Play voice into
+          the cable and confirm only its meter moves.
         </p>
         <ul className="test-instructions">
           <li>Play voice into the selected cable (or another app's voice).</li>
@@ -848,13 +904,17 @@ function MonitoringTestStep({
           Monitoring test
         </h3>
         <p className="card-note">
-          All enabled voice sources should be audible in your headphones
-          without feedback. Adjust each blend; verify by ear. The blend never
-          enters translation.
+          All enabled voice sources should be audible in your headphones without
+          feedback. Adjust each blend; verify by ear. The blend never enters
+          translation.
         </p>
       </section>
       {state.sources.map((draft, index) => (
-        <section className="card" key={draft.config.sourceId} aria-label={`Blend for ${draft.config.displayName}`}>
+        <section
+          className="card"
+          key={draft.config.sourceId}
+          aria-label={`Blend for ${draft.config.displayName}`}
+        >
           <div className="range-field">
             <div className="range-label">
               <label htmlFor={`blend-${draft.config.sourceId}`}>
@@ -911,7 +971,11 @@ function LanguageStep({
         </p>
       </section>
       {state.sources.map((draft, index) => (
-        <section className="card" key={draft.config.sourceId} aria-label={`Language for ${draft.config.displayName}`}>
+        <section
+          className="card"
+          key={draft.config.sourceId}
+          aria-label={`Language for ${draft.config.displayName}`}
+        >
           <div className="form-grid">
             <div className="field">
               <span>{draft.config.displayName} profile</span>
@@ -975,7 +1039,11 @@ function OverlayPreviewStep({
         </p>
       </section>
       {state.sources.map((draft, index) => (
-        <section className="card" key={draft.config.sourceId} aria-label={`Preview for ${draft.config.displayName}`}>
+        <section
+          className="card"
+          key={draft.config.sourceId}
+          aria-label={`Preview for ${draft.config.displayName}`}
+        >
           <div className="card-head">
             <h4 className="card-title">{draft.config.displayName}</h4>
             <div className="form-row-inline">
@@ -987,7 +1055,9 @@ function OverlayPreviewStep({
                 aria-label={`Tag for ${draft.config.displayName}`}
                 onChange={(event) => {
                   setState((s) =>
-                    updateSource(s, index, { captionTag: event.currentTarget.value }),
+                    updateSource(s, index, {
+                      captionTag: event.currentTarget.value,
+                    }),
                   );
                 }}
               />
@@ -1005,7 +1075,10 @@ function OverlayPreviewStep({
               />
             </div>
           </div>
-          <div className="preview-stage source-preview" aria-label={`Overlay preview ${draft.config.captionTag}`}>
+          <div
+            className="preview-stage source-preview"
+            aria-label={`Overlay preview ${draft.config.captionTag}`}
+          >
             <div className="caption-entry">
               <p className="caption-english">
                 {formatPreview(
@@ -1050,7 +1123,7 @@ function SaveStep({ state }: { state: WizardState }) {
           <li key={draft.config.sourceId}>
             <strong>{draft.config.displayName}</strong> —{" "}
             {draft.config.captureTarget.kind === "endpoint"
-              ? draft.config.captureTarget.endpointId ?? "no endpoint yet"
+              ? (draft.config.captureTarget.endpointId ?? "no endpoint yet")
               : `process ${draft.config.captureTarget.processName}`}
             {draft.config.monitoring.enabled
               ? `, monitored at ${String(Math.round(draft.config.monitoring.volume * 100))}%`

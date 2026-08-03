@@ -13,7 +13,8 @@ import { classifyLeakage } from "./leakage";
  * never transcript content — Phase 10).
  */
 export function useDiagnostics() {
-  const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot>(EMPTY_DIAGNOSTICS);
+  const [snapshot, setSnapshot] =
+    useState<DiagnosticsSnapshot>(EMPTY_DIAGNOSTICS);
   const [updatedAtMs, setUpdatedAtMs] = useState(0);
   const [leakageRunning, setLeakageRunning] = useState(false);
 

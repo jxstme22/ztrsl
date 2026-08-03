@@ -108,10 +108,7 @@ export function selectMode(state: WizardState, mode: SetupMode): WizardState {
   // Advanced: start blank. Nothing is auto-assigned a capture target.
   const sources =
     mode === "recommended"
-      ? [
-          draftFromPreset(VALORANT_TEAM_PRESET),
-          draftFromPreset(DISCORD_PRESET),
-        ]
+      ? [draftFromPreset(VALORANT_TEAM_PRESET), draftFromPreset(DISCORD_PRESET)]
       : [];
   const firstSourceStep = WIZARD_STEP_IDS.indexOf("add-first-source");
   return { ...state, mode, sources, stepIndex: firstSourceStep };
@@ -147,7 +144,9 @@ export function removeSource(state: WizardState, index: number): WizardState {
 export function updateSource(
   state: WizardState,
   index: number,
-  patch: Partial<Pick<AudioSourceConfig, "displayName" | "captionTag" | "labelStyle">>,
+  patch: Partial<
+    Pick<AudioSourceConfig, "displayName" | "captionTag" | "labelStyle">
+  >,
 ): WizardState {
   if (index < 0 || index >= state.sources.length) {
     return state;
@@ -172,9 +171,15 @@ export function assignCaptureTarget(
       return draft;
     }
     const resolved =
-      (target.kind === "endpoint" && target.endpointId !== null && target.endpointId.length > 0) ||
+      (target.kind === "endpoint" &&
+        target.endpointId !== null &&
+        target.endpointId.length > 0) ||
       (target.kind === "process" && target.processName.length > 0);
-    return { ...draft, config: { ...draft.config, captureTarget: target }, captureResolved: resolved };
+    return {
+      ...draft,
+      config: { ...draft.config, captureTarget: target },
+      captureResolved: resolved,
+    };
   });
   return { ...state, sources };
 }
@@ -216,7 +221,11 @@ export function setMonitorVolume(
   index: number,
   volume: number,
 ): WizardState {
-  if (index < 0 || index >= state.sources.length || !(0 <= volume && volume <= 1)) {
+  if (
+    index < 0 ||
+    index >= state.sources.length ||
+    !(0 <= volume && volume <= 1)
+  ) {
     return state;
   }
   const sources = state.sources.map((draft, i) =>
@@ -251,7 +260,10 @@ export function setLanguage(
   }
   const sources = state.sources.map((draft, i) =>
     i === index
-      ? { ...draft, config: { ...draft.config, languageProfile: profile, strictness } }
+      ? {
+          ...draft,
+          config: { ...draft.config, languageProfile: profile, strictness },
+        }
       : draft,
   );
   return { ...state, sources };
@@ -283,9 +295,12 @@ export function canProceed(state: WizardState): StepGate {
         : { ok: true, reason: null };
     case "select-capture":
       return {
-        ok: state.sources.length > 0 && state.sources.every((draft) => draft.captureResolved),
+        ok:
+          state.sources.length > 0 &&
+          state.sources.every((draft) => draft.captureResolved),
         reason:
-          state.sources.length > 0 && state.sources.every((draft) => draft.captureResolved)
+          state.sources.length > 0 &&
+          state.sources.every((draft) => draft.captureResolved)
             ? null
             : "Assign a capture method to every source. Nothing is selected automatically.",
       };
@@ -320,7 +335,10 @@ export function canProceed(state: WizardState): StepGate {
   }
 }
 
-export function save(state: WizardState): { configs: SourceConfigs; error: string | null } {
+export function save(state: WizardState): {
+  configs: SourceConfigs;
+  error: string | null;
+} {
   const result = sourceConfigsSchema.safeParse({
     schemaVersion: 3,
     sources: state.sources.map((draft) => draft.config),

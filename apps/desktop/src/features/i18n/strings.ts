@@ -58,7 +58,10 @@ const UI_STRINGS = {
   welcomeSpeechRecognition: { en: "Speech recognition", zh: "语音识别" },
   welcomeTranslation: { en: "Translation", zh: "翻译" },
   welcomeShowOptional: { en: "Show optional model", zh: "显示可选模型" },
-  welcomeReadingCatalog: { en: "Reading the model catalog…", zh: "正在读取模型目录…" },
+  welcomeReadingCatalog: {
+    en: "Reading the model catalog…",
+    zh: "正在读取模型目录…",
+  },
   welcomeCatalogError: {
     en: "Could not load the model catalog.",
     zh: "无法加载模型目录。",

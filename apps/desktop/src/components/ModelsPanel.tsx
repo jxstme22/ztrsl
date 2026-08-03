@@ -1,4 +1,10 @@
-import { Database, FolderOpen, HardDriveDownload, Trash2, X } from "lucide-react";
+import {
+  Database,
+  FolderOpen,
+  HardDriveDownload,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -269,7 +275,9 @@ function ModelCard({
         <span className="lst-capability">
           {capabilityLabel(model.capabilities.languageCapability)}
         </span>
-        <span className="lst-capability">{vramLabel(model.capabilities.vramClass)}</span>
+        <span className="lst-capability">
+          {vramLabel(model.capabilities.vramClass)}
+        </span>
         {model.capabilities.recommendedProfiles.length > 0 && (
           <span className="lst-capability">
             {model.capabilities.recommendedProfiles.join(", ")}
@@ -304,9 +312,7 @@ function ModelCard({
             Cancel
           </button>
         ) : localOnly ? (
-          <span className="lst-model-local-hint">
-            Requires local export
-          </span>
+          <span className="lst-model-local-hint">Requires local export</span>
         ) : (
           <button
             type="button"
@@ -344,7 +350,9 @@ function DownloadServerRow({ models }: { models: ModelUiState }) {
           <p className="lst-provider-order">
             Provider order:{" "}
             {providerStatus.providers
-              .map((provider) => provider.custom ? provider.host : provider.name)
+              .map((provider) =>
+                provider.custom ? provider.host : provider.name,
+              )
               .join(" → ")}
           </p>
         )}
@@ -422,9 +430,7 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
         {busy ? "Importing…" : "Import"}
       </button>
       {imported !== null && imported.length > 0 && (
-        <p className="lst-ok-text">
-          Installed: {imported.join(", ")}
-        </p>
+        <p className="lst-ok-text">Installed: {imported.join(", ")}</p>
       )}
       {imported !== null && imported.length === 0 && (
         <p className="lst-error-text">Nothing was imported.</p>
@@ -502,7 +508,8 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
         <h3 className="section-heading">Available to install</h3>
         {cards(models.available)}
       </section>
-      {(models.knownInstalled.length > 0 || models.knownAvailable.length > 0) && (
+      {(models.knownInstalled.length > 0 ||
+        models.knownAvailable.length > 0) && (
         <section className="lst-model-section" aria-label="Local exports">
           <h3 className="section-heading">Local exports (NCSpeech)</h3>
           <p className="lst-page-description">
@@ -511,18 +518,20 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
             downloaded through the catalog.
           </p>
           <div className="lst-model-grid">
-            {[...models.knownInstalled, ...models.knownAvailable].map((model) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                progress={models.progress[model.id] ?? null}
-                inUse={models.list.inUse.includes(model.id)}
-                instantiating={instantiating === model.id}
-                localOnly
-                onInstallClick={() => undefined}
-                onDeleteClick={() => undefined}
-              />
-            ))}
+            {[...models.knownInstalled, ...models.knownAvailable].map(
+              (model) => (
+                <ModelCard
+                  key={model.id}
+                  model={model}
+                  progress={models.progress[model.id] ?? null}
+                  inUse={models.list.inUse.includes(model.id)}
+                  instantiating={instantiating === model.id}
+                  localOnly
+                  onInstallClick={() => undefined}
+                  onDeleteClick={() => undefined}
+                />
+              ),
+            )}
           </div>
         </section>
       )}

@@ -62,7 +62,10 @@ export function captionReducer(
  */
 export function selectVisibleCaptions(
   state: CaptionState,
-  settings: Pick<OverlaySettings, "primarySourceId" | "hiddenSourceIds" | "simultaneousPolicy">,
+  settings: Pick<
+    OverlaySettings,
+    "primarySourceId" | "hiddenSourceIds" | "simultaneousPolicy"
+  >,
 ): Caption[] {
   const visible = state.filter(
     (caption) =>

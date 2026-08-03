@@ -42,15 +42,22 @@ export function detectVbCable(catalog: EndpointCatalog): VbCableDetection {
   // the signal: input = where audio goes in, output = where it comes out.
   const input =
     catalog.endpoints.find(
-      (endpoint) => endpoint.kind === "render" && INPUT_NAME.test(endpoint.friendlyName),
+      (endpoint) =>
+        endpoint.kind === "render" && INPUT_NAME.test(endpoint.friendlyName),
     ) ?? null;
   const output =
     catalog.endpoints.find(
-      (endpoint) => endpoint.kind === "capture" && OUTPUT_NAME.test(endpoint.friendlyName),
+      (endpoint) =>
+        endpoint.kind === "capture" && OUTPUT_NAME.test(endpoint.friendlyName),
     ) ?? null;
 
   const issues: string[] = [];
-  if (input !== null && output !== null && isUsableState(input) && isUsableState(output)) {
+  if (
+    input !== null &&
+    output !== null &&
+    isUsableState(input) &&
+    isUsableState(output)
+  ) {
     return { installed: true, input, output, degraded: false, issues };
   }
   if (input === null || output === null) {
@@ -60,10 +67,14 @@ export function detectVbCable(catalog: EndpointCatalog): VbCableDetection {
     );
   }
   if (input !== null && !isUsableState(input)) {
-    issues.push(`"${input.friendlyName}" is not active (state: ${input.state}). Enable the driver in Windows sound settings.`);
+    issues.push(
+      `"${input.friendlyName}" is not active (state: ${input.state}). Enable the driver in Windows sound settings.`,
+    );
   }
   if (output !== null && !isUsableState(output)) {
-    issues.push(`"${output.friendlyName}" is not active (state: ${output.state}). Enable the driver in Windows sound settings.`);
+    issues.push(
+      `"${output.friendlyName}" is not active (state: ${output.state}). Enable the driver in Windows sound settings.`,
+    );
   }
   return { installed: false, input, output, degraded: true, issues };
 }

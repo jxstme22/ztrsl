@@ -67,21 +67,25 @@ function PhraseFiltersEditor({
             value={rule.sourceId}
             aria-label="Source id"
             placeholder="source id (32 hex)"
-            onChange={(event) =>
-              { update(index, { sourceId: event.currentTarget.value }); }
-            }
+            onChange={(event) => {
+              update(index, { sourceId: event.currentTarget.value });
+            }}
           />
           <input
             type="text"
             value={rule.text}
             aria-label="Phrase"
             placeholder="phrase or pattern"
-            onChange={(event) => { update(index, { text: event.currentTarget.value }); }}
+            onChange={(event) => {
+              update(index, { text: event.currentTarget.value });
+            }}
           />
           <Select
             label="Match mode"
             value={rule.matchMode}
-            onChange={(value) => { update(index, { matchMode: value as PhraseMatchMode }); }}
+            onChange={(value) => {
+              update(index, { matchMode: value as PhraseMatchMode });
+            }}
             options={MATCH_MODES}
           />
           <input
@@ -89,18 +93,20 @@ function PhraseFiltersEditor({
             type="checkbox"
             aria-label="Enabled"
             checked={rule.enabled}
-            onChange={(event) => { update(index, { enabled: event.currentTarget.checked }); }}
+            onChange={(event) => {
+              update(index, { enabled: event.currentTarget.checked });
+            }}
           />
           <button
             className="button quiet"
             type="button"
             aria-label="Remove filter"
-            onClick={() =>
-              { onChange({
+            onClick={() => {
+              onChange({
                 schemaVersion: 1,
                 rules: filters.rules.filter((_, i) => i !== index),
-              }); }
-            }
+              });
+            }}
           >
             <Trash2 aria-hidden="true" size={14} />
           </button>
@@ -109,8 +115,8 @@ function PhraseFiltersEditor({
       <button
         className="button"
         type="button"
-        onClick={() =>
-          { onChange({
+        onClick={() => {
+          onChange({
             schemaVersion: 1,
             rules: [
               ...filters.rules,
@@ -122,8 +128,8 @@ function PhraseFiltersEditor({
                 enabled: true,
               },
             ],
-          }); }
-        }
+          });
+        }}
       >
         <Plus aria-hidden="true" size={14} />
         Add filter
@@ -158,7 +164,9 @@ function GlossaryEditor({
           <Select
             label="Type"
             value={entry.entryType}
-            onChange={(value) => { update(index, { entryType: value as GlossaryEntryType }); }}
+            onChange={(value) => {
+              update(index, { entryType: value as GlossaryEntryType });
+            }}
             options={ENTRY_TYPES}
           />
           <input
@@ -166,31 +174,37 @@ function GlossaryEditor({
             value={entry.source}
             aria-label="From"
             placeholder='e.g. "bind men"'
-            onChange={(event) => { update(index, { source: event.currentTarget.value }); }}
+            onChange={(event) => {
+              update(index, { source: event.currentTarget.value });
+            }}
           />
           <input
             type="text"
             value={entry.target}
             aria-label="To"
             placeholder='e.g. "B main"'
-            onChange={(event) => { update(index, { target: event.currentTarget.value }); }}
+            onChange={(event) => {
+              update(index, { target: event.currentTarget.value });
+            }}
           />
           <Select
             label="Scope"
             value={entry.scope}
-            onChange={(value) => { update(index, { scope: value as GlossaryScope }); }}
+            onChange={(value) => {
+              update(index, { scope: value as GlossaryScope });
+            }}
             options={SCOPES}
           />
           <button
             className="button quiet"
             type="button"
             aria-label="Remove entry"
-            onClick={() =>
-              { onChange({
+            onClick={() => {
+              onChange({
                 schemaVersion: 1,
                 entries: glossary.entries.filter((_, i) => i !== index),
-              }); }
-            }
+              });
+            }}
           >
             <Trash2 aria-hidden="true" size={14} />
           </button>
@@ -199,8 +213,8 @@ function GlossaryEditor({
       <button
         className="button"
         type="button"
-        onClick={() =>
-          { onChange({
+        onClick={() => {
+          onChange({
             schemaVersion: 1,
             entries: [
               ...glossary.entries,
@@ -213,8 +227,8 @@ function GlossaryEditor({
                 note: "",
               },
             ],
-          }); }
-        }
+          });
+        }}
       >
         <Plus aria-hidden="true" size={14} />
         Add entry
@@ -250,8 +264,7 @@ export function CaptionTrustPanel() {
       <PhraseFiltersEditor filters={filters} onChange={setFilters} />
       <GlossaryEditor glossary={glossary} onChange={setGlossary} />
       <p className="ct-note ct-footnote">
-        Saved locally. Hot-reloaded by the live sidecar without a model
-        restart.
+        Saved locally. Hot-reloaded by the live sidecar without a model restart.
       </p>
     </section>
   );

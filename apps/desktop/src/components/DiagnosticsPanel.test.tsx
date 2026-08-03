@@ -2,7 +2,10 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
-import { type DiagnosticsSnapshot, EMPTY_DIAGNOSTICS } from "../diagnostics/model";
+import {
+  type DiagnosticsSnapshot,
+  EMPTY_DIAGNOSTICS,
+} from "../diagnostics/model";
 import { DEFAULT_OVERLAY_SETTINGS } from "../overlay/model";
 
 const SNAPSHOT: DiagnosticsSnapshot = {
@@ -99,9 +102,7 @@ describe("DiagnosticsPanel", () => {
         platform="test"
       />,
     );
-    expect(
-      screen.getByText(/No active sources/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/No active sources/)).toBeInTheDocument();
   });
 
   it("exports a content-free support bundle on demand", () => {

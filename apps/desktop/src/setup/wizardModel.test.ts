@@ -70,8 +70,14 @@ function withCable(): WizardState {
 
 function recommendedComplete(state: WizardState): WizardState {
   let next = selectMode(state, "recommended");
-  next = assignCaptureTarget(next, 0, { kind: "endpoint", endpointId: CABLE_INPUT.id });
-  next = assignCaptureTarget(next, 1, { kind: "endpoint", endpointId: CABLE_INPUT.id });
+  next = assignCaptureTarget(next, 0, {
+    kind: "endpoint",
+    endpointId: CABLE_INPUT.id,
+  });
+  next = assignCaptureTarget(next, 1, {
+    kind: "endpoint",
+    endpointId: CABLE_INPUT.id,
+  });
   return next;
 }
 
@@ -90,7 +96,9 @@ describe("wizard state machine", () => {
     expect(state.sources).toHaveLength(2);
     expect(state.sources[0]?.config.captionTag).toBe("TEAM");
     expect(state.sources[1]?.config.captionTag).toBe("DISCORD");
-    expect(state.sources[0]?.config.sourceId).not.toBe(state.sources[1]?.config.sourceId);
+    expect(state.sources[0]?.config.sourceId).not.toBe(
+      state.sources[1]?.config.sourceId,
+    );
     expect(state.sources.every((draft) => !draft.captureResolved)).toBe(true);
   });
 
@@ -109,15 +117,24 @@ describe("wizard state machine", () => {
     let state = selectMode(withCable(), "recommended");
     state = goToStep(state, 2);
     expect(canProceed(state).ok).toBe(false);
-    state = assignCaptureTarget(state, 0, { kind: "endpoint", endpointId: CABLE_INPUT.id });
+    state = assignCaptureTarget(state, 0, {
+      kind: "endpoint",
+      endpointId: CABLE_INPUT.id,
+    });
     expect(canProceed(state).ok).toBe(false);
-    state = assignCaptureTarget(state, 1, { kind: "endpoint", endpointId: CABLE_INPUT.id });
+    state = assignCaptureTarget(state, 1, {
+      kind: "endpoint",
+      endpointId: CABLE_INPUT.id,
+    });
     expect(canProceed(state).ok).toBe(true);
   });
 
   it("never auto-selects: an empty endpoint assignment stays unresolved", () => {
     let state = selectMode(withCable(), "recommended");
-    state = assignCaptureTarget(state, 0, { kind: "endpoint", endpointId: null });
+    state = assignCaptureTarget(state, 0, {
+      kind: "endpoint",
+      endpointId: null,
+    });
     expect(state.sources[0]?.captureResolved).toBe(false);
     state = assignCaptureTarget(state, 0, { kind: "process", processName: "" });
     expect(state.sources[0]?.captureResolved).toBe(false);
@@ -141,7 +158,10 @@ describe("wizard state machine", () => {
 
   it("monitoring-output gate blocks capture==monitor feedback loops", () => {
     let state = recommendedComplete(withCable());
-    state = assignCaptureTarget(state, 0, { kind: "endpoint", endpointId: CABLE_INPUT.id });
+    state = assignCaptureTarget(state, 0, {
+      kind: "endpoint",
+      endpointId: CABLE_INPUT.id,
+    });
     state = setMonitoring(state, 0, {
       enabled: true,
       headphoneEndpointId: CABLE_INPUT.id,
@@ -161,7 +181,10 @@ describe("wizard state machine", () => {
   it("edits name/tag/style and language settings without touching the id", () => {
     let state = selectMode(withCable(), "recommended");
     const id = state.sources[0]?.config.sourceId;
-    state = updateSource(state, 0, { displayName: "Reno Squad", captionTag: "RENO" });
+    state = updateSource(state, 0, {
+      displayName: "Reno Squad",
+      captionTag: "RENO",
+    });
     state = setLanguage(state, 0, "cebuano", "strict");
     expect(state.sources[0]?.config.displayName).toBe("Reno Squad");
     expect(state.sources[0]?.config.captionTag).toBe("RENO");
@@ -176,20 +199,31 @@ describe("wizard state machine", () => {
     expect(state.sources).toHaveLength(1);
     state = removeSource(state, 5);
     state = updateSource(state, 5, { displayName: "nope" });
-    state = assignCaptureTarget(state, 5, { kind: "endpoint", endpointId: "x" });
-    state = setMonitoring(state, 5, { enabled: true, headphoneEndpointId: null });
+    state = assignCaptureTarget(state, 5, {
+      kind: "endpoint",
+      endpointId: "x",
+    });
+    state = setMonitoring(state, 5, {
+      enabled: true,
+      headphoneEndpointId: null,
+    });
     state = setLanguage(state, 5, "auto", "off");
     expect(state.sources).toHaveLength(1);
   });
 
   it("save produces valid schema-v3 configs and markSaved flips the flag", () => {
     let state = recommendedComplete(withCable());
-    state = setMonitoring(state, 0, { enabled: true, headphoneEndpointId: HEADPHONES.id });
+    state = setMonitoring(state, 0, {
+      enabled: true,
+      headphoneEndpointId: HEADPHONES.id,
+    });
     const { configs, error } = save(state);
     expect(error).toBeNull();
     expect(configs.schemaVersion).toBe(3);
     expect(configs.sources).toHaveLength(2);
-    expect(state.sources[0]?.config.sourceId).toBe(configs.sources[0]?.sourceId);
+    expect(state.sources[0]?.config.sourceId).toBe(
+      configs.sources[0]?.sourceId,
+    );
     expect(markSaved(state).saved).toBe(true);
   });
 

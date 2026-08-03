@@ -1,4 +1,11 @@
-import { Activity, Download, Gauge, Layers, ShieldCheck, ShieldX } from "lucide-react";
+import {
+  Activity,
+  Download,
+  Gauge,
+  Layers,
+  ShieldCheck,
+  ShieldX,
+} from "lucide-react";
 
 import { type DiagnosticsSnapshot } from "../diagnostics/model";
 import { schedulerCoalescingRate } from "../diagnostics/model";
@@ -9,13 +16,7 @@ import {
 import type { SourceConfigs } from "../sources/model";
 import type { OverlaySettings } from "../overlay/model";
 
-function Metric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
+function Metric({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="diag-metric">
       <span className="diag-metric-value">{value}</span>
@@ -34,7 +35,10 @@ function SourceDiagnosticCard({
   tag: string;
 }) {
   return (
-    <article className="diag-source-card" data-active={source.active || undefined}>
+    <article
+      className="diag-source-card"
+      data-active={source.active || undefined}
+    >
       <div className="diag-source-head">
         <h4>
           <span className="diag-source-tag">{tag}</span> {displayName}
@@ -86,10 +90,16 @@ export function DiagnosticsPanel({
   onRunLeakage?: () => void;
 }) {
   const displayName = new Map(
-    (sourceConfigs?.sources ?? []).map((source) => [source.sourceId, source.displayName]),
+    (sourceConfigs?.sources ?? []).map((source) => [
+      source.sourceId,
+      source.displayName,
+    ]),
   );
   const tag = new Map(
-    (sourceConfigs?.sources ?? []).map((source) => [source.sourceId, source.captionTag]),
+    (sourceConfigs?.sources ?? []).map((source) => [
+      source.sourceId,
+      source.captionTag,
+    ]),
   );
   const scheduler = snapshot.scheduler;
 
@@ -136,22 +146,34 @@ export function DiagnosticsPanel({
               label="Oldest queued"
               value={`${String(scheduler.oldestQueuedMs)} ms`}
             />
-            <Metric label="Avg delay" value={`${String(scheduler.avgQueueDelayMs)} ms`} />
-            <Metric label="Max delay" value={`${String(scheduler.maxQueueDelayMs)} ms`} />
+            <Metric
+              label="Avg delay"
+              value={`${String(scheduler.avgQueueDelayMs)} ms`}
+            />
+            <Metric
+              label="Max delay"
+              value={`${String(scheduler.maxQueueDelayMs)} ms`}
+            />
           </div>
           <div className="diag-metric-row">
             <Metric label="Finals" value={scheduler.finalsCompleted} />
-            <Metric label="Provisionals" value={scheduler.provisionalsCompleted} />
+            <Metric
+              label="Provisionals"
+              value={scheduler.provisionalsCompleted}
+            />
             <Metric
               label="Coalescing"
               value={`${String(Math.round(schedulerCoalescingRate(scheduler) * 100))}%`}
             />
             <Metric label="Overloads" value={scheduler.overloadEvents} />
           </div>
-          {(scheduler.provisionalsDropped > 0 || scheduler.finalsDropped > 0) && (
+          {(scheduler.provisionalsDropped > 0 ||
+            scheduler.finalsDropped > 0) && (
             <p className="diag-hint warn">
-              {scheduler.provisionalsDropped} provisional{scheduler.provisionalsDropped === 1 ? "" : "s"} and{" "}
-              {scheduler.finalsDropped} final{scheduler.finalsDropped === 1 ? "" : "s"} dropped under load
+              {scheduler.provisionalsDropped} provisional
+              {scheduler.provisionalsDropped === 1 ? "" : "s"} and{" "}
+              {scheduler.finalsDropped} final
+              {scheduler.finalsDropped === 1 ? "" : "s"} dropped under load
             </p>
           )}
         </div>
@@ -199,7 +221,9 @@ export function DiagnosticsPanel({
               </button>
             )}
           </div>
-          <div className={`inline-alert ${snapshot.leakage.passed ? "ok" : "error"}`}>
+          <div
+            className={`inline-alert ${snapshot.leakage.passed ? "ok" : "error"}`}
+          >
             <div>
               <strong>
                 {snapshot.leakage.passed

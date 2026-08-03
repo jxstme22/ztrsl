@@ -1,9 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-import {
-  accuracyLabReportSchema,
-  type AccuracyLabReport,
-} from "./model";
+import { accuracyLabReportSchema, type AccuracyLabReport } from "./model";
 
 export type AccuracyConfig = {
   asrName: string;
@@ -47,7 +44,8 @@ export async function compareClips(input: {
                 startMs: 900,
                 endMs: 4100,
                 sourceText: "[demo transcript — local ASR model not installed]",
-                englishText: "[demo translation — local MT model not installed]",
+                englishText:
+                  "[demo translation — local MT model not installed]",
                 warnings: [],
               },
             ]

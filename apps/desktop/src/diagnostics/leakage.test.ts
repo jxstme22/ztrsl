@@ -5,7 +5,10 @@ import { classifyLeakage } from "./leakage";
 const TEAM = "11111111111111111111111111111111";
 const DISCORD = "22222222222222222222222222222222";
 
-function finalCaption(sourceId: string, tag: string): Parameters<typeof classifyLeakage>[0][number] {
+function finalCaption(
+  sourceId: string,
+  tag: string,
+): Parameters<typeof classifyLeakage>[0][number] {
   return {
     protocol_version: 2,
     message_id: "c",
@@ -51,7 +54,13 @@ describe("classifyLeakage", () => {
   it("fails when a caption has no source id", () => {
     const report = classifyLeakage([
       finalCaption(TEAM, "TEAM"),
-      { ...finalCaption(DISCORD, "DISCORD"), payload: { ...finalCaption(DISCORD, "DISCORD").payload, source_id: undefined } },
+      {
+        ...finalCaption(DISCORD, "DISCORD"),
+        payload: {
+          ...finalCaption(DISCORD, "DISCORD").payload,
+          source_id: undefined,
+        },
+      },
     ]);
     expect(report.passed).toBe(false);
     expect(report.detail).toMatch(/missing a source id/i);

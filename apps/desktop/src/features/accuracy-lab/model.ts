@@ -50,9 +50,21 @@ export const ACCURACY_CONFIGS: readonly {
   asrName: string;
   translationName: string;
 }[] = [
-  { label: "Whisper Turbo + NLLB", asrName: "whisper-turbo", translationName: "nllb" },
-  { label: "Whisper Full + NLLB", asrName: "whisper-full", translationName: "nllb" },
-  { label: "Whisper Turbo + MADLAD", asrName: "whisper-turbo", translationName: "madlad" },
+  {
+    label: "Whisper Turbo + NLLB",
+    asrName: "whisper-turbo",
+    translationName: "nllb",
+  },
+  {
+    label: "Whisper Full + NLLB",
+    asrName: "whisper-full",
+    translationName: "nllb",
+  },
+  {
+    label: "Whisper Turbo + MADLAD",
+    asrName: "whisper-turbo",
+    translationName: "madlad",
+  },
   { label: "Demo + Demo", asrName: "demo", translationName: "demo" },
 ];
 

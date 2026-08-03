@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  buildSupportBundle,
-  serializeContentFree,
-} from "./supportBundle";
+import { buildSupportBundle, serializeContentFree } from "./supportBundle";
 import { EMPTY_DIAGNOSTICS, type DiagnosticsSnapshot } from "./model";
 import type { SourceConfigs } from "../sources/model";
 import { DEFAULT_OVERLAY_SETTINGS } from "../overlay/model";

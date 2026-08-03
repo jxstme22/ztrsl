@@ -82,7 +82,11 @@ export const STRICTNESS_META: Record<
   },
 };
 
-export const STRICTNESS_IDS: LanguageStrictness[] = ["off", "balanced", "strict"];
+export const STRICTNESS_IDS: LanguageStrictness[] = [
+  "off",
+  "balanced",
+  "strict",
+];
 
 export const PROFILE_OPTIONS = PROFILE_IDS.map((id) => ({
   value: id,
@@ -124,7 +128,9 @@ export const ASR_PROVIDER_CAPABILITY: Record<string, ProviderCapability> = {
 
 export const DEFAULT_PROVIDER_CAPABILITY: ProviderCapability = "post-filter";
 
-export function providerCapability(provider: string | undefined): ProviderCapability {
+export function providerCapability(
+  provider: string | undefined,
+): ProviderCapability {
   if (provider === undefined) return DEFAULT_PROVIDER_CAPABILITY;
   return ASR_PROVIDER_CAPABILITY[provider] ?? DEFAULT_PROVIDER_CAPABILITY;
 }

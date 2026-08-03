@@ -105,7 +105,11 @@ export function defaultSourceConfig(): AudioSourceConfig {
     labelStyle: "brackets",
     color: null,
     captureTarget: { kind: "endpoint", endpointId: null },
-    monitoring: { enabled: false, headphoneEndpointId: null, volume: DEFAULT_MONITOR_VOLUME },
+    monitoring: {
+      enabled: false,
+      headphoneEndpointId: null,
+      volume: DEFAULT_MONITOR_VOLUME,
+    },
     languageProfile: "tagalog",
     strictness: "balanced",
   };

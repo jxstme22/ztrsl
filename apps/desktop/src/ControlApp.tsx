@@ -41,12 +41,7 @@ import { captionTrustEnabled } from "./sources/captionTrustFlag";
 import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
-  | "live"
-  | "models"
-  | "settings"
-  | "diagnostics"
-  | "sources"
-  | "setup";
+  "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
 
 const APP_VERSION = "0.4.1";
 
@@ -57,7 +52,9 @@ type ModelsController = ReturnType<typeof useModels>;
 type DiagnosticsController = ReturnType<typeof useDiagnostics>;
 type LanguageController = ReturnType<typeof useUiLanguage>;
 
-function navItems(t: LanguageController["t"]): readonly { id: SectionId; label: string }[] {
+function navItems(
+  t: LanguageController["t"],
+): readonly { id: SectionId; label: string }[] {
   return [
     { id: "live", label: t("navLive") },
     { id: "models", label: t("navModels") },
@@ -392,7 +389,8 @@ function SettingsPage({
                 value={snapshot.settings.simultaneousPolicy}
                 onChange={(value) => {
                   controller.updateSettings({
-                    simultaneousPolicy: value as OverlaySettings["simultaneousPolicy"],
+                    simultaneousPolicy:
+                      value as OverlaySettings["simultaneousPolicy"],
                   });
                 }}
                 options={[
@@ -401,7 +399,9 @@ function SettingsPage({
                   { value: "primary-wins", label: t("settingsPrimaryWins") },
                 ]}
               />
-              <small className="field-note">{t("settingsSimultaneousNote")}</small>
+              <small className="field-note">
+                {t("settingsSimultaneousNote")}
+              </small>
             </label>
 
             <label className="field">
@@ -423,7 +423,9 @@ function SettingsPage({
                   })),
                 ]}
               />
-              <small className="field-note">{t("settingsPrimarySourceNote")}</small>
+              <small className="field-note">
+                {t("settingsPrimarySourceNote")}
+              </small>
             </label>
           </div>
 
@@ -506,7 +508,9 @@ function SettingsPage({
 
             <div className="range-field">
               <div className="range-label">
-                <label htmlFor="background-opacity">{t("settingsBackground")}</label>
+                <label htmlFor="background-opacity">
+                  {t("settingsBackground")}
+                </label>
                 <output htmlFor="background-opacity">
                   {Math.round(snapshot.settings.backgroundOpacity * 100)}%
                 </output>

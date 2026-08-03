@@ -185,7 +185,7 @@ describe("useModels", () => {
         },
       ],
       inUse: [],
-  known: [],
+      known: [],
     });
     act(() => {
       handler?.({

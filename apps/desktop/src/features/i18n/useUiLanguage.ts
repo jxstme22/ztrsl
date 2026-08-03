@@ -10,10 +10,7 @@ export function useUiLanguage() {
     saveUiLanguage(language);
   }, [language]);
 
-  const t = useCallback(
-    (key: UIKey) => translate(key, language),
-    [language],
-  );
+  const t = useCallback((key: UIKey) => translate(key, language), [language]);
 
   return { language, setLanguage, t };
 }

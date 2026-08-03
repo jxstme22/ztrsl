@@ -43,7 +43,9 @@ export async function importOfflinePack(packDir: string): Promise<string[]> {
   if (!isTauri()) {
     return [];
   }
-  return z.array(z.string()).parse(await invoke("models_import_offline_pack", { packDir }));
+  return z
+    .array(z.string())
+    .parse(await invoke("models_import_offline_pack", { packDir }));
 }
 
 /** Persist a user-chosen download endpoint; empty string resets to auto. */

@@ -18,7 +18,10 @@ function source(supplied: Partial<CaptionSource>): CaptionSource {
   };
 }
 
-function snapshot(captions: Caption[], overrides: Partial<OverlaySnapshot> = {}) {
+function snapshot(
+  captions: Caption[],
+  overrides: Partial<OverlaySnapshot> = {},
+) {
   return {
     visible: true,
     mode: "play" as const,
@@ -137,7 +140,12 @@ describe("CaptionStack lanes", () => {
   });
 
   it("expires per-source captions independently", () => {
-    const teamCaption = caption("team", "Rotate B!", source({ captionTag: "TEAM" }), "provisional");
+    const teamCaption = caption(
+      "team",
+      "Rotate B!",
+      source({ captionTag: "TEAM" }),
+      "provisional",
+    );
     const expiredTeam: Caption = { ...teamCaption, expiresAtMs: 100 };
     render(
       <CaptionStack

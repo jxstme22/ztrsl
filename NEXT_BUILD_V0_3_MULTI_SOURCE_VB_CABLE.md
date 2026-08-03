@@ -79,17 +79,17 @@ This specification extends the existing architecture rather than replacing it.
 
 Current project components:
 
-| Existing component | Current responsibility | v0.3.0 extension |
-|---|---|---|
-| `apps/desktop` | Tauri control app and overlay | Multi-source setup, source labels, routing wizard |
-| `crates/audio-core` | WASAPI capture/playback, resampling, ring buffers | Multiple concurrent source pipelines |
-| `crates/sidecar-supervisor` | Sidecar lifecycle and health | Multi-source configuration and recovery |
-| `crates/ipc-protocol` | Versioned Rust/Python messages | Add `source_id`, source profile, priorities |
-| `crates/model-manager` | Catalog and downloads | Provider-neutral mirrors and offline packs |
-| `crates/overlay-core` | Overlay metrics/state | Source-aware caption lanes |
-| `crates/diagnostics` | Shared metrics | Per-source metrics and scheduler metrics |
-| `services/inference` | VAD, Whisper, translation, live worker | Per-source VAD/utterance state and shared inference scheduler |
-| `crates/translation-runner` | MADLAD Candle runner | Shared translation jobs from multiple sources |
+| Existing component          | Current responsibility                            | v0.3.0 extension                                              |
+| --------------------------- | ------------------------------------------------- | ------------------------------------------------------------- |
+| `apps/desktop`              | Tauri control app and overlay                     | Multi-source setup, source labels, routing wizard             |
+| `crates/audio-core`         | WASAPI capture/playback, resampling, ring buffers | Multiple concurrent source pipelines                          |
+| `crates/sidecar-supervisor` | Sidecar lifecycle and health                      | Multi-source configuration and recovery                       |
+| `crates/ipc-protocol`       | Versioned Rust/Python messages                    | Add `source_id`, source profile, priorities                   |
+| `crates/model-manager`      | Catalog and downloads                             | Provider-neutral mirrors and offline packs                    |
+| `crates/overlay-core`       | Overlay metrics/state                             | Source-aware caption lanes                                    |
+| `crates/diagnostics`        | Shared metrics                                    | Per-source metrics and scheduler metrics                      |
+| `services/inference`        | VAD, Whisper, translation, live worker            | Per-source VAD/utterance state and shared inference scheduler |
+| `crates/translation-runner` | MADLAD Candle runner                              | Shared translation jobs from multiple sources                 |
 
 The current pipeline sends one selected Windows audio stream through one VAD/ASR/translation path. v0.3.0 turns that into a set of independent source pipelines feeding one shared inference scheduler.
 
@@ -367,21 +367,21 @@ Rendered output:
 
 Every source editor must expose:
 
-| Field | Example |
-|---|---|
-| Source name | Discord Friends |
-| Caption tag | DISCORD |
-| Caption label style | `[TAG] Caption` |
-| Audio capture type | WASAPI endpoint |
-| Audio input | CABLE-B Output |
-| Language profile | Tagalog + English |
-| Language strictness | Balanced |
-| Priority | Normal |
-| Overlay lane | Secondary |
-| Monitoring | Enabled |
-| Monitoring volume | 80% |
-| Captions | Enabled |
-| Provisional captions | Disabled |
+| Field                | Example           |
+| -------------------- | ----------------- |
+| Source name          | Discord Friends   |
+| Caption tag          | DISCORD           |
+| Caption label style  | `[TAG] Caption`   |
+| Audio capture type   | WASAPI endpoint   |
+| Audio input          | CABLE-B Output    |
+| Language profile     | Tagalog + English |
+| Language strictness  | Balanced          |
+| Priority             | Normal            |
+| Overlay lane         | Secondary         |
+| Monitoring           | Enabled           |
+| Monitoring volume    | 80%               |
+| Captions             | Enabled           |
+| Provisional captions | Disabled          |
 
 The editor must show a live preview:
 
@@ -503,16 +503,16 @@ Strictness belongs to `AudioSourceConfig`, not the global application. Source A 
 
 ### 6.1 Strictness behavior
 
-| Behavior | Off | Balanced | Strict |
-|---|---:|---:|---:|
-| Use selected profile to choose model/glossary | Yes | Yes | Yes |
-| Force ASR language when provider supports it | No | Prefer when safe | Yes |
-| Allow code-switching languages in profile | Yes | Yes | Only when profile allows them |
-| Reject clearly unrelated languages | No | Yes | Yes |
-| Reject uncertain short speech | No | Usually no | Only above configured minimum duration |
-| Allow tactical glossary bypass | Yes | Yes | Yes |
-| Raise minimum display confidence | No | Moderate | High |
-| Translate already-English text | Usually skip | Skip | Skip unless explicitly configured |
+| Behavior                                      |          Off |         Balanced |                                 Strict |
+| --------------------------------------------- | -----------: | ---------------: | -------------------------------------: |
+| Use selected profile to choose model/glossary |          Yes |              Yes |                                    Yes |
+| Force ASR language when provider supports it  |           No | Prefer when safe |                                    Yes |
+| Allow code-switching languages in profile     |          Yes |              Yes |          Only when profile allows them |
+| Reject clearly unrelated languages            |           No |              Yes |                                    Yes |
+| Reject uncertain short speech                 |           No |       Usually no | Only above configured minimum duration |
+| Allow tactical glossary bypass                |          Yes |              Yes |                                    Yes |
+| Raise minimum display confidence              |           No |         Moderate |                                   High |
+| Translate already-English text                | Usually skip |             Skip |      Skip unless explicitly configured |
 
 #### Off
 
@@ -738,9 +738,7 @@ Within one priority:
 
 ```typescript
 type SimultaneousCaptionPolicy =
-  | "show_both"
-  | "prioritize_team"
-  | "team_only_when_simultaneous";
+  "show_both" | "prioritize_team" | "team_only_when_simultaneous";
 ```
 
 Default:
@@ -947,9 +945,7 @@ Let's go!
 
 ```typescript
 type SimultaneousCaptionPolicy =
-  | "show_both"
-  | "prioritize_primary"
-  | "primary_only_when_simultaneous";
+  "show_both" | "prioritize_primary" | "primary_only_when_simultaneous";
 ```
 
 Source priority and lane—not the editable tag—control scheduling and visibility.
@@ -1153,15 +1149,15 @@ Custom
 
 ### 11.1 Initial recommendations
 
-| Language profile | ASR default | Translation default |
-|---|---|---|
-| Tagalog | Whisper large-v3-turbo | MADLAD |
-| Taglish | Whisper large-v3-turbo | MADLAD |
-| Cebuano | Omnilingual CTC 300M int8 | MADLAD |
-| Bislish | Omnilingual CTC 300M int8 | MADLAD |
-| Mandarin | Whisper large-v3-turbo or dedicated Chinese model | MADLAD |
-| Chinese + English | Whisper large-v3-turbo | MADLAD |
-| Auto | Whisper large-v3-turbo | MADLAD |
+| Language profile  | ASR default                                       | Translation default |
+| ----------------- | ------------------------------------------------- | ------------------- |
+| Tagalog           | Whisper large-v3-turbo                            | MADLAD              |
+| Taglish           | Whisper large-v3-turbo                            | MADLAD              |
+| Cebuano           | Omnilingual CTC 300M int8                         | MADLAD              |
+| Bislish           | Omnilingual CTC 300M int8                         | MADLAD              |
+| Mandarin          | Whisper large-v3-turbo or dedicated Chinese model | MADLAD              |
+| Chinese + English | Whisper large-v3-turbo                            | MADLAD              |
+| Auto              | Whisper large-v3-turbo                            | MADLAD              |
 
 ### 11.2 Capability manifest
 
@@ -1828,4 +1824,3 @@ flowchart TB
 The central design rule is:
 
 > Separate audio sources before ASR, preserve immutable source identity through the pipeline, let users freely edit presentation names and tags, enforce language behavior per source, and share expensive models only at the bounded inference scheduler.
-

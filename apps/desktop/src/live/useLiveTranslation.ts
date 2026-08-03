@@ -63,7 +63,8 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
             ? readingDurationMs(payload.english_text)
             : 4_000),
         source:
-          payload.source_id === undefined || payload.source_snapshot === undefined
+          payload.source_id === undefined ||
+          payload.source_snapshot === undefined
             ? undefined
             : {
                 sourceId: payload.source_id,

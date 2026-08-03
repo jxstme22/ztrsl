@@ -65,8 +65,9 @@ export function useModels(desktopOnly = true): ModelUiState {
   const [error, setError] = useState<string | null>(null);
   const [downloadEndpoint, setDownloadEndpointState] =
     useState<DownloadEndpointInfo>(EMPTY_DOWNLOAD_ENDPOINT);
-  const [providerStatus, setProviderStatus] =
-    useState<ProviderStatus>(EMPTY_PROVIDER_STATUS);
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus>(
+    EMPTY_PROVIDER_STATUS,
+  );
   const refreshRef = useRef<() => void>(() => undefined);
 
   const refresh = useCallback(async () => {
@@ -198,17 +199,20 @@ export function useModels(desktopOnly = true): ModelUiState {
     [list.models],
   );
 
-  const importOffline = useCallback(async (packDir: string) => {
-    setError(null);
-    try {
-      const imported = await importOfflinePack(packDir);
-      await refresh();
-      return imported;
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      return [];
-    }
-  }, [refresh]);
+  const importOffline = useCallback(
+    async (packDir: string) => {
+      setError(null);
+      try {
+        const imported = await importOfflinePack(packDir);
+        await refresh();
+        return imported;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return [];
+      }
+    },
+    [refresh],
+  );
 
   return {
     list,

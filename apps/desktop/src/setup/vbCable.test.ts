@@ -77,10 +77,7 @@ describe("detectVbCable", () => {
 
   it("flags a disabled CABLE endpoint as degraded instead of installed", () => {
     const detection = detectVbCable(
-      catalog([
-        endpoint({ ...CABLE_INPUT, state: "disabled" }),
-        CABLE_OUTPUT,
-      ]),
+      catalog([endpoint({ ...CABLE_INPUT, state: "disabled" }), CABLE_OUTPUT]),
     );
     expect(detection.installed).toBe(false);
     expect(detection.degraded).toBe(true);

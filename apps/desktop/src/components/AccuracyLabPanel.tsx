@@ -1,7 +1,10 @@
 import { LoaderCircle, TestTube2 } from "lucide-react";
 import { useState } from "react";
 
-import { compareClips, type AccuracyConfig } from "../features/accuracy-lab/bridge";
+import {
+  compareClips,
+  type AccuracyConfig,
+} from "../features/accuracy-lab/bridge";
 import {
   ACCURACY_CONFIGS,
   type AccuracyLabReport,
@@ -25,7 +28,10 @@ function RunTable({ report }: { report: AccuracyLabReport }) {
         </thead>
         <tbody>
           {report.runs.map((run) => (
-            <tr key={run.label} data-critical={run.criticalErrors > 0 || undefined}>
+            <tr
+              key={run.label}
+              data-critical={run.criticalErrors > 0 || undefined}
+            >
               <td>{run.label}</td>
               <td className="acc-model">{run.modelId}</td>
               <td>{Math.round(run.asrMs)} ms</td>
@@ -170,7 +176,10 @@ export function AccuracyLabPanel() {
                 value: ACCURACY_CONFIGS.map((config) => config.label).join(","),
                 label: "All installed configs",
               },
-              { value: ACCURACY_CONFIGS[3]?.label ?? "Demo + Demo", label: "Demo + Demo" },
+              {
+                value: ACCURACY_CONFIGS[3]?.label ?? "Demo + Demo",
+                label: "Demo + Demo",
+              },
             ]}
           />
         </div>
@@ -205,10 +214,14 @@ export function AccuracyLabPanel() {
             Export JSON
           </button>
         )}
-        <span className="capture-safety">Local-only · no transcripts in exports</span>
+        <span className="capture-safety">
+          Local-only · no transcripts in exports
+        </span>
       </div>
 
-      {exported && <p className="lst-ok-text">Report exported (content-free).</p>}
+      {exported && (
+        <p className="lst-ok-text">Report exported (content-free).</p>
+      )}
 
       {report !== null && <RunTable report={report} />}
     </section>
