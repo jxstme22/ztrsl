@@ -2,6 +2,7 @@ import {
   Activity,
   Boxes,
   Gauge,
+  Mic,
   Minus,
   Settings,
   X,
@@ -19,14 +20,16 @@ import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
 import { ModelsPanel } from "./components/ModelsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
+import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
 import { useAudioMeter } from "./audio/useAudioMeter";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime } from "./overlay/bridge";
 import { useOverlayController } from "./overlay/useOverlayController";
+import { multiSourceEnabled } from "./sources/featureFlag";
 
-type SectionId = "live" | "models" | "settings" | "diagnostics";
+type SectionId = "live" | "models" | "settings" | "diagnostics" | "sources";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -36,6 +39,9 @@ type ModelsController = ReturnType<typeof useModels>;
 const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
   { id: "live", label: "Live" },
   { id: "models", label: "Models" },
+  ...(multiSourceEnabled()
+    ? ([{ id: "sources", label: "Sources" }] as const)
+    : []),
   { id: "settings", label: "Settings" },
   { id: "diagnostics", label: "Diagnostics" },
 ];
@@ -43,6 +49,7 @@ const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
   models: Boxes,
+  sources: Mic,
   settings: Settings,
   diagnostics: Gauge,
 };
@@ -112,6 +119,11 @@ export function ControlApp() {
             <LivePage controller={controller} audio={audio} live={live} />
           )}
           {section === "models" && <ModelsPage models={models} />}
+          {section === "sources" && (
+            <div className="page-stack">
+              <SourcesPanel />
+            </div>
+          )}
           {section === "settings" && <SettingsPage controller={controller} />}
           {section === "diagnostics" && (
             <DiagnosticsPage
