@@ -841,3 +841,32 @@ def test_v2_live_two_sources_keep_independent_utterances_and_rename_does_not_spl
             stop.set()
 
     asyncio.run(with_server(scenario))
+
+
+def test_model_artifact_dir_resolves_both_layouts(tmp_path: Path) -> None:
+    """v0.3 regression: in-app (Rust) downloads live at LST_MODEL_DIR/<id>,
+    CLI downloads at LST_MODEL_DIR/artifacts/<id>. Both must resolve."""
+    import os
+
+    from local_squad_inference.sidecar import _model_artifact_dir
+
+    # Clear the lru cache so env changes are picked up.
+    _model_artifact_dir.cache_clear()
+
+    rust_layout = tmp_path / "rust"
+    (rust_layout / "whisper-large-v3-turbo").mkdir(parents=True)
+    cli_layout = tmp_path / "cli"
+    (cli_layout / "artifacts" / "nllb-200-distilled-600M-ct2-int8").mkdir(parents=True)
+
+    os.environ["LST_MODEL_DIR"] = str(rust_layout)
+    assert _model_artifact_dir("whisper-large-v3-turbo") == (rust_layout / "whisper-large-v3-turbo")
+
+    os.environ["LST_MODEL_DIR"] = str(cli_layout)
+    assert _model_artifact_dir("nllb-200-distilled-600M-ct2-int8") == (
+        cli_layout / "artifacts" / "nllb-200-distilled-600M-ct2-int8"
+    )
+
+    # Missing model falls back to the artifacts path (gives a clean error).
+    os.environ["LST_MODEL_DIR"] = str(rust_layout)
+    assert _model_artifact_dir("missing-model") == (rust_layout / "artifacts" / "missing-model")
+    _model_artifact_dir.cache_clear()

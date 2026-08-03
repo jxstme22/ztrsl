@@ -23,12 +23,14 @@ function endpoint(overrides: Partial<AudioEndpoint>): AudioEndpoint {
 const CABLE_INPUT = endpoint({
   id: "dev://cable-input",
   friendlyName: "CABLE Input (VB-Audio Virtual Cable)",
-  kind: "capture",
+  // "CABLE Input" is a render (playback) endpoint: apps play voice into it.
+  kind: "render",
 });
 const CABLE_OUTPUT = endpoint({
   id: "dev://cable-output",
   friendlyName: "CABLE Output (VB-Audio Virtual Cable)",
-  kind: "render",
+  // "CABLE Output" is a capture (recording) endpoint: the app records from it.
+  kind: "capture",
 });
 
 function catalog(endpoints: AudioEndpoint[]): EndpointCatalog {
@@ -53,8 +55,8 @@ describe("detectVbCable", () => {
   it("matches names case-insensitively and without the VB-Audio suffix", () => {
     const detection = detectVbCable(
       catalog([
-        endpoint({ id: "a", friendlyName: "cable input", kind: "capture" }),
-        endpoint({ id: "b", friendlyName: "Cable Output", kind: "render" }),
+        endpoint({ id: "a", friendlyName: "cable input", kind: "render" }),
+        endpoint({ id: "b", friendlyName: "Cable Output", kind: "capture" }),
       ]),
     );
     expect(detection.installed).toBe(true);
@@ -85,17 +87,17 @@ describe("detectVbCable", () => {
     expect(detection.issues.join(" ")).toContain("not active");
   });
 
-  it("ignores unrelated devices that merely share a name fragment", () => {
+  it("ignores unrelated render devices that merely share a name fragment", () => {
     const detection = detectVbCable(
       catalog([
         endpoint({
-          id: "dev://fake",
-          friendlyName: "Cable input mixer app",
+          id: "dev://usb",
+          friendlyName: "USB Headset Cable",
           kind: "render",
         }),
         endpoint({
-          id: "dev://usb",
-          friendlyName: "USB Headset Cable",
+          id: "dev://mixer",
+          friendlyName: "Mixer Capture",
           kind: "capture",
         }),
       ]),

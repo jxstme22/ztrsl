@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import wave
 from array import array
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -167,3 +168,60 @@ class FfmpegDecoder:
             if process.poll() is None:
                 process.kill()
                 process.wait()
+
+
+class WaveDecoder:
+    """Pure-Python WAV decoder — no FFmpeg required.
+
+    New users can try Clip Lab with a `.wav` file even before installing
+    FFmpeg. Supports 16-bit PCM mono/stereo at 16 kHz; other formats fall back
+    to the FFmpeg decoder when it is available.
+    """
+
+    def __init__(self) -> None:
+        self._sample_rate = SAMPLE_RATE
+
+    def inspect(self, source: Path) -> MediaMetadata:
+        resolved = source.expanduser().resolve(strict=True)
+        if not resolved.is_file():
+            raise MediaError("selected media path is not a file")
+        if resolved.suffix.lower() not in ALLOWED_EXTENSIONS:
+            raise MediaError("selected file type is not supported")
+        size_bytes = resolved.stat().st_size
+        if size_bytes > MAX_FILE_BYTES:
+            raise MediaError("selected media file exceeds the 2 GiB safety limit")
+        try:
+            with wave.open(str(resolved), "rb") as reader:
+                sample_rate = reader.getframerate()
+                frames = reader.getnframes()
+                width = reader.getsampwidth()
+        except (wave.Error, OSError, EOFError) as error:
+            raise MediaError("not a readable WAV file") from error
+        if width != 2:
+            raise MediaError("WAV must be 16-bit PCM for the built-in decoder")
+        if sample_rate != self._sample_rate:
+            raise MediaError(
+                f"WAV sample rate must be {self._sample_rate} Hz for the built-in decoder"
+            )
+        duration = frames / sample_rate
+        if duration <= 0 or duration > MAX_DURATION_SECONDS:
+            raise MediaError("selected media duration is outside the 2-hour safety limit")
+        return MediaMetadata(resolved.name, duration, size_bytes, True)
+
+    def chunks(self, source: Path) -> Iterator[tuple[float, ...]]:
+        resolved = source.expanduser().resolve(strict=True)
+        with wave.open(str(resolved), "rb") as reader:
+            channels = reader.getnchannels()
+            while True:
+                raw = reader.readframes(CHUNK_SAMPLES)
+                if not raw:
+                    break
+                values = array("h")
+                values.frombytes(raw)
+                # Convert 16-bit PCM ints to f32 in [-1, 1]; downmix stereo.
+                if channels == 1:
+                    samples = tuple(value / 32768.0 for value in values)
+                else:
+                    pairs = zip(values[0::2], values[1::2], strict=True)
+                    samples = tuple((left + right) / 2 / 32768.0 for left, right in pairs)
+                yield samples

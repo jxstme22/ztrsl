@@ -11,33 +11,44 @@ import {
 } from "lucide-react";
 
 import { formatBytes, ProgressBar } from "./ModelsPanel";
+import { Select } from "./Select";
+import type { UiLanguageController } from "../features/i18n/useUiLanguage";
 import type { ModelInfo } from "../models/model";
 import type { ModelUiState } from "../models/useModels";
 
 const STEPS: readonly {
   number: string;
   icon: typeof Ear;
-  title: string;
-  text: string;
+  title: "welcomeListen" | "welcomeTranslate" | "welcomePrivate";
+  text: "welcomeListenText" | "welcomeTranslateText" | "welcomePrivateText";
 }[] = [
-  { number: "1", icon: Ear, title: "Listen", text: "Captures voice chat" },
+  { number: "1", icon: Ear, title: "welcomeListen", text: "welcomeListenText" },
   {
     number: "2",
     icon: Languages,
-    title: "Translate",
-    text: "Tagalog & Cebuano to English",
+    title: "welcomeTranslate",
+    text: "welcomeTranslateText",
   },
-  { number: "3", icon: Lock, title: "Private", text: "Runs on this PC" },
+  { number: "3", icon: Lock, title: "welcomePrivate", text: "welcomePrivateText" },
 ];
 
 function ChoiceCard({
   model,
   models,
   onInstall,
+  t,
 }: {
   model: ModelInfo;
   models: ModelUiState;
   onInstall: (id: string) => void;
+  t: (
+    key:
+      | "install"
+      | "cancel"
+      | "recommended"
+      | "welcomeSpeechRecognition"
+      | "welcomeTranslation",
+  ) => string;
 }) {
   const progress = models.progress[model.id];
   const installing = progress !== undefined && !progress.done;
@@ -46,12 +57,14 @@ function ChoiceCard({
     <article className="lst-model-card lst-welcome-card">
       <div className="lst-model-card-head">
         <h3>{model.name}</h3>
-        {model.recommended && <span className="lst-badge">Recommended</span>}
+        {model.recommended && <span className="lst-badge">{t("recommended")}</span>}
       </div>
       <p className="lst-model-description">{model.description}</p>
       <div className="lst-model-meta">
         <span>
-          {model.kind === "asr" ? "Speech recognition" : "Translation"}
+          {model.kind === "asr"
+            ? t("welcomeSpeechRecognition")
+            : t("welcomeTranslation")}
         </span>
         <span>·</span>
         <span>{formatBytes(model.downloadSizeBytes)}</span>
@@ -69,7 +82,7 @@ function ChoiceCard({
               void models.cancel(model.id);
             }}
           >
-            Cancel
+            {t("cancel")}
           </button>
         ) : (
           <button
@@ -80,7 +93,7 @@ function ChoiceCard({
             }}
           >
             <HardDriveDownload aria-hidden="true" size={14} />
-            Install
+            {t("install")}
           </button>
         )}
       </div>
@@ -93,13 +106,16 @@ export function WelcomeModelsDialog({
   onInstall,
   error,
   onRetry,
+  language,
 }: {
   models: ModelUiState;
   onInstall: (id: string) => void;
   error: string | null;
   onRetry: () => void;
+  language: UiLanguageController;
 }) {
   const [showOptional, setShowOptional] = useState(false);
+  const { t, setLanguage } = language;
   const recommended = models.available.filter((model) => model.recommended);
   const others = models.available.filter((model) => !model.recommended);
 
@@ -108,7 +124,7 @@ export function WelcomeModelsDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Welcome to xTRSNLTR"
+        aria-label={t("welcomeTitle")}
         className="lst-welcome"
       >
         <div className="lst-welcome-accent" aria-hidden="true" />
@@ -117,14 +133,28 @@ export function WelcomeModelsDialog({
             <ShieldCheck size={20} />
           </span>
           <div>
-            <h2>Welcome to xTRSNLTR</h2>
-            <p className="lst-welcome-sub">
-              VALORANT voice chat, captioned in English — on this PC.
-            </p>
+            <h2>{t("welcomeTitle")}</h2>
+            <p className="lst-welcome-sub">{t("welcomeSub")}</p>
           </div>
         </div>
 
-        <ol className="lst-welcome-steps" aria-label="How it works">
+        <div className="field lst-welcome-language">
+          <span>{t("welcomeChooseLanguage")}</span>
+          <Select
+            id="welcome-language"
+            label={t("welcomeChooseLanguage")}
+            value={language.language}
+            onChange={(value) => {
+              setLanguage(value as "en" | "zh");
+            }}
+            options={[
+              { value: "en", label: "English" },
+              { value: "zh", label: "简体中文" },
+            ]}
+          />
+        </div>
+
+        <ol className="lst-welcome-steps" aria-label={t("welcomeSub")}>
           {STEPS.map(({ number, icon: Icon, title, text }) => (
             <li key={number}>
               <span className="lst-welcome-step-number" aria-hidden="true">
@@ -132,8 +162,8 @@ export function WelcomeModelsDialog({
               </span>
               <Icon aria-hidden="true" size={15} />
               <div>
-                <strong>{title}</strong>
-                <span>{text}</span>
+                <strong>{t(title)}</strong>
+                <span>{t(text)}</span>
               </div>
             </li>
           ))}
@@ -142,12 +172,12 @@ export function WelcomeModelsDialog({
         {models.loading ? (
           <div className="lst-welcome-loading" role="status">
             <span className="lst-spinner" aria-hidden="true" />
-            Reading the model catalog…
+            {t("welcomeReadingCatalog")}
           </div>
         ) : error !== null ? (
           <div className="lst-welcome-error" role="alert">
             <div>
-              <strong>Could not load the model catalog.</strong>
+              <strong>{t("welcomeCatalogError")}</strong>
               <p>{error}</p>
             </div>
             <button
@@ -156,22 +186,19 @@ export function WelcomeModelsDialog({
               onClick={onRetry}
             >
               <RotateCw aria-hidden="true" size={14} />
-              Try again
+              {t("retry")}
             </button>
           </div>
         ) : (
           <>
             <div className="lst-welcome-pick">
-              <h3 className="section-heading">Pick your models</h3>
-              <p>
-                Start with the recommended pair. Downloads are verified and can
-                be changed anytime in the Models tab.
-              </p>
+              <h3 className="section-heading">{t("welcomePickModels")}</h3>
+              <p>{t("welcomePickText")}</p>
             </div>
 
             <section
               className="lst-model-section"
-              aria-label="Recommended models"
+              aria-label={t("recommended")}
             >
               <div className="lst-model-grid">
                 {recommended.map((model) => (
@@ -180,6 +207,7 @@ export function WelcomeModelsDialog({
                     model={model}
                     models={models}
                     onInstall={onInstall}
+                    t={t}
                   />
                 ))}
               </div>
@@ -188,7 +216,7 @@ export function WelcomeModelsDialog({
             {others.length > 0 && (
               <section
                 className="lst-model-section lst-welcome-optional"
-                aria-label="Optional models"
+                aria-label={t("welcomeShowOptional")}
               >
                 <button
                   type="button"
@@ -203,8 +231,7 @@ export function WelcomeModelsDialog({
                   ) : (
                     <ChevronRight aria-hidden="true" size={14} />
                   )}
-                  Show {others.length} optional model
-                  {others.length === 1 ? "" : "s"}
+                  {t("welcomeShowOptional")} ({others.length})
                 </button>
                 {showOptional && (
                   <div className="lst-model-grid lst-welcome-optional-grid">
@@ -214,6 +241,7 @@ export function WelcomeModelsDialog({
                         model={model}
                         models={models}
                         onInstall={onInstall}
+                        t={t}
                       />
                     ))}
                   </div>
@@ -223,10 +251,7 @@ export function WelcomeModelsDialog({
           </>
         )}
 
-        <p className="lst-welcome-foot">
-          Installer is ready when at least one model is installed — you can
-          start and stop subtitles from the Live tab.
-        </p>
+        <p className="lst-welcome-foot">{t("welcomeFoot")}</p>
       </div>
     </div>
   );

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from local_squad_inference.media import FfmpegDecoder, MediaMetadata
+from local_squad_inference.media import FfmpegDecoder, MediaError, MediaMetadata, WaveDecoder
 from local_squad_inference.providers import (
     AsrProvider,
     AsrResult,
@@ -58,8 +58,19 @@ def process_clip(
 ) -> ClipResult:
     if source_mode not in {"filipino", "cebuano", "chinese", "mixed", "english"}:
         raise ValueError("unsupported source mode")
-    media = decoder or FfmpegDecoder()
-    metadata = media.inspect(source)
+    # New users without FFmpeg can still try Clip Lab with a WAV file: the
+    # pure-Python WaveDecoder validates on inspect and raises MediaError for
+    # non-16 kHz / non-16-bit formats, in which case we fall back to FFmpeg.
+    if decoder is None and source.suffix.lower() == ".wav":
+        media: ClipDecoder = WaveDecoder()
+        try:
+            metadata = media.inspect(source)
+        except MediaError:
+            media = FfmpegDecoder()
+            metadata = media.inspect(source)
+    else:
+        media = decoder or FfmpegDecoder()
+        metadata = media.inspect(source)
     translation_provider = translation or DemoTranslationProvider()
     if file_asr is not None:
         return _process_contextual_file(

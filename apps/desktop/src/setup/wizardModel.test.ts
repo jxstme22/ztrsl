@@ -41,12 +41,12 @@ function endpoint(overrides: Partial<AudioEndpoint>): AudioEndpoint {
 const CABLE_INPUT = endpoint({
   id: "dev://cable-input",
   friendlyName: "CABLE Input (VB-Audio Virtual Cable)",
-  kind: "capture",
+  kind: "render",
 });
 const CABLE_OUTPUT = endpoint({
   id: "dev://cable-output",
   friendlyName: "CABLE Output (VB-Audio Virtual Cable)",
-  kind: "render",
+  kind: "capture",
 });
 const HEADPHONES = endpoint({
   id: "dev://headphones",

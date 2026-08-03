@@ -260,14 +260,14 @@ function ModelCard({
         <span>{model.licenseSpdx}</span>
       </div>
       <div className="lst-model-meta">
-        <span>{capabilityLabel(model.capabilities.languageCapability)}</span>
-        <span>·</span>
-        <span>{vramLabel(model.capabilities.vramClass)}</span>
+        <span className="lst-capability">
+          {capabilityLabel(model.capabilities.languageCapability)}
+        </span>
+        <span className="lst-capability">{vramLabel(model.capabilities.vramClass)}</span>
         {model.capabilities.recommendedProfiles.length > 0 && (
-          <>
-            <span>·</span>
-            <span>Recommended for: {model.capabilities.recommendedProfiles.join(", ")}</span>
-          </>
+          <span className="lst-capability">
+            {model.capabilities.recommendedProfiles.join(", ")}
+          </span>
         )}
       </div>
       {installing && <ProgressBar event={progress} />}

@@ -24,11 +24,13 @@ import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
 import { ModelsPanel } from "./components/ModelsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
+import { Select } from "./components/Select";
 import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
 import { SetupWizard } from "./setup/SetupWizard";
 import { useAudioMeter } from "./audio/useAudioMeter";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
+import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime } from "./overlay/bridge";
@@ -53,16 +55,22 @@ type AudioController = ReturnType<typeof useAudioMeter>;
 type LiveController = ReturnType<typeof useLiveTranslation>;
 type ModelsController = ReturnType<typeof useModels>;
 type DiagnosticsController = ReturnType<typeof useDiagnostics>;
+type LanguageController = ReturnType<typeof useUiLanguage>;
 
-const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
-  { id: "live", label: "Live" },
-  { id: "models", label: "Models" },
-  ...(multiSourceEnabled()
-    ? ([{ id: "setup", label: "Setup" }, { id: "sources", label: "Sources" }] as const)
-    : []),
-  { id: "settings", label: "Settings" },
-  { id: "diagnostics", label: "Diagnostics" },
-];
+function navItems(t: LanguageController["t"]): readonly { id: SectionId; label: string }[] {
+  return [
+    { id: "live", label: t("navLive") },
+    { id: "models", label: t("navModels") },
+    ...(multiSourceEnabled()
+      ? ([
+          { id: "setup", label: t("navSetup") },
+          { id: "sources", label: t("navSources") },
+        ] as const)
+      : []),
+    { id: "settings", label: t("navSettings") },
+    { id: "diagnostics", label: t("navDiagnostics") },
+  ];
+}
 
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
@@ -79,6 +87,7 @@ export function ControlApp() {
   const live = useLiveTranslation(controller.ingestCaption);
   const models = useModels();
   const diagnostics = useDiagnostics();
+  const language = useUiLanguage();
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
 
@@ -113,7 +122,7 @@ export function ControlApp() {
       <div className="app-body">
         <aside className="sidebar">
           <nav className="sidebar-nav" aria-label="Sections">
-            {NAV_ITEMS.map((item) => {
+            {navItems(language.t).map((item) => {
               const Icon = NAV_ICONS[item.id];
               return (
                 <button
@@ -153,7 +162,9 @@ export function ControlApp() {
               />
             </div>
           )}
-          {section === "settings" && <SettingsPage controller={controller} />}
+          {section === "settings" && (
+            <SettingsPage controller={controller} language={language} />
+          )}
           {section === "diagnostics" && (
             <DiagnosticsPage
               audio={audio}
@@ -171,6 +182,7 @@ export function ControlApp() {
           error={models.error}
           onInstall={(id) => void models.startInstall(id)}
           onRetry={() => void models.refresh()}
+          language={language}
         />
       )}
     </main>
@@ -288,16 +300,48 @@ function LivePage({
   );
 }
 
-function SettingsPage({ controller }: { controller: Controller }) {
+function SettingsPage({
+  controller,
+  language,
+}: {
+  controller: Controller;
+  language: LanguageController;
+}) {
   const { snapshot } = controller;
+  const { t, setLanguage } = language;
   const sources = useMemo(() => loadSourceConfigs().sources, []);
 
   return (
     <div className="page-stack">
+      <section className="card" aria-labelledby="interface-language">
+        <div className="card-head">
+          <h2 className="card-title" id="interface-language">
+            {t("settingsInterfaceLanguage")}
+          </h2>
+        </div>
+        <div className="settings-block">
+          <div className="field">
+            <span>{t("settingsInterfaceLanguageNote")}</span>
+            <Select
+              id="interface-language-picker"
+              label={t("settingsInterfaceLanguage")}
+              value={language.language}
+              onChange={(value) => {
+                setLanguage(value as "en" | "zh");
+              }}
+              options={[
+                { value: "en", label: t("english") },
+                { value: "zh", label: t("chineseSimplified") },
+              ]}
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="card" aria-labelledby="overlay-appearance">
         <div className="card-head">
           <h2 className="card-title" id="overlay-appearance">
-            Overlay appearance
+            {t("settingsOverlayAppearance")}
           </h2>
         </div>
 
@@ -305,8 +349,10 @@ function SettingsPage({ controller }: { controller: Controller }) {
           <div className="toggles-row">
             <div className="toggle-row">
               <div>
-                <label htmlFor="translation-enabled">Translation preview</label>
-                <p>Pause subtitles without hiding the overlay.</p>
+                <label htmlFor="translation-enabled">
+                  {t("settingsTranslationPreview")}
+                </label>
+                <p>{t("settingsTranslationPreviewText")}</p>
               </div>
               <input
                 id="translation-enabled"
@@ -320,8 +366,8 @@ function SettingsPage({ controller }: { controller: Controller }) {
             </div>
             <div className="toggle-row">
               <div>
-                <label htmlFor="show-source">Show source line</label>
-                <p>Original text above the English line.</p>
+                <label htmlFor="show-source">{t("settingsShowSource")}</label>
+                <p>{t("settingsShowSourceText")}</p>
               </div>
               <input
                 id="show-source"
@@ -340,47 +386,44 @@ function SettingsPage({ controller }: { controller: Controller }) {
           <div className="field-grid">
             <label className="field">
               <span>Simultaneous captions</span>
-              <select
+              <Select
+                id="simultaneous-policy"
+                label={t("settingsSimultaneous")}
                 value={snapshot.settings.simultaneousPolicy}
-                onChange={(event) => {
+                onChange={(value) => {
                   controller.updateSettings({
-                    simultaneousPolicy: event.currentTarget
-                      .value as OverlaySettings["simultaneousPolicy"],
+                    simultaneousPolicy: value as OverlaySettings["simultaneousPolicy"],
                   });
                 }}
-              >
-                <option value="show-both">Show both lanes</option>
-                <option value="newest-wins">Newest caption wins</option>
-                <option value="primary-wins">Primary source wins</option>
-              </select>
-              <small className="field-note">
-                How overlapping speech from different sources is shown.
-              </small>
+                options={[
+                  { value: "show-both", label: t("settingsShowBoth") },
+                  { value: "newest-wins", label: t("settingsNewestWins") },
+                  { value: "primary-wins", label: t("settingsPrimaryWins") },
+                ]}
+              />
+              <small className="field-note">{t("settingsSimultaneousNote")}</small>
             </label>
 
             <label className="field">
-              <span>Primary source</span>
-              <select
+              <span>{t("settingsPrimarySource")}</span>
+              <Select
+                id="primary-source"
+                label={t("settingsPrimarySource")}
                 value={snapshot.settings.primarySourceId ?? ""}
-                onChange={(event) => {
+                onChange={(value) => {
                   controller.updateSettings({
-                    primarySourceId:
-                      event.currentTarget.value === ""
-                        ? null
-                        : event.currentTarget.value,
+                    primarySourceId: value === "" ? null : value,
                   });
                 }}
-              >
-                <option value="">Auto (newest first)</option>
-                {sources.map((source) => (
-                  <option key={source.sourceId} value={source.sourceId}>
-                    {source.displayName}
-                  </option>
-                ))}
-              </select>
-              <small className="field-note">
-                Which source owns the first lane under the simultaneous policy.
-              </small>
+                options={[
+                  { value: "", label: t("settingsAutoPrimary") },
+                  ...sources.map((source) => ({
+                    value: source.sourceId,
+                    label: source.displayName,
+                  })),
+                ]}
+              />
+              <small className="field-note">{t("settingsPrimarySourceNote")}</small>
             </label>
           </div>
 
@@ -419,7 +462,7 @@ function SettingsPage({ controller }: { controller: Controller }) {
           <div className="sliders-grid">
             <div className="range-field">
               <div className="range-label">
-                <label htmlFor="overlay-width">Width</label>
+                <label htmlFor="overlay-width">{t("settingsWidth")}</label>
                 <output htmlFor="overlay-width">
                   {Math.round(snapshot.settings.widthNormalized * 100)}%
                 </output>
@@ -441,7 +484,7 @@ function SettingsPage({ controller }: { controller: Controller }) {
 
             <div className="range-field">
               <div className="range-label">
-                <label htmlFor="font-scale">Text size</label>
+                <label htmlFor="font-scale">{t("settingsTextSize")}</label>
                 <output htmlFor="font-scale">
                   {Math.round(snapshot.settings.fontScale * 100)}%
                 </output>
@@ -463,7 +506,7 @@ function SettingsPage({ controller }: { controller: Controller }) {
 
             <div className="range-field">
               <div className="range-label">
-                <label htmlFor="background-opacity">Background</label>
+                <label htmlFor="background-opacity">{t("settingsBackground")}</label>
                 <output htmlFor="background-opacity">
                   {Math.round(snapshot.settings.backgroundOpacity * 100)}%
                 </output>
@@ -489,7 +532,7 @@ function SettingsPage({ controller }: { controller: Controller }) {
             type="button"
             onClick={controller.resetPlacement}
           >
-            Reset position
+            {t("settingsResetPosition")}
           </button>
         </div>
       </section>
@@ -497,7 +540,7 @@ function SettingsPage({ controller }: { controller: Controller }) {
       <section className="card" aria-labelledby="hotkeys-title">
         <div className="card-head">
           <h2 className="card-title" id="hotkeys-title">
-            Hotkeys
+            {t("settingsHotkeys")}
           </h2>
         </div>
         <HotkeyPanel

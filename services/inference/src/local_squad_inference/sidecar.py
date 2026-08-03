@@ -314,30 +314,46 @@ PROVISIONAL_MIN_SPEECH_NS = 800_000_000
 PROVISIONAL_CADENCE_NS = 600_000_000
 
 
+@lru_cache(maxsize=64)
+def _model_artifact_dir(model_id: str) -> Path:
+    """Resolve a model artifact directory for `model_id`.
+
+    Two layouts are supported so both install paths work:
+    - the CLI/scripts convention: `LST_MODEL_DIR/artifacts/<id>`; and
+    - the in-app Rust installer: `LST_MODEL_DIR/<id>` (no `artifacts` nesting).
+
+    The sidecar must accept either, otherwise models downloaded through the
+    app are reported as "manifest missing or invalid" on live start.
+    """
+    model_root = Path(os.environ.get("LST_MODEL_DIR", "models"))
+    for candidate in (model_root / "artifacts" / model_id, model_root / model_id):
+        if candidate.is_dir():
+            return candidate
+    return model_root / "artifacts" / model_id
+
+
 @lru_cache(maxsize=4)
 def local_translation_provider(target_language: str = "en") -> NllbCTranslate2Provider:
-    model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
     return NllbCTranslate2Provider(
-        model_root / "nllb-200-distilled-600M-ct2-int8",
+        _model_artifact_dir("nllb-200-distilled-600M-ct2-int8"),
         target_language=target_language,
     )
 
 
 @lru_cache(maxsize=1)
 def madlad_translation_provider() -> MadladTranslationProvider:
-    model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
-    return MadladTranslationProvider(model_root / "madlad400-3b-mt")
+    return MadladTranslationProvider(_model_artifact_dir("madlad400-3b-mt"))
 
 
-def _whisper_model_dir(model_root: Path, requested_model_id: str) -> Path:
-    model_dir = model_root / requested_model_id
+def _whisper_model_dir(requested_model_id: str) -> Path:
+    model_dir = _model_artifact_dir(requested_model_id)
     if model_dir.is_dir():
         return model_dir
     # Fall back to whichever Whisper variant is present when the requested
     # model is unavailable. Turbo is lighter and faster; large-v3 is the
     # full-capacity fallback for users who already downloaded it.
     for candidate in ("whisper-large-v3-turbo", "whisper-large-v3"):
-        fallback = model_root / candidate
+        fallback = _model_artifact_dir(candidate)
         if fallback.is_dir():
             return fallback
     return model_dir
@@ -345,8 +361,7 @@ def _whisper_model_dir(model_root: Path, requested_model_id: str) -> Path:
 
 @lru_cache(maxsize=4)
 def local_whisper_provider(requested_model_id: str) -> FasterWhisperProvider:
-    model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
-    return FasterWhisperProvider(_whisper_model_dir(model_root, requested_model_id))
+    return FasterWhisperProvider(_whisper_model_dir(requested_model_id))
 
 
 NCSpeech_MODEL_DIRS: dict[str, str] = {
@@ -358,8 +373,7 @@ NCSpeech_MODEL_DIRS: dict[str, str] = {
 
 @lru_cache(maxsize=2)
 def local_ncspeech_provider(name: str) -> NemoCtcProvider:
-    model_root = Path(os.environ.get("LST_MODEL_DIR", "models")) / "artifacts"
-    return NemoCtcProvider(model_root / NCSpeech_MODEL_DIRS[name])
+    return NemoCtcProvider(_model_artifact_dir(NCSpeech_MODEL_DIRS[name]))
 
 
 def build_translation_provider(name: str, target_language: str = "en") -> TranslationProvider:

@@ -6,17 +6,18 @@ import type { AudioEndpoint, EndpointCatalog } from "../audio/model";
  * bundles it (ADR-014). Detection is purely name-based over the ordinary
  * endpoint catalog — no driver access, no game interaction.
  *
- * VB-CABLE installs one "CABLE Input" capture endpoint and one "CABLE
- * Output" render endpoint. We treat it as installed only when both are
- * present, because a half-installed driver cannot route game voice into the
- * app.
+ * VB-CABLE installs one "CABLE Input" RENDER (playback) endpoint — the device
+ * games/voice apps play INTO — and one "CABLE Output" CAPTURE (recording)
+ * endpoint — the device the app records FROM. We treat it as installed only
+ * when both are present and usable, because a half-installed driver cannot
+ * route game voice into the app.
  */
 
 export type VbCableDetection = {
   installed: boolean;
-  /** The capture endpoint named like "CABLE Input", or null. */
+  /** The render endpoint named like "CABLE Input" (what apps play into), or null. */
   input: AudioEndpoint | null;
-  /** The render endpoint named like "CABLE Output", or null. */
+  /** The capture endpoint named like "CABLE Output" (what the app records from), or null. */
   output: AudioEndpoint | null;
   /**
    * True when a matching endpoint exists but is not usable (disabled,
@@ -36,13 +37,16 @@ export function isUsableState(endpoint: AudioEndpoint): boolean {
 }
 
 export function detectVbCable(catalog: EndpointCatalog): VbCableDetection {
+  // "CABLE Input" is a render (playback) endpoint; "CABLE Output" is a
+  // capture (recording) endpoint. VB-CABLE names these by the direction of
+  // the signal: input = where audio goes in, output = where it comes out.
   const input =
     catalog.endpoints.find(
-      (endpoint) => endpoint.kind === "capture" && INPUT_NAME.test(endpoint.friendlyName),
+      (endpoint) => endpoint.kind === "render" && INPUT_NAME.test(endpoint.friendlyName),
     ) ?? null;
   const output =
     catalog.endpoints.find(
-      (endpoint) => endpoint.kind === "render" && OUTPUT_NAME.test(endpoint.friendlyName),
+      (endpoint) => endpoint.kind === "capture" && OUTPUT_NAME.test(endpoint.friendlyName),
     ) ?? null;
 
   const issues: string[] = [];
