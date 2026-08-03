@@ -218,11 +218,14 @@ def resolve_inference_device(
     visible to the driver — it does NOT guarantee the CUDA runtime libraries
     (cublas64_12.dll / cudnn64_*.dll) are installed and loadable. On a machine
     with a GPU but no CUDA runtime, choosing "cuda" makes the model load fail
-    with a library-not-found error and the whole live session dies.
+    with a library-not-found error.
 
-    So we prefer the configured value, else CUDA only when the runtime probes
-    cleanly, else CPU. The env overrides are respected (an explicit
-    `LST_*_DEVICE=cuda` is honored even if it then fails loudly).
+    We choose CUDA when a GPU is visible and let the provider's load-time
+    retry-on-CPU handle the missing-runtime case: constructing a ctranslate2
+    Translator *without a model path* is not a valid probe (it always raises
+    TypeError), so a pre-load probe would falsely reject working CUDA installs.
+    The env overrides are respected (an explicit `LST_*_DEVICE=cuda` is honored
+    even if it then fails loudly).
     """
     configured = os.environ.get(env_key)
     if configured:
@@ -232,15 +235,11 @@ def resolve_inference_device(
         try:
             ctranslate2 = importlib.import_module("ctranslate2")
             if ctranslate2.get_cuda_device_count() > 0:
-                # Probe whether the CUDA runtime actually loads by creating a
-                # tiny in-memory translation model; a missing cuBLAS/cuDNN DLL
-                # raises here, letting us fall back to CPU instead of dying on
-                # the real model load.
-                probe = ctranslate2.Translator(device="cuda", compute_type="int8")
-                del probe
+                # GPU visible to the driver. The provider retries on CPU if the
+                # CUDA runtime libraries are missing at model load, so we do
+                # not gate on a (unreliable) pre-load probe here.
                 return "cuda", cuda_compute
         except Exception:
-            # CUDA runtime unavailable (missing DLL) — run on CPU.
             pass
     return "cpu", cpu_compute
 

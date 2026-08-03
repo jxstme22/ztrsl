@@ -48,18 +48,12 @@ def test_register_cuda_dll_directory_adds_dir_on_windows(
         os_mod.add_dll_directory = original  # type: ignore[attr-defined]
 
 
-def test_cpu_when_cuda_not_probed(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Simulate a machine where ctranslate2 reports a GPU but the runtime
-    # probe fails (missing cuBLAS): must fall back to CPU.
-    class _ProbeFail:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            raise OSError("cublas64_12.dll not found")
-
+def test_cpu_when_cuda_not_visible(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No CUDA-capable GPU visible to the driver: must pick CPU.
     monkeypatch.delenv("LST_WHISPER_DEVICE", raising=False)
     monkeypatch.delenv("LST_WHISPER_COMPUTE_TYPE", raising=False)
     monkeypatch.setattr(importlib.import_module("platform"), "system", lambda: "Windows")
-    monkeypatch.setattr(importlib.import_module("ctranslate2"), "get_cuda_device_count", lambda: 1)
-    monkeypatch.setattr(importlib.import_module("ctranslate2"), "Translator", _ProbeFail)
+    monkeypatch.setattr(importlib.import_module("ctranslate2"), "get_cuda_device_count", lambda: 0)
 
     device, compute = resolve_inference_device(
         "LST_WHISPER_DEVICE",
@@ -71,15 +65,14 @@ def test_cpu_when_cuda_not_probed(monkeypatch: pytest.MonkeyPatch) -> None:
     assert compute == "int8"
 
 
-def test_cuda_when_runtime_probe_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _ProbeOk:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            pass
-
+def test_cuda_when_gpu_visible(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A CUDA GPU is visible: choose CUDA. The provider retries on CPU at model
+    # load if the CUDA runtime libraries are missing, so no pre-load probe is
+    # used here (a model-less Translator probe always raises TypeError and
+    # would falsely reject working CUDA installs).
     monkeypatch.delenv("LST_WHISPER_DEVICE", raising=False)
     monkeypatch.setattr(importlib.import_module("platform"), "system", lambda: "Windows")
     monkeypatch.setattr(importlib.import_module("ctranslate2"), "get_cuda_device_count", lambda: 1)
-    monkeypatch.setattr(importlib.import_module("ctranslate2"), "Translator", _ProbeOk)
 
     device, compute = resolve_inference_device(
         "LST_WHISPER_DEVICE",
