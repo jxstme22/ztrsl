@@ -436,13 +436,22 @@ class MadladTranslationProvider:
         # handle is dropped after starting the new one to release OS pipes.
         old = self._process
         try:
+            popen_kwargs: dict[str, Any] = {
+                "stdin": subprocess.PIPE,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.DEVNULL,
+                "text": True,
+                "bufsize": 1,
+            }
+            if os.name == "nt":
+                # Never show a console window for the MADLAD runner: it is a
+                # background decode process owned by the app, and a visible
+                # console makes the terminal appear to control the app.
+                create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                popen_kwargs["creationflags"] = create_no_window
             self._process = subprocess.Popen(
                 [str(self._runner), str(self._model_dir.resolve())],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-                bufsize=1,
+                **popen_kwargs,
             )
         except OSError as error:
             self._process = None

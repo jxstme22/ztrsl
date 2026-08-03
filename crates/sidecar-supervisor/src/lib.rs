@@ -153,6 +153,15 @@ impl SidecarSupervisor {
         if let Some(runtime_library_dir) = &config.runtime_library_dir {
             command.env("DYLD_LIBRARY_PATH", runtime_library_dir);
         }
+        #[cfg(target_os = "windows")]
+        {
+            // Never show a console window for the sidecar: the app owns its
+            // own GUI, and a visible console (with its own close button)
+            // makes users think the terminal controls the app — closing it
+            // kills the inference sidecar and the whole app with it.
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
         let mut child = command.spawn().map_err(SupervisorError::Spawn)?;
 
         let stream = match connect_with_retry(port, &mut child) {
