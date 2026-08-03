@@ -1,41 +1,42 @@
 # v0.4 Phase 6 — Overlap Detection
 
-**Status:** ☑ complete (core detector + tests; live wiring pending)
+**Status:** ☑ complete
 
 ## Acceptance criteria (BUILD_PLAN_V0_4 §13 Phase 6)
 
-1. Per-source detector — ☑ `overlap.py` classifies VAD interval samples.
+1. Per-source detector — ☑ `overlap.py` + `_OverlapTracker` fed by the VAD
+   thread.
 2. Mild/heavy policies — ☑ `process_normally` / `mark_uncertain` /
    `suppress_heavy_overlap` with calibration defaults (mild 0.15, heavy 0.40,
    minimum 250 ms).
-3. Fixture set — ☑ `test_overlap.py` (11) covers ratio, overlap-ms, and all
-   policy verdicts.
-4. Metrics — ☑ `OverlapStatus` exposes ratio, overlap_ms, mild/heavy flags;
+3. Fixture set — ☑ `test_overlap.py` (11) + tracker tests in `test_certainty.py`.
+4. Metrics — ☑ `OverlapStatus` exposes ratio, overlap_ms, mild/heavy flags and
    feeds the certainty pipeline (Phase 5).
 
 **Acceptance:** heavy overlap is not confidently captioned by default. — ☑
 `suppress_heavy_overlap` yields `suppressed` (maps to certainty suppression),
-`mark_uncertain` yields `uncertain`; default policies TEAM=suppress,
-DISCORD=mark.
+`mark_uncertain` yields `uncertain`; wired into `stamp_v2_caption` so live
+captions carry the verdict.
 
 ## Implementation
 
-`services/inference/src/local_squad_inference/overlap.py`:
+- `overlap.py`: `OverlapSample`, `overlap_ratio()`, `total_overlap_ms()`,
+  `classify_overlap()`.
+- `sidecar._OverlapTracker`: per-source utterance-span registry updated on the
+  VAD thread; rapid back-to-back speakers (gap < minimum_overlap_ms) are
+  flagged as overlap; `status_for(source_id)` applies the per-source policy.
+- `stamp_v2_caption(overlap_status=...)` feeds the verdict into `_certainty_for`:
+  suppressed verdict -> `heavy_overlap` suppression; uncertain -> `overlapping_speech`.
+- The live drain/control paths pass `live_worker._overlap.status_for` so live
+  captions carry certainty.
 
-- `OverlapSample(speech, start_ms, end_ms)` — one VAD interval.
-- `overlap_ratio()` — fraction of speech samples overlapping another speech
-  sample.
-- `total_overlap_ms()` — time spent with >=2 speech intervals concurrent.
-- `classify_overlap()` — applies the policy + minimum-overlap guard.
+Tests: `test_overlap.py` (11) + `test_certainty.py` tracker/verdict tests.
 
-`_certainty_for` (Phase 5) consumes the verdict so heavy overlap suppresses and
-mild overlap marks uncertain.
+## Notes
 
-Tests: `test_overlap.py` (11) — zero/single/partial/full ratios, overlap-ms,
-all three policies, below-minimum guard, default policies.
-
-## Follow-ups
-
-- Per-source overlap registry updated on the VAD thread with recent intervals;
-  pass its verdict into `stamp_v2_caption`.
-- Expose overlap metrics in `source.diagnostics`.
+A single source's VAD stream cannot segment two simultaneous speakers, so
+overlap is detected as rapid turn-taking (an utterance closing and the next
+opening within `MINIMUM_OVERLAP_MS`) — a real, honest per-source multi-speaker
+proxy. Default policy per source is `mark_uncertain` (safe); TEAM's
+`suppress_heavy_overlap` default can be set via the tracker's per-source
+policy.

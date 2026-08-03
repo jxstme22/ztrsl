@@ -428,3 +428,93 @@ def test_per_source_metrics_and_diagnostics() -> None:
     assert team_diag["open_utterance_samples"] > 0
     assert team_diag["packets_received"] == 2
     assert pipeline.diagnostics_for("0" * 32)["active"] is False
+
+
+# ---- v0.4 Phase 3/4: phrase filters + glossary wiring ------------------------
+
+
+def test_phrase_filter_drops_utterance_before_translation() -> None:
+    from local_squad_inference.phrase_filters import PhraseFilterRule, PhraseFilterSet
+
+    filters = PhraseFilterSet(
+        [
+            PhraseFilterRule(
+                source_id=TEAM_ID,
+                text="user joined your channel",
+                match_mode="contains",
+            )
+        ]
+    )
+    pipeline = make_pipeline()
+    pipeline._asr = FakeAsr(text="user joined your channel")
+    pipeline.start_source(TEAM_ID)
+    pipeline.set_phrase_filters(filters)
+
+    # A filtered utterance produces no caption and is counted.
+    pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID))
+    result = pipeline.feed(packet_v2(2, (0.0,) * 4_800, TEAM_ID))
+    assert result == ()
+    assert pipeline.diagnostics_for(TEAM_ID)["phrase_filtered"] == 1
+
+
+def test_phrase_filter_is_per_source() -> None:
+    from local_squad_inference.phrase_filters import PhraseFilterRule, PhraseFilterSet
+
+    filters = PhraseFilterSet(
+        [PhraseFilterRule(source_id=TEAM_ID, text="noise", match_mode="contains")]
+    )
+    pipeline = make_pipeline()
+    pipeline.start_source(TEAM_ID)
+    pipeline.start_source(DISCORD_ID)
+    pipeline.set_phrase_filters(filters)
+
+    # DISCORD's same text passes (rule is TEAM-scoped).
+    pipeline.feed(packet_v2(1, (0.1,) * 4_800, DISCORD_ID))
+    discord = pipeline.feed(packet_v2(2, (0.0,) * 4_800, DISCORD_ID))
+    assert len(discord) == 1
+
+
+def test_glossary_asr_correction_and_preferred_translation() -> None:
+    from local_squad_inference.glossary import Glossary, GlossaryEntry
+
+    glossary = Glossary(
+        [
+            GlossaryEntry(entry_type="asr_correction", source="bind men", target="B main"),
+            GlossaryEntry(
+                entry_type="preferred_translation",
+                source="umiikot",
+                target="rotating",
+            ),
+        ]
+    )
+    asr = FakeAsr(text="push bind men")
+    pipeline = LivePipeline(asr, FakeTranslation(), vad_config=FAST_VAD, use_silero=False)
+    pipeline.start_source(TEAM_ID)
+    pipeline.set_glossary(glossary)
+
+    pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID))
+    result = pipeline.feed(packet_v2(2, (0.0,) * 4_800, TEAM_ID))
+    assert len(result) == 1
+    # ASR correction applied to the source text before translation.
+    assert result[0].source_text == "push B main"
+
+
+def test_glossary_hot_reload_swaps_corrections() -> None:
+    from local_squad_inference.glossary import Glossary, GlossaryEntry
+
+    pipeline = make_pipeline()
+    pipeline._asr = FakeAsr(text="go bind")
+    pipeline.start_source(TEAM_ID)
+    pipeline.set_glossary(
+        Glossary([GlossaryEntry(entry_type="asr_correction", source="bind", target="B main")])
+    )
+    pipeline.feed(packet_v2(1, (0.1,) * 4_800, TEAM_ID))
+    first = pipeline.feed(packet_v2(2, (0.0,) * 4_800, TEAM_ID))
+    assert first[0].source_text == "go B main"
+
+    # Swap the glossary at runtime; the next utterance uses the new rules
+    # without any pipeline/model restart.
+    pipeline.set_glossary(Glossary())
+    pipeline.feed(packet_v2(3, (0.1,) * 4_800, TEAM_ID))
+    second = pipeline.feed(packet_v2(4, (0.0,) * 4_800, TEAM_ID))
+    assert second[0].source_text == "go bind"

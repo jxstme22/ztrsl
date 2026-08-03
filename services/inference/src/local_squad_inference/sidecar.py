@@ -27,6 +27,12 @@ from local_squad_inference.http_translation import (
     HttpTranslationError,
 )
 from local_squad_inference.live import LivePipeline, LivePipelineMetrics, source_key_of
+from local_squad_inference.overlap import (
+    MINIMUM_OVERLAP_MS,
+    OverlapPolicy,
+    OverlapSample,
+    classify_overlap,
+)
 from local_squad_inference.profiles import FilterApplied, GateDecision, apply_language_gate
 from local_squad_inference.protocol import (
     AUDIO_HEADER_V2,
@@ -185,6 +191,61 @@ def stamp_v2_caption(
             "certainty": certainty,
         }
     )
+
+
+class _OverlapTracker:
+    """v0.4 Phase 6: per-source overlap detection fed by the VAD thread.
+
+    A single source's VAD stream cannot segment two simultaneous speakers, but
+    overlapping speakers show up as *rapid turn-taking*: an utterance closes
+    and the next opens with little or no silence gap (spec §5). The tracker
+    records each utterance span per source and, when a new utterance opens
+    within `MINIMUM_OVERLAP_MS` of the previous close, marks both as
+    overlapping. `classify_overlap` then applies the per-source policy so the
+    certainty pipeline can suppress or mark uncertain.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._spans: dict[str, list[tuple[int, int]]] = {}
+        self._policy: dict[str, OverlapPolicy] = {}
+
+    def set_policy(self, source_id: str, policy: OverlapPolicy) -> None:
+        with self._lock:
+            self._policy[source_id] = policy
+
+    def note_utterance(self, source_id: str, started_ms: int, ended_ms: int) -> None:
+        """Record a completed utterance span (ms). Rapid follow-up marks the
+        pair as overlapping."""
+        if source_id is None:
+            return
+        with self._lock:
+            spans = self._spans.setdefault(source_id, [])
+            spans.append((started_ms, ended_ms))
+            # Keep only the recent window so stale activity stops counting.
+            if len(spans) > 16:
+                del spans[: len(spans) - 16]
+
+    def status_for(self, source_id: str) -> object:
+        """OverlapStatus for a source (policy applied). Defaults to
+        `process_normally` so no policy ever blocks a source by accident."""
+        with self._lock:
+            spans = list(self._spans.get(source_id, []))
+            policy = self._policy.get(source_id, "process_normally")
+        samples: list[OverlapSample] = []
+        # A span that began within MINIMUM_OVERLAP_MS of its predecessor ending
+        # is treated as overlapping that predecessor.
+        previous_end: int | None = None
+        for started_ms, ended_ms in spans:
+            if previous_end is not None and started_ms - previous_end < MINIMUM_OVERLAP_MS:
+                # Overlap window: from previous start to current end.
+                prev_start = samples[-1].start_ms if samples else started_ms
+                samples[-1] = OverlapSample(speech=True, start_ms=prev_start, end_ms=ended_ms)
+                samples.append(OverlapSample(speech=True, start_ms=started_ms, end_ms=ended_ms))
+            else:
+                samples.append(OverlapSample(speech=True, start_ms=started_ms, end_ms=ended_ms))
+            previous_end = ended_ms
+        return classify_overlap(samples, policy)
 
 
 def _certainty_for(
@@ -524,6 +585,11 @@ class LivePipelineWorker:
         # Monotonic per-(source, utterance) revision counter for provisional
         # coalescing: the newest snapshot supersedes older queued ones.
         self._provisional_revisions: dict[tuple[str | None, str], int] = {}
+        # v0.4 Phase 6: per-source overlap tracking, fed on the VAD thread.
+        self._overlap = _OverlapTracker()
+        self._overlap_policy_of: Callable[[str | None], OverlapPolicy] = lambda source_id: (
+            "mark_uncertain"
+        )
         # Per-source controls (flush/stop) are executed on the VAD thread:
         # the utterance managers are not thread-safe, and every manager is
         # touched only from the VAD thread. The control handler blocks on
@@ -716,6 +782,12 @@ class LivePipelineWorker:
                 continue
             for utterance in utterances:
                 self._enqueue_utterance(utterance)
+                # v0.4 Phase 6: record the utterance span on the VAD thread so
+                # rapid back-to-back speakers are flagged as overlap.
+                if utterance.source_id is not None:
+                    now_ms = int(time.monotonic() * 1000)
+                    duration_ms = (utterance.ended_ns - utterance.started_ns) // 1_000_000
+                    self._overlap.note_utterance(utterance.source_id, now_ms - duration_ms, now_ms)
             source_key = source_key_of(packet)
             try:
                 snapshot = self._pipeline.provisional_utterance(source_key)
@@ -1229,7 +1301,14 @@ async def handle_connection(
                 )
                 metrics_dict = asdict(metrics)
                 for index, caption in enumerate(captions, start=1):
-                    caption = stamp_v2_caption(caption, source_registry, source_snapshots)
+                    caption = stamp_v2_caption(
+                        caption,
+                        source_registry,
+                        source_snapshots,
+                        overlap_status=(
+                            live_worker._overlap.status_for if live_worker is not None else None
+                        ),
+                    )
                     await connection.send(
                         json.dumps(
                             envelope(
@@ -1353,8 +1432,15 @@ async def handle_connection(
                             version=negotiated_version,
                             stamp=(
                                 (
-                                    lambda caption: stamp_v2_caption(
-                                        caption, source_registry, source_snapshots
+                                    lambda caption, worker=live_worker: stamp_v2_caption(
+                                        caption,
+                                        source_registry,
+                                        source_snapshots,
+                                        overlap_status=(
+                                            worker._overlap.status_for
+                                            if worker is not None
+                                            else None
+                                        ),
                                     )
                                 )
                                 if negotiated_version == PROTOCOL_V2

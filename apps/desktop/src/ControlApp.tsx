@@ -16,6 +16,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AudioDevicePanel } from "./components/AudioDevicePanel";
 import { AccuracyLabPanel } from "./components/AccuracyLabPanel";
 import { CaptionStack } from "./components/CaptionStack";
+import { CaptionTrustPanel } from "./components/CaptionTrustPanel";
 import { ClipLabPanel } from "./components/ClipLabPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
@@ -535,6 +536,7 @@ function DiagnosticsPage({
       <AudioDevicePanel audio={audio} />
       <RoutingPanel />
       {captionTrustEnabled() && <AccuracyLabPanel />}
+      {captionTrustEnabled() && <CaptionTrustPanel />}
       <IpcPanel onCaption={onCaption} />
     </div>
   );

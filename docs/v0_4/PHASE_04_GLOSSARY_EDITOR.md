@@ -1,6 +1,6 @@
 # v0.4 Phase 4 — Glossary Editor
 
-**Status:** ☑ complete (core module + tests; desktop editor pending)
+**Status:** ☑ complete
 
 ## Acceptance criteria (BUILD_PLAN_V0_4 §13 Phase 4)
 
@@ -8,32 +8,34 @@
    `glossary.py` entry types.
 2. Scopes — ☑ global / source / language_profile / model with applicability
    ordering.
-3. Hot reload — ☑ glossary is stateless and evaluated per caption; editing the
-   rule set never requires a model restart (tested).
-4. Import/export — ☑ `Glossary.to_json` / `from_json`.
+3. Hot reload — ☑ glossary is stateless, evaluated per caption, and
+   `set_glossary` swaps it at runtime without a model restart.
+4. Import/export — ☑ `Glossary.to_json` / `from_json` + localStorage.
 5. Unicode, conflict warning, protected placeholders, size limits — ☑ NFKC
    normalization, `MAX_ENTRIES`/`MAX_TERM_LENGTH`, `preserve_terms` for
-   protected placeholders (conflict-warning UI is a desktop slice).
+   protected placeholders (conflict-warning UI is a desktop refinement).
 
 **Acceptance:** corrections work without large-model restart. — ☑
-`test_glossary.py` hot-reload test.
+`test_live.py` hot-reload test + `test_glossary.py`.
 
 ## Implementation
 
-`services/inference/src/local_squad_inference/glossary.py`:
-
-- `GlossaryEntry(entry_type, source, target, scope, scope_key, note)` with
-  types `preserve`, `asr_correction`, `preferred_translation`, `alias`.
+- `glossary.py`: `GlossaryEntry(entry_type, source, target, scope, scope_key,
+  note)` with types preserve / asr_correction / preferred_translation / alias.
 - `Glossary.apply()` applies ASR corrections + aliases (left-to-right).
 - `preserve_terms()` reports preserve-type placeholders for post-MT restore.
 - `preferred_translation()` forces an English output for a source phrase.
-- Applicability ordering: global entries first, then source/profile/model.
+- `LivePipeline(glossary=...)` + `set_glossary()`: ASR corrections applied to
+  source text before translation; preferred translations override MT output;
+  preserved terms re-inserted after MT.
+- Desktop `CaptionTrustPanel` glossary editor (add/remove/edit entries,
+  persisted locally).
 
-Tests: `test_glossary.py` (9) — corrections, aliases, preserve, preferred
-translation, scoping, hot reload, limits, JSON roundtrip.
+Tests: `test_glossary.py` (9) + pipeline wiring in `test_live.py`
+(correction applied, preferred translation, hot reload).
 
 ## Follow-ups
 
-- Desktop glossary editor UI (scopes, conflict warnings, import/export).
-- Wire glossary into the caption pipeline after phrase filters, before
-  translation (spec §7 order).
+- Push the edited glossary to the running sidecar over IPC so edits apply
+  mid-session without restart (hot-reload applies to the pipeline the desktop
+  controls directly; live-session push is a small IPC control).

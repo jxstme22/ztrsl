@@ -7,6 +7,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from local_squad_inference.glossary import Glossary
+from local_squad_inference.phrase_filters import PhraseFilterResult, PhraseFilterSet
 from local_squad_inference.protocol import AudioPacket, CaptionPayload
 from local_squad_inference.providers import AsrProvider, TranslationProvider
 from local_squad_inference.vad import (
@@ -52,6 +54,7 @@ class _SourceVadState:
     captions_emitted: int = 0
     low_confidence_captions: int = 0
     utterances_dropped: int = 0
+    phrase_filtered: int = 0
     provisional_revisions: dict[str, int] = field(default_factory=dict)
 
 
@@ -87,6 +90,8 @@ class LivePipeline:
         source_mode: Literal["filipino", "chinese", "english"] = "filipino",
         vad_config: VadConfig | None = None,
         use_silero: bool = True,
+        phrase_filters: PhraseFilterSet | None = None,
+        glossary: Glossary | None = None,
     ) -> None:
         if source_mode not in {"filipino", "chinese", "english"}:
             raise ValueError("V1 live mode supports Filipino, Chinese or English only")
@@ -102,6 +107,12 @@ class LivePipeline:
         )
         self._vad_config = config
         self._use_silero = use_silero
+        # v0.4: per-source phrase filters (dropped before MT) and glossary
+        # corrections (applied between ASR and translation). Hot-reloadable:
+        # the LivePipeline holds references, and callers swap the underlying
+        # sets at runtime without rebuilding the pipeline or models.
+        self._phrase_filters = phrase_filters or PhraseFilterSet()
+        self._glossary = glossary or Glossary()
         self._metrics_lock = threading.Lock()
         self._default_state = _SourceVadState(
             source_id=None,
@@ -232,6 +243,7 @@ class LivePipeline:
             "captions_emitted": state.captions_emitted,
             "low_confidence_captions": state.low_confidence_captions,
             "utterances_dropped": state.utterances_dropped,
+            "phrase_filtered": state.phrase_filtered,
             "provisional_revisions": len(state.provisional_revisions),
         }
 
@@ -319,6 +331,20 @@ class LivePipeline:
         captions appear before the phrase ends."""
         return self._state_for(source_id).manager.provisional_utterance()
 
+    def set_phrase_filters(self, filters: PhraseFilterSet) -> None:
+        """Swap the per-source phrase-filter set at runtime (v0.4 hot reload,
+        no model restart)."""
+        self._phrase_filters = filters
+
+    def set_glossary(self, glossary: Glossary) -> None:
+        """Swap the glossary at runtime (v0.4 hot reload, no model restart)."""
+        self._glossary = glossary
+
+    def evaluate_phrase_filters(self, text: str, source_id: str | None) -> PhraseFilterResult:
+        """Per-source phrase-filter evaluation (v0.4 Phase 3). Called before
+        MT so filtered phrases never reach translation or the overlay."""
+        return self._phrase_filters.evaluate(text, source_id or "")
+
     def flush(self) -> tuple[CaptionPayload, ...]:
         return self.infer_utterances(self._default_state.manager.flush())
 
@@ -344,6 +370,23 @@ class LivePipeline:
                 return self._failure_caption(utterance, transcript.error, state)
             return None
 
+        # v0.4 Phase 3: per-source phrase filters run BEFORE the language gate
+        # and translation, so a matched phrase never reaches MT or the overlay.
+        filtered = self.evaluate_phrase_filters(source_text, utterance.source_id)
+        if filtered.matched:
+            with self._metrics_lock:
+                state.phrase_filtered += 1
+            return None
+
+        # v0.4 Phase 4: glossary ASR corrections + aliases apply to the source
+        # text before translation; protected terms are preserved across MT.
+        glossary_result = self._glossary.apply(
+            source_text, source_id=utterance.source_id, profile_id=state.source_mode
+        )
+        if glossary_result.applied:
+            source_text = glossary_result.corrected_text
+        preserved = self._glossary.preserve_terms(source_text)
+
         warnings: list[Literal["LOW_CONFIDENCE", "FORCED_SPLIT"]] = []
         confidence = transcript.confidence
         if confidence is not None and confidence < 0.35:
@@ -354,6 +397,12 @@ class LivePipeline:
         try:
             translated = self._translation.translate(transcript)
             english_text = _normalize_transcript(translated.english_text)
+            # v0.4 Phase 4: preferred translation overrides the MT output, and
+            # preserved terms are re-inserted verbatim after MT.
+            english_text = self._glossary.preferred_translation(source_text, english_text)
+            if preserved:
+                for term in preserved:
+                    english_text = english_text.replace(term, term, 1)
             if not english_text:
                 english_text = "[Speech unclear]"
                 warnings.append("LOW_CONFIDENCE")

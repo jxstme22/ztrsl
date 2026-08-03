@@ -1,8 +1,9 @@
 """v0.4 Phase 5: certainty state tests."""
 
+from local_squad_inference.overlap import OverlapSample, classify_overlap
 from local_squad_inference.profiles import GateDecision
 from local_squad_inference.protocol import CaptionCertainty, CaptionPayload
-from local_squad_inference.sidecar import _certainty_for
+from local_squad_inference.sidecar import _certainty_for, _OverlapTracker
 
 
 def base_caption() -> CaptionPayload:
@@ -89,3 +90,44 @@ def test_serializes_to_wire_shape() -> None:
     assert data["state"] == "uncertain"
     assert data["uncertainty_reasons"] == ["overlapping_speech"]
     assert data["suppression_reason"] is None
+
+
+def test_overlap_tracker_marks_rapid_back_to_back_utterances() -> None:
+    tracker = _OverlapTracker()
+    tracker.set_policy("11111111111111111111111111111111", "suppress_heavy_overlap")
+    # Two utterances 100 ms apart (below the 250 ms minimum): overlapping.
+    tracker.note_utterance("11111111111111111111111111111111", 0, 400)
+    tracker.note_utterance("11111111111111111111111111111111", 500, 900)
+    status = tracker.status_for("11111111111111111111111111111111")
+    assert status.verdict in ("uncertain", "suppressed")
+
+
+def test_overlap_tracker_ignores_normal_turn_taking() -> None:
+    tracker = _OverlapTracker()
+    tracker.set_policy("22222222222222222222222222222222", "mark_uncertain")
+    # Two utterances far apart: no overlap.
+    tracker.note_utterance("22222222222222222222222222222222", 0, 400)
+    tracker.note_utterance("22222222222222222222222222222222", 5_000, 5_400)
+    status = tracker.status_for("22222222222222222222222222222222")
+    assert status.verdict == "normal"
+
+
+def test_overlap_tracker_defaults_to_process_normally() -> None:
+    tracker = _OverlapTracker()
+    tracker.note_utterance("11111111111111111111111111111111", 0, 400)
+    tracker.note_utterance("11111111111111111111111111111111", 100, 500)
+    status = tracker.status_for("11111111111111111111111111111111")
+    assert status.verdict == "normal"
+
+
+def test_classify_overlap_feeds_certainty_heavy() -> None:
+    samples = [
+        OverlapSample(speech=True, start_ms=0, end_ms=1000),
+        OverlapSample(speech=True, start_ms=100, end_ms=900),
+    ]
+    status = classify_overlap(samples, "suppress_heavy_overlap")
+    assert status.verdict == "suppressed"
+    certainty = _certainty_for(base_caption(), GateDecision(applied="passed"), lambda _: status)
+    assert certainty is not None
+    assert certainty.state == "suppressed"
+    assert certainty.suppression_reason == "heavy_overlap"
