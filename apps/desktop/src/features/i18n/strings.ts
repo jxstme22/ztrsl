@@ -101,6 +101,17 @@ const UI_STRINGS = {
   settingsNewestWins: { en: "Newest caption wins", zh: "最新字幕优先" },
   settingsPrimaryWins: { en: "Primary source wins", zh: "主音源优先" },
   settingsAutoPrimary: { en: "Auto (newest first)", zh: "自动（最新优先）" },
+  settingsCaptionAlignment: {
+    en: "Caption alignment",
+    zh: "字幕对齐",
+  },
+  settingsCaptionAlignmentNote: {
+    en: "Paragraph position: left, center, or right. Sources can override this.",
+    zh: "段落位置：左、中或右。各音源可单独覆盖此设置。",
+  },
+  settingsAlignLeft: { en: "Left", zh: "左对齐" },
+  settingsAlignCenter: { en: "Center", zh: "居中" },
+  settingsAlignRight: { en: "Right", zh: "右对齐" },
   settingsWidth: { en: "Width", zh: "宽度" },
   settingsTextSize: { en: "Text size", zh: "字号" },
   settingsBackground: { en: "Background", zh: "背景" },
@@ -216,12 +227,17 @@ const UI_STRINGS = {
   sourcesName: { en: "Name", zh: "名称" },
   sourcesCaptionTag: { en: "Caption tag", zh: "字幕标签" },
   sourcesLabelStyle: { en: "Label style", zh: "标签样式" },
+  sourcesCaptionAlignment: { en: "Caption alignment", zh: "字幕对齐" },
   sourcesColor: { en: "Color", zh: "颜色" },
   sourcesLanguageProfile: { en: "Language profile", zh: "语言档案" },
   sourcesStrictness: { en: "Strictness", zh: "严格度" },
   sourcesAdd: { en: "Add source", zh: "添加音频源" },
   sourcesRemove: { en: "Remove", zh: "移除" },
   sourcesUnnamed: { en: "Unnamed source", zh: "未命名音源" },
+  sourcesMacosHint: {
+    en: "Install BlackHole (github.com/ExistentialAudio/BlackHole) and route VALORANT voice-chat output to it, so the app can caption the voice channel without using your microphone. Allow microphone access in System Settings when first capturing.",
+    zh: "安装 BlackHole（github.com/ExistentialAudio/BlackHole）并将 VALORANT 语音聊天输出路由到它，应用即可在不使用麦克风的情况下为语音频道生成字幕。首次捕获时请在系统设置中允许麦克风访问。",
+  },
 
   // Diagnostics page
   diagnosticsTitle: { en: "Diagnostics", zh: "诊断" },

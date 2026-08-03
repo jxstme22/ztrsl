@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaptionPayload } from "../ipc/model";
 import type { Caption } from "../overlay/model";
 import { readingDurationMs } from "../overlay/reducer";
+import { loadSourceConfigs } from "../sources/storage";
 import {
   fetchLiveSnapshot,
   startLiveTranslation,
@@ -71,6 +72,12 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
                 captionTag: payload.source_snapshot.caption_tag,
                 labelStyle: payload.source_snapshot.label_style,
                 color: payload.source_snapshot.color,
+                // Per-source caption alignment override, stamped at capture so
+                // the overlay never needs to read live source config.
+                captionAlignment:
+                  loadSourceConfigs().sources.find(
+                    (config) => config.sourceId === payload.source_id,
+                  )?.captionAlignment ?? "center",
               },
         certainty:
           payload.certainty === undefined

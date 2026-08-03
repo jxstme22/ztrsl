@@ -35,6 +35,7 @@ function sourcedCaption(
     sourceId,
     captionTag: tag,
     labelStyle: "brackets",
+    captionAlignment: "center",
     color: null,
   };
   return {

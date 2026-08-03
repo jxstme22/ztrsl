@@ -65,19 +65,22 @@ One-time, from the workspace root:
 1. `uv sync --extra dev --extra models` — installs `faster-whisper`, `ctranslate2`,
    `onnxruntime`, `sherpa-onnx`, etc. into `.venv`. Without `--extra models`, live
    local ASR fails with "faster-whisper and CTranslate2 are required for quality
-   local ASR".
+   local ASR". On Apple Silicon macOS add `--extra mlx` for the Metal-accelerated
+   `mlx-whisper` ASR provider.
 2. `python scripts/install_models.py whisper-turbo --accept-license` (or
    `whisper` for the full large-v3 model),
    `python scripts/install_models.py nllb --accept-license` (near-real-time
-   translation, CC-BY-NC-4.0; runs on CUDA when available, CPU fallback) and
+   translation, CC-BY-NC-4.0; runs on CUDA when available, CPU fallback),
+   on macOS also `python scripts/install_models.py mlx --accept-license`
+   (`mlx-whisper-large-v3-turbo-q4`, ~440 MB, Metal GPU/ANE) and
    optionally `python scripts/install_models.py madlad --accept-license` —
    downloads the verified model artifacts into `models/artifacts/`. The live
    sidecar prefers `whisper-large-v3-turbo` (lighter, ~1.6 GB) and falls back
    to `whisper-large-v3` (~3.1 GB) when only that is installed. Override with
    the `LST_WHISPER_MODEL_ID` environment variable. Translation defaults to
-   `nllb` (`nllb-200-distilled-600M-ct2-int8`, ~600 MB, tens of ms on CUDA);
-   `madlad` (MADLAD-400-3B via the Rust candle runner, ~50 s per caption on
-   CPU) remains selectable.
+   `nllb` (`nllb-200-distilled-600M-ct2-int8`, ~600 MB, tens of ms on CUDA,
+   ~340 ms/sentence on M-series CPU); `madlad` (MADLAD-400-3B via the Rust
+   candle runner, ~50 s per caption on CPU) remains selectable.
 3. Optional NVIDIA CTC ASR exports: `scripts/export_ncspeech_onnx.py` performs a
    one-time NeMo→CTC ONNX export into `models/artifacts/` and writes a verified
    manifest. It requires a build venv with `nemo_toolkit[asr]` and `torch`

@@ -1,6 +1,9 @@
 # macOS (Apple Silicon M4) Reliability Assessment & Recommended Stack
 
-Status: assessment only — no macOS port is committed yet.
+Status: **partially implemented** (v0.5). CoreAudio capture (mic + BlackHole
+loopback), the device watcher, and the MLX Whisper ASR provider are in; DMG
+packaging, permissions UX, and UI polish remain. Windows stays first-class;
+the macOS backend mirrors the same trait surface.
 
 ## 1. Where the project stands on macOS today
 
@@ -11,10 +14,11 @@ The project targets Windows 11 first. Running on an Apple Silicon Mac today:
 | Desktop app + overlay (Tauri 2) | **Runs** (dev mode) | Both windows render; transparent, always-on-top, click-through work on macOS |
 | Global hotkeys | **Works** | `tauri-plugin-global-shortcut` uses Carbon; some keys need Accessibility permission |
 | Model management (catalog, download, install, delete) | **Works** | Pure Rust; the mirror support added in 0.2.0 applies on every platform |
-| Python inference sidecar (VAD, Whisper, NLLB) | **Runs** (CPU) | `faster-whisper`/`ctranslate2`/`onnxruntime`/`sherpa-onnx` all ship macOS arm64 wheels |
-| Real audio capture (loopback / mic) | **Not available** | The live pipeline is wired to WASAPI; macOS exposes only synthetic demo endpoints |
-| Device-change watcher | **Not available** | `WindowsDeviceWatcher` is Windows-only |
-| Live translation end-to-end | **Demo only** | Works with the synthetic audio source, not real voice chat |
+| Python inference sidecar (VAD, Whisper, NLLB) | **Runs** | `faster-whisper`/`ctranslate2`/`onnxruntime`/`sherpa-onnx` all ship macOS arm64 wheels |
+| Real audio capture (mic / BlackHole loopback) | **Implemented (v0.5)** | `MacosEndpointCatalog`/`MacosDeviceWatcher`/`MacosAudioCapture` in `audio-core`; the live loop uses real capture |
+| Device-change watcher | **Implemented (v0.5)** | Poll-based CoreAudio diff in `audio-core/src/macos.rs` |
+| Apple Silicon ASR (MLX) | **Implemented (v0.5)** | `mlx-whisper-large-v3-turbo-q4` catalog entry; `mlx` ASR provider runs on Metal |
+| Live translation end-to-end | **Works with real capture** | Mic or BlackHole input feeds VAD → MLX Whisper → NLLB |
 
 Two concrete compile-time gaps were found and fixed in 0.2.0:
 
@@ -74,12 +78,20 @@ macOS. Whisper weights stay MIT-licensed; checksums/manifests still apply.
   not justified until real M4 latency measurements exist.
 - MADLAD-400 stays irrelevant on macOS (CPU-only candle, ~50 s per caption).
 
-### Latency budget on M4 (expected, unverified)
+### Latency budget on M4 (measured, v0.5)
 
-ASR (mlx-whisper turbo, 5 s utterance) ≈ 0.5–1.5 s; NLLB CPU ≈ 1–3 s; total
-draft ≈ 2–4 s — acceptable for a captioning companion but slower than the
-Windows CUDA path (tens of ms for NLLB). Measure before optimizing; the
-diagnostics panels already expose per-stage latency.
+Measured on an M-series Mac (arm64, macOS):
+
+- **NLLB-600M int8 (CTranslate2, CPU)**: ~**340 ms average** per caption
+  sentence (p50 340 ms, max 484 ms on a 4-sentence sample). Far below the
+  earlier 1–3 s estimate — CTranslate2-CPU NLLB stays the macOS default; no
+  MLX NLLB swap is justified.
+- **MLX Whisper large-v3-turbo-q4 (Metal)**: a 3 s audio clip decodes in
+  ~2.6 s including model warm-up on first call (progressive decode; steady
+  state is faster). Model load ~1.5 s.
+- **Total draft** (5 s utterance, warm): ASR + NLLB ≈ 1–3 s — acceptable for
+  a captioning companion, and much faster than the Windows CUDA path's tens
+  of ms per stage. Measure per-stage with the diagnostics panels.
 
 ## 4. What else a macOS port needs
 
@@ -105,10 +117,13 @@ diagnostics panels already expose per-stage latency.
 
 ## 6. Recommended next steps (in order)
 
-1. Add `macos-latest` CI for the Rust/TS/Python checks (prevents regressions).
-2. Port the endpoint catalog + watcher to CoreAudio in `audio-core`
-   (same traits as `WindowsEndpointCatalog`).
-3. Add the `mlx-whisper` ASR provider to the sidecar (keep faster-whisper on
-   Windows).
-4. Benchmark NLLB on an M4; decide CTranslate2-CPU vs MLX.
-5. Package and notarize a DMG.
+1. ~~Add `macos-latest` CI for the Rust/TS/Python checks~~ **Done** (v0.3).
+2. ~~Port the endpoint catalog + watcher to CoreAudio in `audio-core`~~ **Done**
+   (v0.5): `MacosEndpointCatalog`, `MacosDeviceWatcher`, `MacosAudioCapture`,
+   `MacosAudioPlayback`; the live loop now captures real audio on macOS.
+3. ~~Add the `mlx-whisper` ASR provider~~ **Done** (v0.5): `mlx` provider +
+   `mlx-whisper-large-v3-turbo-q4` catalog entry (~440 MB, Metal).
+4. ~~Benchmark NLLB on an M4~~ **Done** (v0.5): ~340 ms/sentence CPU — keep
+   CTranslate2; no MLX swap.
+5. **Remaining**: macOS permissions UX (mic prompt + guidance, BlackHole setup
+   hint), DMG packaging/notarization, and UI polish (control app + overlay).

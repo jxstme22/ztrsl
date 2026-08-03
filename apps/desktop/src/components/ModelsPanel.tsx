@@ -6,7 +6,7 @@ import {
   X,
   Cpu,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useT } from "../features/i18n/store";
@@ -82,6 +82,11 @@ export function ProgressBar({ event }: { event: ModelProgress }) {
       : event.phase === "extract"
         ? "Extracting"
         : "Installing";
+  const { speed, eta } = useDownloadSpeed(
+    `${event.modelId}:${String(event.fileIndex)}`,
+    event.totalBytesDone,
+    event.totalBytesTotal,
+  );
   return (
     <div className="lst-progress" role="progressbar" aria-valuenow={percent}>
       <div className="lst-progress-track">
@@ -99,9 +104,78 @@ export function ProgressBar({ event }: { event: ModelProgress }) {
             " of " +
             String(event.fileCount)
           : ""}
+        {event.phase === "download" && speed !== null && speed > 0 && (
+          <>
+            {" · "}
+            {formatBytes(speed)}/s
+            {eta !== null && <> · {formatEta(eta)} left</>}
+          </>
+        )}
       </span>
     </div>
   );
+}
+
+/** Format a duration in seconds as a compact ETA ("1m 30s", "12s"). */
+export function formatEta(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  if (total >= 60) {
+    const minutes = Math.floor(total / 60);
+    const rest = total % 60;
+    return rest > 0
+      ? `${String(minutes)}m ${String(rest)}s`
+      : `${String(minutes)}m`;
+  }
+  return `${String(total)}s`;
+}
+
+/**
+ * Rolling download speed + ETA. Feed it the current bytes-done (and the total)
+ * on every progress event with a stable `key` so the history resets when a
+ * new download/file begins. Returns `{ speed, eta }` where both are `null`
+ * until enough samples exist.
+ */
+export function useDownloadSpeed(
+  key: string,
+  bytesDone: number,
+  totalBytes: number,
+): { speed: number | null; eta: number | null } {
+  const historyRef = useRef<{ key: string; at: number; bytes: number }[]>([]);
+  const [speed, setSpeed] = useState<number | null>(null);
+  const [eta, setEta] = useState<number | null>(null);
+  useEffect(() => {
+    const now = Date.now();
+    const points = historyRef.current;
+    if (points[0]?.key !== key) {
+      historyRef.current = [{ key, at: now, bytes: bytesDone }];
+      setSpeed(null);
+      setEta(null);
+      return;
+    }
+    points.push({ key, at: now, bytes: bytesDone });
+    while (points.length > 1 && now - points[0].at > 4000) {
+      points.shift();
+    }
+    const first = points.at(0);
+    const last = points.at(-1);
+    if (first === undefined || last === undefined || first === last) {
+      return;
+    }
+    const elapsedSec = (last.at - first.at) / 1000;
+    if (elapsedSec > 0.5 && last.bytes > first.bytes) {
+      const current = (last.bytes - first.bytes) / elapsedSec;
+      setSpeed(current);
+      setEta(
+        current > 0 && totalBytes > 0
+          ? Math.max(0, (totalBytes - last.bytes) / current)
+          : null,
+      );
+    }
+    return () => {
+      historyRef.current = [];
+    };
+  }, [key, bytesDone, totalBytes]);
+  return { speed, eta };
 }
 
 export type DialogAction =
@@ -300,8 +374,6 @@ function ModelCard({
         </span>
         <span>·</span>
         <span>{model.licenseSpdx}</span>
-      </div>
-      <div className="lst-model-meta">
         <span className="lst-capability">
           {capabilityLabel(model.capabilities.languageCapability, t)}
         </span>
@@ -490,6 +562,11 @@ function GpuRuntimePanel({
           ),
         )
       : 0;
+  const { speed, eta } = useDownloadSpeed(
+    "gpu-runtime",
+    progress?.totalBytesDone ?? 0,
+    progress?.totalBytesTotal ?? 0,
+  );
   return (
     <section className="lst-gpu-card" aria-label={t("gpuTitle")}>
       <div className="lst-gpu-head">
@@ -533,6 +610,13 @@ function GpuRuntimePanel({
               {progress.fileCount > 0
                 ? `${t("gpuDownloading")} ${String(progress.fileIndex + 1)} of ${String(progress.fileCount)} · ${formatBytes(progress.totalBytesDone)} / ${formatBytes(progress.totalBytesTotal)}`
                 : `${t("gpuDownloading")} · ${formatBytes(progress.totalBytesDone)}`}
+              {speed !== null && speed > 0 && (
+                <>
+                  {" · "}
+                  {formatBytes(speed)}/s
+                  {eta !== null && <> · {formatEta(eta)} left</>}
+                </>
+              )}
             </span>
           </div>
         </div>

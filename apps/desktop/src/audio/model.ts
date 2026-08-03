@@ -28,7 +28,7 @@ export const audioEndpointSchema = z.object({
 });
 
 export const endpointCatalogSchema = z.object({
-  platform: z.enum(["windows", "development"]),
+  platform: z.enum(["windows", "macos", "development"]),
   endpoints: z.array(audioEndpointSchema),
   deviceChangeDetected: z.boolean(),
   processCaptureSupported: z.boolean(),

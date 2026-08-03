@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>xTRSNLTR captures voice-chat audio you select (a BlackHole virtual input or your microphone) and translates it into English captions on this PC. Audio is processed locally and never uploaded.</string>
+</dict>
+</plist>

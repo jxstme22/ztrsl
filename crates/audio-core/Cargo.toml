@@ -10,6 +10,11 @@ getrandom.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+coreaudio-rs = "0.11"
+coreaudio-sys = "0.2"
+cpal = "0.15.3"
+
 [dev-dependencies]
 serde_json.workspace = true
 

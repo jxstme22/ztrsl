@@ -16,6 +16,7 @@ const BASE_OVERLAY: OverlaySettings = {
   fontScale: 1,
   backgroundOpacity: 0.45,
   showSource: true,
+  captionAlignment: "center",
   primarySourceId: null,
   hiddenSourceIds: [],
   simultaneousPolicy: "show-both",

@@ -19,6 +19,11 @@ export const captionLabelStyleSchema = z.enum([
 ]);
 export type CaptionLabelStyle = z.infer<typeof captionLabelStyleSchema>;
 
+/** Horizontal alignment of a caption's text paragraph (v0.5.1). */
+export const captionAlignmentSchema = z.enum(["left", "center", "right"]);
+export type CaptionAlignment = z.infer<typeof captionAlignmentSchema>;
+export const DEFAULT_CAPTION_ALIGNMENT: CaptionAlignment = "center";
+
 export const languageProfileSchema = z.enum([
   "tagalog",
   "taglish",
@@ -78,6 +83,8 @@ export const audioSourceConfigSchema = z.object({
   /** Short tag shown on captions (e.g. "TEAM"). 1..32 chars, ≤16 suggested. */
   captionTag: z.string().trim().min(1).max(32),
   labelStyle: captionLabelStyleSchema,
+  /** Per-source caption paragraph alignment. Defaults to center (global). */
+  captionAlignment: captionAlignmentSchema.default(DEFAULT_CAPTION_ALIGNMENT),
   color: sourceColorSchema,
   captureTarget: captureTargetSchema,
   monitoring: monitoringConfigSchema,
@@ -103,6 +110,7 @@ export function defaultSourceConfig(): AudioSourceConfig {
     displayName: "Valorant Team",
     captionTag: "TEAM",
     labelStyle: "brackets",
+    captionAlignment: DEFAULT_CAPTION_ALIGNMENT,
     color: null,
     captureTarget: { kind: "endpoint", endpointId: null },
     monitoring: {

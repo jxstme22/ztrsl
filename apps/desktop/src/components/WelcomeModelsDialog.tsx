@@ -2,12 +2,8 @@ import { useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  Ear,
   HardDriveDownload,
-  Languages,
-  Lock,
   RotateCw,
-  ShieldCheck,
 } from "lucide-react";
 
 import { formatBytes, ProgressBar } from "./ModelsPanel";
@@ -16,28 +12,7 @@ import type { UiLanguageController } from "../features/i18n/useUiLanguage";
 import type { ModelInfo } from "../models/model";
 import type { ModelUiState } from "../models/useModels";
 
-const STEPS: readonly {
-  number: string;
-  icon: typeof Ear;
-  title: "welcomeListen" | "welcomeTranslate" | "welcomePrivate";
-  text: "welcomeListenText" | "welcomeTranslateText" | "welcomePrivateText";
-}[] = [
-  { number: "1", icon: Ear, title: "welcomeListen", text: "welcomeListenText" },
-  {
-    number: "2",
-    icon: Languages,
-    title: "welcomeTranslate",
-    text: "welcomeTranslateText",
-  },
-  {
-    number: "3",
-    icon: Lock,
-    title: "welcomePrivate",
-    text: "welcomePrivateText",
-  },
-];
-
-function ChoiceCard({
+function ChoiceRow({
   model,
   models,
   onInstall,
@@ -136,18 +111,14 @@ export function WelcomeModelsDialog({
         aria-label={t("welcomeTitle")}
         className="lst-welcome"
       >
-        <div className="lst-welcome-accent" aria-hidden="true" />
         <div className="lst-welcome-head">
-          <span className="lst-welcome-mark" aria-hidden="true">
-            <ShieldCheck size={20} />
-          </span>
           <div>
             <h2>{t("welcomeTitle")}</h2>
             <p className="lst-welcome-sub">{t("welcomeSub")}</p>
           </div>
         </div>
 
-        <div className="field lst-welcome-language">
+        <div className="lst-welcome-language">
           <span>{t("welcomeChooseLanguage")}</span>
           <Select
             id="welcome-language"
@@ -162,21 +133,6 @@ export function WelcomeModelsDialog({
             ]}
           />
         </div>
-
-        <ol className="lst-welcome-steps" aria-label={t("welcomeSub")}>
-          {STEPS.map(({ number, icon: Icon, title, text }) => (
-            <li key={number}>
-              <span className="lst-welcome-step-number" aria-hidden="true">
-                {number}
-              </span>
-              <Icon aria-hidden="true" size={15} />
-              <div>
-                <strong>{t(title)}</strong>
-                <span>{t(text)}</span>
-              </div>
-            </li>
-          ))}
-        </ol>
 
         {models.loading ? (
           <div className="lst-welcome-loading" role="status">
@@ -211,7 +167,7 @@ export function WelcomeModelsDialog({
             >
               <div className="lst-model-grid">
                 {recommended.map((model) => (
-                  <ChoiceCard
+                  <ChoiceRow
                     key={model.id}
                     model={model}
                     models={models}
@@ -245,7 +201,7 @@ export function WelcomeModelsDialog({
                 {showOptional && (
                   <div className="lst-model-grid lst-welcome-optional-grid">
                     {others.map((model) => (
-                      <ChoiceCard
+                      <ChoiceRow
                         key={model.id}
                         model={model}
                         models={models}

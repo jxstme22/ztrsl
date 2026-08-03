@@ -1,15 +1,18 @@
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAudioMeter } from "../audio/useAudioMeter";
 import { ColorPicker } from "./ColorPicker";
 import { Select } from "./Select";
 import { useT } from "../features/i18n/store";
 import { type AsrProvider } from "../live/bridge";
 import { renderLabel } from "../sources/labels";
 import { SOURCE_PRESETS, createSourceFromPreset } from "../sources/presets";
+import { detectBlackHole } from "../setup/blackHole";
 import {
   MAX_SOURCES,
   type AudioSourceConfig,
+  type CaptionAlignment,
   type CaptionLabelStyle,
   type LanguageProfile,
   type LanguageStrictness,
@@ -91,6 +94,15 @@ export const LABEL_STYLE_OPTIONS: readonly {
   { value: "hidden", label: "Hidden — no label" },
 ];
 
+export const CAPTION_ALIGNMENT_OPTIONS: readonly {
+  value: CaptionAlignment;
+  label: string;
+}[] = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+];
+
 export const PRESET_OPTIONS = SOURCE_PRESETS.map((preset) => ({
   value: preset.id,
   label: preset.label,
@@ -164,6 +176,18 @@ function SourceCard({
               onChange({ labelStyle: value as CaptionLabelStyle });
             }}
             options={LABEL_STYLE_OPTIONS}
+          />
+        </label>
+
+        <label className="field">
+          <span>{t("sourcesCaptionAlignment")}</span>
+          <Select
+            label={t("sourcesCaptionAlignment")}
+            value={source.captionAlignment}
+            onChange={(value) => {
+              onChange({ captionAlignment: value as CaptionAlignment });
+            }}
+            options={CAPTION_ALIGNMENT_OPTIONS}
           />
         </label>
 
@@ -275,6 +299,37 @@ function SourceCard({
   );
 }
 
+function MacosSetupHint() {
+  const t = useT();
+  const audio = useAudioMeter();
+  const catalog = audio.catalog;
+  const detection = catalog !== null ? detectBlackHole(catalog) : null;
+
+  if (detection?.installed === true) {
+    return (
+      <div className="inline-alert ok" role="status">
+        <div>
+          <strong>BlackHole detected</strong>
+          <p>
+            Route VALORANT voice-chat output to “BlackHole 2ch” in the game's
+            audio settings, then capture its input here. Your microphone is
+            always available as its own source.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="inline-alert" role="status">
+      <div>
+        <strong>macOS setup</strong>
+        <p>{t("sourcesMacosHint")}</p>
+      </div>
+    </div>
+  );
+}
+
 export function SourcesPanel({
   asrProvider = "local",
 }: {
@@ -284,9 +339,11 @@ export function SourcesPanel({
   const [presetToAdd, setPresetToAdd] = useState("custom");
   const atMax = configs.sources.length >= MAX_SOURCES;
   const t = useT();
+  const audio = useAudioMeter();
 
   return (
     <div className="page-stack">
+      {audio.catalog?.platform === "macos" && <MacosSetupHint />}
       <section className="card" aria-labelledby="sources-title">
         <div className="card-head">
           <h2 className="card-title" id="sources-title">

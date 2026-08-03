@@ -183,13 +183,24 @@ export function LiveTranslationPanel({
   const listening = live.state === "listening";
 
   const endpoints = audio.catalog?.endpoints ?? [];
+  const isMacos = audio.catalog?.platform === "macos";
+  // On Windows, loopback captures a render endpoint (WASAPI loopback). On
+  // macOS, BlackHole exposes its input as a capture endpoint — the game
+  // routes voice-chat output to BlackHole, and we capture that input.
   const captureInputs = useMemo(
     () => endpoints.filter((endpoint) => endpoint.kind === "capture"),
     [endpoints],
   );
   const loopbackInputs = useMemo(
-    () => endpoints.filter((endpoint) => endpoint.kind === "render"),
-    [endpoints],
+    () =>
+      isMacos
+        ? endpoints.filter(
+            (endpoint) =>
+              endpoint.kind === "capture" &&
+              /blackhole|black hole/i.test(endpoint.friendlyName),
+          )
+        : endpoints.filter((endpoint) => endpoint.kind === "render"),
+    [endpoints, isMacos],
   );
 
   // Installed local model ids (whisper/nllb/madlad on disk) plus the known
@@ -208,6 +219,9 @@ export function LiveTranslationPanel({
 
   const tag = (label: string, installed: boolean): string =>
     installed ? label : `${label} (${t("liveNotInstalled")})`;
+
+  /** Mark a cloud/API provider so it is clearly distinct from local ones. */
+  const cloud = (label: string): string => `${label} · Cloud`;
 
   const channelOptions = useMemo<SelectOption[]>(() => {
     const options: SelectOption[] = [];
@@ -513,6 +527,17 @@ export function LiveTranslationPanel({
                   installedModelIds.has("whisper-large-v3"),
                 ),
               },
+              ...(audio.catalog?.platform === "macos"
+                ? [
+                    {
+                      value: "mlx" as const,
+                      label: tag(
+                        "Apple Silicon Whisper (Metal, recommended on Mac)",
+                        installedModelIds.has("mlx-whisper-large-v3-turbo-q4"),
+                      ),
+                    },
+                  ]
+                : []),
               {
                 value: "ncspeech",
                 label: tag(
@@ -536,7 +561,7 @@ export function LiveTranslationPanel({
                   installedModelIds.has("ncspeech-zh-parakeet-ctc-0.6b"),
                 ),
               },
-              { value: "groq-whisper", label: "Groq Whisper (API)" },
+              { value: "groq-whisper", label: cloud("Groq Whisper (API)") },
             ]}
           />
         </div>
@@ -568,14 +593,17 @@ export function LiveTranslationPanel({
               },
               {
                 value: "google-translate",
-                label: "Google Translate (free, unofficial endpoint)",
+                label: cloud("Google Translate (free, unofficial endpoint)"),
               },
               {
                 value: "libretranslate",
-                label: "LibreTranslate (any instance URL)",
+                label: cloud("LibreTranslate (any instance URL)"),
               },
-              { value: "mymemory", label: "MyMemory (free, daily quota)" },
-              { value: "custom-http", label: t("liveCustomHttp") },
+              {
+                value: "mymemory",
+                label: cloud("MyMemory (free, daily quota)"),
+              },
+              { value: "custom-http", label: cloud(t("liveCustomHttp")) },
             ]}
           />
         </div>
@@ -617,6 +645,21 @@ export function LiveTranslationPanel({
                 setEnvVar("LST_GROQ_API_KEY", event.currentTarget.value);
               }}
             />
+            <small className="field-note">
+              Groq's Whisper runs in the cloud — audio is sent to Groq while
+              this option is selected. Get a free key:
+            </small>
+            <ol className="lst-key-steps">
+              <li>
+                Create a free account at <code>console.groq.com</code>.
+              </li>
+              <li>
+                Open <code>console.groq.com/keys</code> → “Create API Key”.
+              </li>
+              <li>
+                Copy the <code>gsk_…</code> key here and press Start.
+              </li>
+            </ol>
           </div>
         </div>
       )}

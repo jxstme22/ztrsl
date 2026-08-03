@@ -86,6 +86,34 @@
       ]
     },
     {
+      "id": "mlx-whisper-large-v3-turbo-q4",
+      "name": "Whisper Turbo (Apple Silicon)",
+      "kind": "asr",
+      "runtime": "mlx-whisper",
+      "recommended": false,
+      "platforms": ["macos"],
+      "description": "MLX-quantized Whisper large-v3-turbo (~440 MB) for Apple Silicon (M-series). Runs on the Metal GPU/ANE for roughly real-time captions — the macOS equivalent of the CUDA path. MIT license.",
+      "license": {
+        "spdx": "MIT",
+        "notice": "OpenAI Whisper model weights, MIT license, MLX-quantized by mlx-community."
+      },
+      "download_size_bytes": 463664664,
+      "source": "https://huggingface.co/mlx-community/whisper-large-v3-turbo-q4",
+      "revision": "660c343bbf4e52ac257f0b7d952e5388e6f93bef",
+      "files": [
+        {
+          "path": "config.json",
+          "size_bytes": 341,
+          "sha256": "538e24557b8f9bc504700add5e7bbe32087c2353001ff563e64772ad4398671a"
+        },
+        {
+          "path": "weights.npz",
+          "size_bytes": 463664664,
+          "sha256": "862bbc832b05f3f4ec19dd632b701d61a6d3f5c7906360a10d72a79870642a80"
+        }
+      ]
+    },
+    {
       "id": "omni-ctc-300m-int8",
       "name": "OmniLingual CTC 300M",
       "kind": "asr",

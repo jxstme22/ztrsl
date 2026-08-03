@@ -12,7 +12,7 @@ import { EMPTY_ROUTING_SNAPSHOT } from "./model";
 
 export function useRoutingTest() {
   const [endpoints, setEndpoints] = useState<AudioEndpoint[]>([]);
-  const [platform, setPlatform] = useState<"windows" | "development">(
+  const [platform, setPlatform] = useState<"windows" | "macos" | "development">(
     "development",
   );
   const [captureId, setCaptureId] = useState("");

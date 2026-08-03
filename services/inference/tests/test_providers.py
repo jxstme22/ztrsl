@@ -281,3 +281,159 @@ def test_nllb_provider_missing_manifest_is_visible(
     empty_dir.mkdir()
     with pytest.raises(ModelUnavailableError):
         NllbCTranslate2Provider(empty_dir)
+
+
+class FakeMlxModule:
+    """Fake `mlx_whisper` module recording transcribe calls."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self._segments: list[dict[str, Any]] = []
+
+    def set_segments(self, segments: list[dict[str, Any]]) -> None:
+        self._segments = segments
+
+    def transcribe(self, audio: Any, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append({"audio_shape": getattr(audio, "shape", None), **kwargs})
+        return {
+            "text": " ".join(seg.get("text", "") for seg in self._segments).strip(),
+            "segments": self._segments,
+            "language": "tl",
+        }
+
+
+@pytest.fixture
+def mlx_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    model_dir = tmp_path / "mlx-whisper"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_bytes(b"{}")
+    (model_dir / "weights.npz").write_bytes(b"\x00\x00\x00\x00")
+
+    def digest(data: bytes) -> str:
+        import hashlib
+
+        return hashlib.sha256(data).hexdigest()
+
+    (model_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": "mlx-whisper-large-v3-turbo-q4",
+                "artifacts": [
+                    {
+                        "role": "config",
+                        "path": "config.json",
+                        "size_bytes": 2,
+                        "sha256": digest(b"{}"),
+                    },
+                    {
+                        "role": "model",
+                        "path": "weights.npz",
+                        "size_bytes": 4,
+                        "sha256": digest(b"\x00\x00\x00\x00"),
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    mlx = FakeMlxModule()
+    monkeypatch.setitem(sys.modules, "mlx_whisper", mlx)
+    return {"mlx": mlx}, model_dir
+
+
+def test_mlx_provider_transcribes_utterance(
+    mlx_env: tuple[dict[str, Any], Path],
+) -> None:
+    from local_squad_inference.providers import MlxWhisperProvider
+    from local_squad_inference.vad import AudioUtterance
+
+    modules, model_dir = mlx_env
+    modules["mlx"].set_segments(
+        [{"text": "Push A site", "start": 0.0, "end": 1.2, "avg_logprob": -0.1}]
+    )
+    provider = MlxWhisperProvider(model_dir)
+    assert provider.runtime_detail == "metal/mlx-4bit"
+    result = provider.transcribe(
+        AudioUtterance(
+            utterance_id="u1",
+            pcm_f32=(0.0, 0.1, 0.0),
+            sample_rate=16_000,
+            started_ns=0,
+            ended_ns=1_200_000_000,
+            is_final=True,
+            forced_end=True,
+        ),
+        source_mode="filipino",
+    )
+    assert result.text == "Push A site"
+    assert result.language == "tl"
+    call = modules["mlx"].calls[0]
+    assert call["language"] == "tl"
+    assert call["path_or_hf_repo"] == str(model_dir.resolve())
+    assert call["condition_on_previous_text"] is False
+
+
+def test_mlx_provider_drops_hallucination_segments(
+    mlx_env: tuple[dict[str, Any], Path],
+) -> None:
+    from local_squad_inference.providers import MlxWhisperProvider
+    from local_squad_inference.vad import AudioUtterance
+
+    modules, model_dir = mlx_env
+    modules["mlx"].set_segments(
+        [
+            {"text": "Thanks for watching", "start": 0.0, "end": 0.5, "avg_logprob": -0.1},
+            {"text": "rotate B, they are on A", "start": 0.5, "end": 1.5, "avg_logprob": -0.2},
+        ]
+    )
+    provider = MlxWhisperProvider(model_dir)
+    result = provider.transcribe(
+        AudioUtterance(
+            utterance_id="u2",
+            pcm_f32=(0.0, 0.1, 0.0),
+            sample_rate=16_000,
+            started_ns=0,
+            ended_ns=1_500_000_000,
+            is_final=True,
+            forced_end=True,
+        ),
+        source_mode="filipino",
+    )
+    # The hallucination segment is dropped; real speech is kept.
+    assert "rotate B" in result.text
+    assert "Thanks for watching" not in result.text
+
+
+def test_mlx_provider_missing_library_is_visible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from local_squad_inference.providers import MlxWhisperProvider
+
+    model_dir = tmp_path / "mlx-missing"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_bytes(b"{}")
+    (model_dir / "weights.npz").write_bytes(b"\x00")
+    (model_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": "mlx-whisper-large-v3-turbo-q4",
+                "artifacts": [
+                    {"path": "config.json", "size_bytes": 2, "sha256": "0" * 64},
+                    {"path": "weights.npz", "size_bytes": 1, "sha256": "1" * 64},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delitem(sys.modules, "mlx_whisper", raising=False)
+    monkeypatch.setattr("importlib.import_module", _raise_on_mlx)
+    with pytest.raises(ModelUnavailableError):
+        MlxWhisperProvider(model_dir)
+
+
+def _raise_on_mlx(name: str) -> Any:
+    if name == "mlx_whisper":
+        raise ImportError("no mlx-whisper installed")
+    return __import__(name)

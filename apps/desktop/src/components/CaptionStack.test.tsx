@@ -13,6 +13,7 @@ function source(supplied: Partial<CaptionSource>): CaptionSource {
     sourceId: TEAM,
     captionTag: "TEAM",
     labelStyle: "brackets",
+    captionAlignment: "center",
     color: null,
     ...supplied,
   };
@@ -235,5 +236,32 @@ describe("CaptionStack lanes", () => {
     expect(
       screen.getByText("overlapping_speech · low_asr_confidence"),
     ).toBeInTheDocument();
+  });
+
+  it("applies per-source caption alignment over the global setting", () => {
+    // No per-source alignment => the global "right" applies.
+    const globalRight = {
+      ...snapshot([caption("team", "Rotate B!", undefined)]),
+      settings: {
+        ...DEFAULT_OVERLAY_SETTINGS,
+        captionAlignment: "right" as const,
+      },
+    };
+    const { rerender } = render(<CaptionStack snapshot={globalRight} />);
+    expect(
+      screen.getByText("Rotate B!").closest(".caption-entry"),
+    ).toHaveAttribute("data-align", "right");
+
+    // Per-source "left" overrides the global "right".
+    const perSourceLeft = {
+      ...globalRight,
+      captions: [
+        caption("team", "Rotate B!", source({ captionAlignment: "left" })),
+      ],
+    };
+    rerender(<CaptionStack snapshot={perSourceLeft} />);
+    expect(
+      screen.getByText("Rotate B!").closest(".caption-entry"),
+    ).toHaveAttribute("data-align", "left");
   });
 });

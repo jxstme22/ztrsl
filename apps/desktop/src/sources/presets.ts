@@ -120,6 +120,7 @@ export function createSourceFromPreset(
     displayName: overrides.displayName ?? preset.displayName,
     captionTag: overrides.captionTag ?? preset.captionTag,
     labelStyle: overrides.labelStyle ?? preset.labelStyle,
+    captionAlignment: "center",
     color: overrides.color !== undefined ? overrides.color : preset.color,
     captureTarget: { kind: "endpoint", endpointId: null },
     monitoring: { enabled: false, headphoneEndpointId: null, volume: 0.5 },

@@ -51,12 +51,17 @@ export function CaptionStack({
             : (caption.source?.captionTag ?? ""),
           caption.source?.labelStyle ?? "brackets",
         );
+        // Per-source alignment override wins over the global setting.
+        const alignment =
+          caption.source?.captionAlignment ??
+          snapshot.settings.captionAlignment;
         return (
           <article
             className="caption-entry"
             data-status={caption.status}
             data-uncertain={uncertain || undefined}
             data-source={caption.source?.sourceId}
+            data-align={alignment}
             key={caption.id}
             style={
               {

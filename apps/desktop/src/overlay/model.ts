@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { captionLabelStyleSchema } from "../sources/model";
+import {
+  captionAlignmentSchema,
+  captionLabelStyleSchema,
+} from "../sources/model";
 
 export const captionStatusSchema = z.enum(["provisional", "final", "error"]);
 
@@ -11,6 +14,8 @@ export const captionSourceSchema = z.object({
   sourceId: z.string().regex(/^[0-9a-f]{32}$/),
   captionTag: z.string().min(1).max(32),
   labelStyle: captionLabelStyleSchema,
+  /** Per-source caption alignment override (v0.5.1). */
+  captionAlignment: captionAlignmentSchema.default("center"),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/)
@@ -86,6 +91,8 @@ export const overlaySettingsSchema = z.object({
   fontScale: z.number().min(0.8).max(1.6),
   backgroundOpacity: z.number().min(0.35).max(0.9),
   showSource: z.boolean(),
+  /** Global caption paragraph alignment; per-source overrides win (v0.5.1). */
+  captionAlignment: captionAlignmentSchema.default("center"),
   /** Which source owns the primary caption lane (immutable id). Null = auto. */
   primarySourceId: z
     .string()
@@ -127,6 +134,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   fontScale: 1,
   backgroundOpacity: 0.45,
   showSource: true,
+  captionAlignment: "center",
   primarySourceId: null,
   hiddenSourceIds: [],
   simultaneousPolicy: "show-both",

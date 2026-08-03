@@ -253,6 +253,9 @@ select:disabled {
   justify-content: center;
   overflow-y: auto;
   padding: 18px 22px 56px;
+  /* Guarantee the last card never touches the bottom border when scrolled to
+     the end, regardless of the page's own layout. */
+  scroll-padding-bottom: 72px;
 }
 
 .page-stack {
@@ -260,7 +263,8 @@ select:disabled {
   align-content: start;
   gap: 12px;
   width: min(100%, 900px);
-  padding-bottom: 16px;
+  padding-bottom: 56px;
+  margin-bottom: 8px;
 }
 
 /* ---------------------------------------------------------------- */
@@ -1874,6 +1878,23 @@ input[type="range"]::-moz-range-thumb {
   -webkit-line-clamp: 2;
 }
 
+/* v0.5.1 paragraph alignment: per-source override wins, else the global
+   setting. Defaults to center (classic subtitles). */
+.caption-entry[data-align="left"] .caption-english {
+  text-align: left;
+}
+.caption-entry[data-align="right"] .caption-english {
+  text-align: right;
+}
+.caption-entry[data-align="left"] .caption-tag,
+.caption-entry[data-align="right"] .caption-tag {
+  text-align: inherit;
+}
+.caption-entry[data-align="left"] .caption-source,
+.caption-entry[data-align="right"] .caption-source {
+  text-align: inherit;
+}
+
 .caption-state {
   position: absolute;
   top: 10px;
@@ -2062,18 +2083,20 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-model-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   align-items: stretch;
 }
 .lst-model-card {
   border: 1px solid var(--stroke);
   background: var(--glass);
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 20px 22px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto auto;
+  column-gap: 24px;
+  row-gap: 10px;
   min-width: 0;
   min-height: 0;
   transition:
@@ -2090,13 +2113,14 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-model-card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  grid-column: 1 / -1;
 }
 .lst-model-card-head h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 650;
   line-height: 1.3;
   color: var(--fg-strong);
@@ -2105,9 +2129,10 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-model-description {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--muted);
+  grid-column: 1 / -1;
 }
 .lst-model-meta {
   display: flex;
@@ -2118,9 +2143,9 @@ input[type="range"]::-moz-range-thumb {
   color: var(--faint);
 }
 .lst-model-meta:has(.lst-capability) {
-  padding-top: 10px;
-  margin-top: auto;
-  border-top: 1px solid var(--stroke);
+  padding-top: 0;
+  margin-top: 0;
+  border-top: none;
 }
 .lst-capability {
   display: inline-flex;
@@ -2140,7 +2165,15 @@ input[type="range"]::-moz-range-thumb {
   justify-content: flex-end;
   gap: 8px;
   align-items: center;
-  min-height: 32px;
+  grid-column: 1 / -1;
+  padding-top: 6px;
+  border-top: 1px solid var(--stroke);
+}
+.lst-model-card .lst-progress {
+  grid-column: 1 / -1;
+}
+.lst-model-card .lst-error-text {
+  grid-column: 1 / -1;
 }
 .lst-model-empty {
   color: var(--muted);
@@ -2228,6 +2261,20 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-gpu-progress {
   min-width: 0;
+}
+.lst-key-steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.lst-key-steps code {
+  color: var(--fg-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
 }
 .lst-error-text {
   color: #f2879b;
@@ -2344,50 +2391,25 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-welcome {
   position: relative;
-  width: min(720px, calc(100vw - 48px));
+  width: min(760px, calc(100vw - 48px));
   max-height: calc(100vh - 56px);
   overflow: auto;
   border-radius: var(--radius-lg);
   border: 1px solid var(--stroke);
   background: var(--glass-strong);
-  padding: 22px 26px;
+  padding: 26px 28px 22px;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.6);
-}
-.lst-welcome-accent {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--primary, #dc4d5e);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-.lst-welcome-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
 }
 .lst-welcome-head h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 19px;
   letter-spacing: -0.01em;
   color: var(--fg-strong);
 }
-.lst-welcome-mark {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  flex: none;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--stroke-strong);
-  background: var(--glass-strong);
-  color: var(--primary, #dc4d5e);
-}
 .lst-welcome-sub {
-  margin: 2px 0 0;
-  font-size: 12.5px;
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--muted);
 }
 .lst-welcome-language {
@@ -2395,8 +2417,8 @@ input[type="range"]::-moz-range-thumb {
   grid-template-columns: 1fr minmax(180px, 240px);
   gap: 10px;
   align-items: center;
-  margin-bottom: 14px;
-  padding: 10px 12px;
+  margin: 16px 0 20px;
+  padding: 12px 14px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
   background: var(--glass);
@@ -2409,58 +2431,6 @@ input[type="range"]::-moz-range-thumb {
 .lst-welcome-language .field {
   margin: 0;
 }
-.lst-welcome-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0 0 18px;
-  padding: 0;
-  list-style: none;
-}
-.lst-welcome-steps li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid var(--stroke);
-  border-radius: var(--radius-sm);
-  background: var(--glass);
-}
-.lst-welcome-steps li > svg {
-  flex: none;
-  color: var(--primary, #dc4d5e);
-}
-.lst-welcome-steps li div {
-  display: grid;
-  min-width: 0;
-  gap: 1px;
-}
-.lst-welcome-steps strong {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fg-strong);
-}
-.lst-welcome-steps div span {
-  overflow: hidden;
-  font-size: 10.5px;
-  color: var(--faint);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lst-welcome-step-number {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border-radius: 999px;
-  background: var(--glass-strong);
-  border: 1px solid var(--stroke-strong);
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 700;
-}
 .lst-welcome-pick {
   margin-bottom: 14px;
 }
@@ -2471,7 +2441,7 @@ input[type="range"]::-moz-range-thumb {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.5;
-  color: var(--text-dim, #c6cbd6);
+  color: var(--muted);
 }
 .lst-welcome-optional {
   margin-top: 4px;
@@ -2739,13 +2709,20 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .wizard-nav {
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 0;
+  display: flex;
+  gap: 12px;
+  border-top: 1px solid var(--stroke);
+  padding-top: 16px;
 }
 
 .wizard-nav-gate {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-left: auto;
 }
 
 .wizard-nav-gate .field-errors {

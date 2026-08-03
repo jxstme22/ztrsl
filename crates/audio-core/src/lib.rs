@@ -10,12 +10,21 @@ use thiserror::Error;
 #[cfg(target_os = "windows")]
 mod windows;
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 mod source;
 
 #[cfg(target_os = "windows")]
 pub use windows::{
     EndpointEvent, WindowsAudioCapture, WindowsAudioPlayback, WindowsDeviceWatcher,
     WindowsEndpointCatalog, windows_endpoint_peak,
+};
+
+#[cfg(target_os = "macos")]
+pub use macos::{
+    MacosAudioCapture, MacosAudioPlayback, MacosDeviceWatcher, MacosEndpointCatalog,
+    MacosEndpointEvent, macos_endpoint_peak,
 };
 
 pub use source::{

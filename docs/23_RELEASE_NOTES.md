@@ -1,5 +1,52 @@
 # 23 — Release Notes
 
+## v0.5.2 — UI polish + caption alignment + download speed
+
+- **Models page redesigned** — full-width cards matching Live / Diagnostics /
+  Settings: same radius, padding, and hover, one card per model (no more
+  cramped two-column grid).
+- **Welcome card cleaned up** — removed the accent bar, icon mark, and the
+  3-step strip; it now reads like the Live page: a simple title, a language
+  picker, and the recommended model choices.
+- **Setup wizard** — Back left, Next right, with a subtle divider so the nav
+  bar reads clearly.
+- **Caption paragraph alignment** — choose **left / center / right** in
+  Settings (global) and per source in Sources. Per-source wins over global.
+- **Download speed + ETA** — the Models and GPU progress bars now show
+  `MB/s` and `time left` while downloading.
+- **Footer gap fixed** — the last card now keeps clear space above the window
+  edge when you scroll to the bottom.
+- **Local vs cloud clearer** — cloud ASR/translation providers are marked
+  `· Cloud` in the Live provider list, and the Groq key field now explains how
+  to get a free key (console.groq.com).
+- **macOS-only models are hidden on Windows** — the MLX Whisper weights no
+  longer appear in the Windows Models page (platform-gated in the catalog).
+
+## v0.5.1 — macOS is now real (CoreAudio capture + Apple Silicon ASR)
+
+The Mac app was previously a development demo: only synthetic audio, CPU-only
+Whisper. Now the live pipeline works end-to-end on Apple Silicon:
+
+- **Real CoreAudio capture** — `MacosEndpointCatalog` enumerates your real
+  input/output devices; `MacosAudioCapture` captures your microphone or a
+  virtual device like BlackHole's input (the macOS answer to VB-CABLE — the
+  game routes voice-chat output to BlackHole, the app captions that mix).
+  `MacosDeviceWatcher` flags device add/remove changes so the endpoint list
+  stays fresh. The Live page's source list now groups BlackHole as a
+  "loopback" capture on Mac, exactly like WASAPI loopback on Windows.
+- **Apple Silicon ASR (mlx-whisper)** — a new `mlx` ASR provider runs
+  Whisper large-v3-turbo on the Metal GPU/ANE via the MLX `-q4` weights
+  (~440 MB, pinned + checksum-verified). Roughly real-time captions on
+  M-series, where CTranslate2 was CPU-only (~3x real-time).
+- **NLLB measured on M4**: ~340 ms/sentence on CPU — well under budget, so
+  NLLB stays the macOS translator (no MLX swap needed). Recorded in
+  `docs/16_MACOS_PORT.md`.
+- **macOS setup guidance** — the Sources page shows a BlackHole + microphone
+  permission hint when no virtual device is installed, and the app's Info.plist
+  now declares microphone usage so the macOS permission prompt is clear.
+- **Sidecar packaging** — `build-sidecar.mjs` bundles `mlx_whisper` on macOS
+  only; Windows keeps faster-whisper/CUDA.
+
 ## v0.5.0 — GPU acceleration + full Chinese UI
 
 **Live on a machine with an NVIDIA GPU but no CUDA Toolkit installed?** The

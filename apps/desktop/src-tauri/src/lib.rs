@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
 use audio_core::StreamingLinearResampler;
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+use audio_core::StreamingLinearResampler;
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use audio_core::synthetic_monitor_endpoint;
 use audio_core::{
     AtomicLevelMeter, AudioEndpoint, AudioError, AudioFormat, AudioMonitor, AudioRouter,
@@ -282,6 +284,7 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
             ids.push("whisper-large-v3-turbo");
             ids.push("whisper-large-v3");
         }
+        "mlx" | "mlx-whisper" => ids.push("mlx-whisper-large-v3-turbo-q4"),
         "ncspeech" => ids.push("ncspeech-tl-fastconformer-hybrid-large"),
         "ncspeech-zh" => ids.push("ncspeech-zh-citrinet-1024-gamma"),
         "ncspeech-zh-parakeet" => ids.push("ncspeech-zh-parakeet-ctc-0.6b"),
@@ -863,6 +866,8 @@ struct AudioRuntime {
     state: Mutex<AudioRuntimeState>,
     #[cfg(target_os = "windows")]
     watcher: Mutex<Option<audio_core::WindowsDeviceWatcher>>,
+    #[cfg(target_os = "macos")]
+    watcher: Mutex<Option<audio_core::MacosDeviceWatcher>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1458,7 +1463,27 @@ fn audio_endpoints(runtime: tauri::State<'_, AudioRuntime>) -> Result<EndpointCa
         })
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let device_change_detected = runtime
+            .watcher
+            .lock()
+            .map_err(lock_error)?
+            .as_ref()
+            .map(drain_macos_device_events)
+            .transpose()?
+            .unwrap_or(false);
+        let endpoints =
+            audio_core::MacosEndpointCatalog::enumerate().map_err(audio_error_to_string)?;
+        Ok(EndpointCatalog {
+            platform: "macos",
+            endpoints,
+            device_change_detected,
+            process_capture_supported: false,
+        })
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let mut endpoints = runtime
             .state
@@ -1735,7 +1760,20 @@ fn audio_meter_snapshot(
         })
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let peak = audio_core::macos_endpoint_peak(&endpoint_id).map_err(audio_error_to_string)?;
+        state.sequence = state.sequence.saturating_add(1);
+        Ok(LevelSnapshot {
+            sequence: state.sequence,
+            peak,
+            rms: peak,
+            clipped: peak >= 1.0,
+            dropped_frames: 0,
+        })
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     Err(AudioError::EndpointNotFound.to_string())
 }
 
@@ -1755,7 +1793,12 @@ fn platform_endpoints(runtime: &AudioRuntime) -> Result<Vec<AudioEndpoint>, Stri
         let _ = runtime;
         audio_core::WindowsEndpointCatalog::enumerate().map_err(audio_error_to_string)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = runtime;
+        audio_core::MacosEndpointCatalog::enumerate().map_err(audio_error_to_string)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let mut endpoints = runtime
             .state
@@ -1780,6 +1823,15 @@ fn stop_routing_state(state: &mut RoutingRuntimeState) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn drain_device_events(watcher: &audio_core::WindowsDeviceWatcher) -> Result<bool, String> {
+    let mut changed = false;
+    while watcher.try_next().map_err(audio_error_to_string)?.is_some() {
+        changed = true;
+    }
+    Ok(changed)
+}
+
+#[cfg(target_os = "macos")]
+fn drain_macos_device_events(watcher: &audio_core::MacosDeviceWatcher) -> Result<bool, String> {
     let mut changed = false;
     while watcher.try_next().map_err(audio_error_to_string)?.is_some() {
         changed = true;
@@ -1953,15 +2005,25 @@ fn run_live_worker(
         &events,
         &mut supervisor,
     );
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    let result = run_macos_live_loop(
+        endpoint_name,
+        loopback,
+        monitor_enabled,
+        playback_endpoint_name,
+        &stop,
+        &events,
+        &mut supervisor,
+    );
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let result = run_development_live_loop(&stop, &events, &mut supervisor);
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = endpoint_name;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = playback_endpoint_name;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = loopback;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = monitor_enabled;
 
     if let Err(error) = result {
@@ -2067,7 +2129,100 @@ fn run_windows_live_loop(
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn run_macos_live_loop(
+    endpoint_name: String,
+    loopback: bool,
+    monitor_enabled: bool,
+    playback_endpoint_name: Option<String>,
+    stop: &Receiver<()>,
+    events: &SyncSender<LiveWorkerEvent>,
+    supervisor: &mut SidecarSupervisor,
+) -> Result<(), String> {
+    let capture = if loopback {
+        audio_core::MacosAudioCapture::start_loopback(&endpoint_name, 32)
+            .map_err(audio_error_to_string)?
+    } else {
+        audio_core::MacosAudioCapture::start(&endpoint_name, 32).map_err(audio_error_to_string)?
+    };
+    let mut playback = if monitor_enabled {
+        let Some(name) = playback_endpoint_name.as_deref() else {
+            return Err("monitoring output endpoint is missing".to_owned());
+        };
+        Some(audio_core::MacosAudioPlayback::start(name, 32).map_err(audio_error_to_string)?)
+    } else {
+        None
+    };
+    let mut resampler = StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
+        .map_err(audio_error_to_string)?;
+    let mut monitor_resampler = playback
+        .as_ref()
+        .map(|playback| {
+            StreamingLinearResampler::new(
+                capture.format().sample_rate,
+                playback.format().sample_rate,
+            )
+        })
+        .transpose()
+        .map_err(audio_error_to_string)?;
+    let mut metrics = LiveMetrics::default();
+    let mut last_metrics = Instant::now();
+    // Stall detection only begins once the first frame has been delivered:
+    // some endpoints take a moment to start producing buffers, so counting
+    // silence before the first frame would false-positive on a slow warmup.
+    let mut last_frame_at: Option<Instant> = None;
+    loop {
+        if stop.try_recv().is_ok() {
+            return Ok(());
+        }
+        match capture.try_next().map_err(audio_error_to_string)? {
+            Some(frame) => {
+                last_frame_at = Some(Instant::now());
+                metrics.captured_frames = metrics.captured_frames.saturating_add(1);
+                metrics.capture_drops = capture.dropped_frames();
+                if let Some(playback) = playback.as_mut() {
+                    metrics.monitor_drops = playback.dropped_frames();
+                    metrics.monitor_underrun_samples = playback.underrun_samples();
+                    if let Some(resampler) = monitor_resampler.as_mut() {
+                        let monitor_samples = resampler.process(&frame.samples);
+                        if !monitor_samples.is_empty() {
+                            playback.try_write(monitor_samples);
+                        }
+                    }
+                }
+                let samples = resampler.process(&frame.samples);
+                if !samples.is_empty() {
+                    supervisor
+                        .send_live_audio(frame.capture_monotonic_ns, samples)
+                        .map_err(|error| error.to_string())?;
+                    metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
+                }
+            }
+            None => thread::sleep(Duration::from_millis(4)),
+        }
+        // Always drain captions/errors, even while capture is quiet: a
+        // `live.error` from the sidecar must not sit unread inside the
+        // stalled-capture branch, or the session would hang "listening" with
+        // no visible failure.
+        drain_live_captions(supervisor, events, &mut metrics)?;
+        if let Some(since) = last_frame_at {
+            if since.elapsed() >= Duration::from_secs(3) {
+                return Err(format!(
+                    "audio capture stalled: no frames for {:.1}s — the endpoint may be \
+                     disconnected or disabled, or the device is being used exclusively \
+                     by another app. Try a different capture endpoint in Sources.",
+                    since.elapsed().as_secs_f32()
+                ));
+            }
+        }
+        if last_metrics.elapsed() >= Duration::from_millis(500) {
+            let _ = events.try_send(LiveWorkerEvent::Metrics(metrics.clone()));
+            last_metrics = Instant::now();
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn run_development_live_loop(
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
@@ -2193,7 +2348,14 @@ fn create_runtime() -> AudioRuntime {
             watcher: Mutex::new(audio_core::WindowsDeviceWatcher::start(32).ok()),
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    {
+        AudioRuntime {
+            state: Mutex::new(AudioRuntimeState::default()),
+            watcher: Mutex::new(audio_core::MacosDeviceWatcher::start(32).ok()),
+        }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         AudioRuntime::default()
     }

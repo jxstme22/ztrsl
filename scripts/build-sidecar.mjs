@@ -23,6 +23,9 @@ const PYTHON = existsSync(VENV_PYTHON)
   : existsSync(VENV_PYTHON_ALT)
     ? VENV_PYTHON_ALT
     : "python";
+// macOS ships the Apple Silicon (MLX) ASR runtime in the sidecar so captions
+// run on the Metal GPU/ANE. Windows/CUDA keeps faster-whisper only.
+const IS_MACOS = process.platform === "darwin";
 
 const BUILD_ROOT = resolve(ROOT, "target", "sidecar-build");
 const DIST_DIR = resolve(BUILD_ROOT, "dist");
@@ -81,6 +84,16 @@ const args = [
   "websockets",
   "--hidden-import",
   "numpy",
+  ...(IS_MACOS
+    ? [
+        "--hidden-import",
+        "mlx_whisper",
+        "--collect-all",
+        "mlx_whisper",
+        "--collect-all",
+        "mlx",
+      ]
+    : []),
   "--collect-all",
   "ctranslate2",
   "--collect-all",

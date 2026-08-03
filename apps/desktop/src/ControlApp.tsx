@@ -44,7 +44,7 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 type SectionId =
   "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
 
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.5.2";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -415,7 +415,7 @@ function SettingsPage({
 
           <div className="field-grid">
             <label className="field">
-              <span>Simultaneous captions</span>
+              <span>{t("settingsSimultaneous")}</span>
               <Select
                 id="simultaneous-policy"
                 label={t("settingsSimultaneous")}
@@ -434,6 +434,29 @@ function SettingsPage({
               />
               <small className="field-note">
                 {t("settingsSimultaneousNote")}
+              </small>
+            </label>
+
+            <label className="field">
+              <span>{t("settingsCaptionAlignment")}</span>
+              <Select
+                id="caption-alignment"
+                label={t("settingsCaptionAlignment")}
+                value={snapshot.settings.captionAlignment}
+                onChange={(value) => {
+                  controller.updateSettings({
+                    captionAlignment:
+                      value as OverlaySettings["captionAlignment"],
+                  });
+                }}
+                options={[
+                  { value: "left", label: t("settingsAlignLeft") },
+                  { value: "center", label: t("settingsAlignCenter") },
+                  { value: "right", label: t("settingsAlignRight") },
+                ]}
+              />
+              <small className="field-note">
+                {t("settingsCaptionAlignmentNote")}
               </small>
             </label>
 

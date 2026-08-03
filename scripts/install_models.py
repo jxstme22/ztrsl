@@ -47,6 +47,15 @@ NLLB_FILES = (
     "tokenizer.json",
 )
 
+MLX_ID = "mlx-whisper-large-v3-turbo-q4"
+MLX_REPO = "mlx-community/whisper-large-v3-turbo-q4"
+MLX_REVISION = "660c343bbf4e52ac257f0b7d952e5388e6f93bef"
+MLX_MANIFEST = "mlx-whisper-large-v3-turbo-q4.json"
+MLX_FILES = (
+    "config.json",
+    "weights.npz",
+)
+
 WHISPER_SPECS: dict[str, dict[str, str]] = {
     WHISPER_ID: {
         "repo": WHISPER_REPO,
@@ -297,11 +306,55 @@ def install_nllb() -> None:
     print(f"Installed and verified {NLLB_ID}")
 
 
+def install_mlx() -> None:
+    """Install the Apple Silicon (Metal) Whisper model: MLX-quantized q4 weights.
+
+    Runs on macOS arm64 only (mlx-whisper refuses to import off-Metal). The
+    artifact is `config.json` + `weights.npz` in the MLX weight format.
+    """
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as error:
+        raise InstallError("install the 'models' Python extra first") from error
+    ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=ARTIFACT_ROOT) as temporary:
+        staging = Path(temporary)
+        target_staging = staging / MLX_ID
+        snapshot_download(
+            repo_id=MLX_REPO,
+            revision=MLX_REVISION,
+            allow_patterns=list(MLX_FILES),
+            local_dir=target_staging,
+            cache_dir=staging / ".hf-cache",
+        )
+        for filename in MLX_FILES:
+            if not (target_staging / filename).is_file():
+                raise InstallError(f"MLX snapshot is missing {filename}")
+        verify_committed_manifest(target_staging, MLX_MANIFEST)
+        write_manifest(
+            target_staging,
+            model_id=MLX_ID,
+            kind="asr",
+            source=f"https://huggingface.co/{MLX_REPO}",
+            revision=MLX_REVISION,
+            license_spdx="MIT",
+            roles={
+                "model": "weights.npz",
+                "config": "config.json",
+            },
+        )
+        destination = ARTIFACT_ROOT / MLX_ID
+        if destination.exists():
+            shutil.rmtree(destination)
+        target_staging.replace(destination)
+    print(f"Installed and verified {MLX_ID}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Explicit verified local model installer")
     parser.add_argument(
         "model",
-        choices=("asr", "whisper", "whisper-turbo", "madlad", "nllb", "all"),
+        choices=("asr", "whisper", "whisper-turbo", "mlx", "madlad", "nllb", "all"),
     )
     parser.add_argument("--archive", type=Path, help="verified ASR archive already on disk")
     parser.add_argument(
@@ -318,6 +371,8 @@ def main() -> None:
         install_whisper(WHISPER_ID)
     if arguments.model in {"whisper-turbo", "all"}:
         install_whisper(WHISPER_TURBO_ID)
+    if arguments.model in {"mlx", "all"}:
+        install_mlx()
     if arguments.model in {"madlad", "all"}:
         install_madlad()
     if arguments.model in {"nllb", "all"}:

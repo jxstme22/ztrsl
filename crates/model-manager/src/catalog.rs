@@ -69,6 +69,11 @@ pub struct CatalogEntry {
     pub download_size_bytes: u64,
     pub source: String,
     pub revision: String,
+    /// Platforms the model runs on. Empty means "all platforms"; otherwise a
+    /// subset of `windows` / `macos`. Used to hide platform-specific models
+    /// (e.g. the MLX Whisper weights) from platforms that cannot run them.
+    #[serde(default)]
+    pub platforms: Vec<String>,
     /// Plain file artifacts (HuggingFace-style `source/resolve/revision/path`).
     #[serde(default)]
     pub files: Vec<CatalogFile>,
@@ -87,6 +92,24 @@ pub enum ModelKind {
     Asr,
     Translation,
     Vad,
+}
+
+impl CatalogEntry {
+    /// True when this entry can run on the current build target. An empty
+    /// `platforms` list means "all platforms".
+    pub fn runs_on_current_platform(&self) -> bool {
+        if self.platforms.is_empty() {
+            return true;
+        }
+        let current = if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "macos"
+        } else {
+            return false;
+        };
+        self.platforms.iter().any(|platform| platform == current)
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -153,10 +176,10 @@ impl ModelCatalog {
     pub fn entry(&self, id: &str) -> Option<&CatalogEntry> {
         self.models.iter().find(|entry| entry.id == id)
     }
-
     pub fn view(&self) -> Vec<CatalogEntryView> {
         self.models
             .iter()
+            .filter(|entry| entry.runs_on_current_platform())
             .map(|entry| CatalogEntryView {
                 id: entry.id.clone(),
                 name: entry.name.clone(),
@@ -207,6 +230,14 @@ impl ModelCatalog {
             for file in &entry.files {
                 if file.path.contains("..") || file.path.starts_with('/') {
                     return Err(format!("model {} has unsafe file path", entry.id));
+                }
+            }
+            for platform in &entry.platforms {
+                if platform != "windows" && platform != "macos" {
+                    return Err(format!(
+                        "model {} has unknown platform restriction: {platform}",
+                        entry.id
+                    ));
                 }
             }
         }
@@ -286,6 +317,41 @@ mod tests {
         for view in catalog.view() {
             assert!(!view.id.contains("key") && !view.source.contains("token="));
         }
+    }
+
+    #[test]
+    fn platform_restricted_entries_are_filtered() {
+        let entry = serde_json::from_value::<CatalogEntry>(serde_json::json!({
+            "id": "mlx-whisper",
+            "name": "MLX",
+            "kind": "asr",
+            "runtime": "mlx-whisper",
+            "recommended": false,
+            "description": "d",
+            "license": { "spdx": "MIT" },
+            "download_size_bytes": 1,
+            "source": "https://huggingface.co/mlx-community/test",
+            "revision": "r",
+            "platforms": ["macos"],
+            "files": [
+                { "path": "weights.npz", "size_bytes": 1, "sha256": "0".repeat(64) }
+            ]
+        }))
+        .unwrap();
+        // On macOS the entry is visible; on every other platform it is hidden.
+        let visible_on_macos = cfg!(target_os = "macos");
+        assert_eq!(entry.runs_on_current_platform(), visible_on_macos);
+        // Unrestricted entries are always visible.
+        let mut unrestricted = entry.clone();
+        unrestricted.platforms = vec![];
+        assert!(unrestricted.runs_on_current_platform());
+        // Unknown platform restrictions fail validation.
+        unrestricted.platforms = vec!["linux".to_owned()];
+        let catalog = ModelCatalog {
+            schema_version: 1,
+            models: vec![unrestricted],
+        };
+        assert!(catalog.validate().is_err());
     }
 
     #[test]

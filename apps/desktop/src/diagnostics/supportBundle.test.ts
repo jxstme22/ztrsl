@@ -13,6 +13,7 @@ const SOURCE_CONFIGS: SourceConfigs = {
       displayName: "Team",
       captionTag: "TEAM",
       labelStyle: "brackets",
+      captionAlignment: "center",
       color: null,
       captureTarget: { kind: "endpoint", endpointId: null },
       monitoring: { enabled: false, headphoneEndpointId: null, volume: 0.5 },
