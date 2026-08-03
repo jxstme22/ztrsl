@@ -10,10 +10,17 @@ use thiserror::Error;
 #[cfg(target_os = "windows")]
 mod windows;
 
+mod source;
+
 #[cfg(target_os = "windows")]
 pub use windows::{
     EndpointEvent, WindowsAudioCapture, WindowsAudioPlayback, WindowsDeviceWatcher,
     WindowsEndpointCatalog, windows_endpoint_peak,
+};
+
+pub use source::{
+    CaptureTarget, SOURCE_SAMPLE_RATE, SourceCapture, SourceFrame, SourceId, SourceIdError,
+    SourceManager, SourceMetrics, SourceRuntime,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -96,6 +103,12 @@ pub enum AudioError {
     InvalidVolume,
     #[error("audio format is invalid")]
     InvalidFormat,
+    #[error("capture target is invalid: {0}")]
+    InvalidCaptureTarget(String),
+    #[error("audio source was not found")]
+    SourceNotFound,
+    #[error("source identity error: {0}")]
+    SourceId(#[from] SourceIdError),
     #[error("audio platform error: {0}")]
     Platform(String),
 }

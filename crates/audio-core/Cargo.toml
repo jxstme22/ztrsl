@@ -6,8 +6,12 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+getrandom.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cpal = "0.15.3"
