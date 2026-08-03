@@ -174,6 +174,12 @@ export function Select({
         }
         className={`lst-select-button ${open ? "open" : ""}`}
         disabled={disabled}
+        onMouseDown={(event) => {
+          // Prevent label activation: a click inside a wrapping <label>
+          // forwards to this button and would toggle the dropdown closed
+          // right after the user opened it (or reopened it after a pick).
+          event.preventDefault();
+        }}
         onClick={() => {
           if (!disabled) {
             setOpen((current) => !current);
@@ -223,6 +229,12 @@ export function Select({
                   if (!row.option.disabled) {
                     setHighlighted(row.index);
                   }
+                }}
+                onMouseDown={(event) => {
+                  // Same label-activation guard as the button: without it,
+                  // picking an option inside a <label> forwards a second
+                  // click to the button and re-opens the dropdown.
+                  event.preventDefault();
                 }}
               >
                 <span>{row.option.label}</span>

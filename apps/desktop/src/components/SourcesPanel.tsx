@@ -68,7 +68,7 @@ function useSourceConfigs() {
   return { configs, updateSource, addSource, removeSource };
 }
 
-const LABEL_STYLE_OPTIONS: readonly {
+export const LABEL_STYLE_OPTIONS: readonly {
   value: CaptionLabelStyle;
   label: string;
 }[] = [
@@ -79,7 +79,7 @@ const LABEL_STYLE_OPTIONS: readonly {
   { value: "hidden", label: "Hidden — no label" },
 ];
 
-const PRESET_OPTIONS = SOURCE_PRESETS.map((preset) => ({
+export const PRESET_OPTIONS = SOURCE_PRESETS.map((preset) => ({
   value: preset.id,
   label: preset.label,
 }));

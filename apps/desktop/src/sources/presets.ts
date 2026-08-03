@@ -122,7 +122,7 @@ export function createSourceFromPreset(
     labelStyle: overrides.labelStyle ?? preset.labelStyle,
     color: overrides.color !== undefined ? overrides.color : preset.color,
     captureTarget: { kind: "endpoint", endpointId: null },
-    monitoring: { enabled: false, headphoneEndpointId: null },
+    monitoring: { enabled: false, headphoneEndpointId: null, volume: 0.5 },
     languageProfile: preset.languageProfile,
     strictness: preset.strictness,
   };

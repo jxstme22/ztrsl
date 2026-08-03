@@ -55,8 +55,12 @@ export const monitoringConfigSchema = z.object({
   enabled: z.boolean(),
   /** Playback endpoint id used for monitoring; required when enabled. */
   headphoneEndpointId: z.string().max(256).nullable(),
+  /** Blend gain 0..1. Defaulted on load so stored v3 payloads stay valid. */
+  volume: z.number().min(0).max(1).default(0.5),
 });
 export type MonitoringConfig = z.infer<typeof monitoringConfigSchema>;
+
+export const DEFAULT_MONITOR_VOLUME = 0.5;
 
 export const sourceColorSchema = z
   .string()
@@ -101,7 +105,7 @@ export function defaultSourceConfig(): AudioSourceConfig {
     labelStyle: "brackets",
     color: null,
     captureTarget: { kind: "endpoint", endpointId: null },
-    monitoring: { enabled: false, headphoneEndpointId: null },
+    monitoring: { enabled: false, headphoneEndpointId: null, volume: DEFAULT_MONITOR_VOLUME },
     languageProfile: "tagalog",
     strictness: "balanced",
   };

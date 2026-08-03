@@ -93,7 +93,7 @@ describe("validateSource", () => {
 
   it("rejects monitoring without a headphone endpoint", () => {
     const source = makeSource({
-      monitoring: { enabled: true, headphoneEndpointId: null },
+      monitoring: { enabled: true, headphoneEndpointId: null, volume: 0.5 },
     });
     expect(validateSource(source, [source]).errors).toContain(
       "Monitoring is enabled but no headphone endpoint is selected.",
@@ -102,7 +102,11 @@ describe("validateSource", () => {
 
   it("accepts monitoring with a headphone endpoint", () => {
     const source = makeSource({
-      monitoring: { enabled: true, headphoneEndpointId: "headset-output" },
+      monitoring: {
+        enabled: true,
+        headphoneEndpointId: "headset-output",
+        volume: 0.5,
+      },
     });
     expect(validateSource(source, [source]).errors).toEqual([]);
   });

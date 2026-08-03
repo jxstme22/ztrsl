@@ -5,6 +5,7 @@ import {
   Mic,
   Minus,
   Settings,
+  Wand2,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { ModelsPanel } from "./components/ModelsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
 import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
+import { SetupWizard } from "./setup/SetupWizard";
 import { useAudioMeter } from "./audio/useAudioMeter";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useModels } from "./models/useModels";
@@ -29,7 +31,13 @@ import { isDesktopRuntime } from "./overlay/bridge";
 import { useOverlayController } from "./overlay/useOverlayController";
 import { multiSourceEnabled } from "./sources/featureFlag";
 
-type SectionId = "live" | "models" | "settings" | "diagnostics" | "sources";
+type SectionId =
+  | "live"
+  | "models"
+  | "settings"
+  | "diagnostics"
+  | "sources"
+  | "setup";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -40,7 +48,7 @@ const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
   { id: "live", label: "Live" },
   { id: "models", label: "Models" },
   ...(multiSourceEnabled()
-    ? ([{ id: "sources", label: "Sources" }] as const)
+    ? ([{ id: "setup", label: "Setup" }, { id: "sources", label: "Sources" }] as const)
     : []),
   { id: "settings", label: "Settings" },
   { id: "diagnostics", label: "Diagnostics" },
@@ -49,6 +57,7 @@ const NAV_ITEMS: readonly { id: SectionId; label: string }[] = [
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
   models: Boxes,
+  setup: Wand2,
   sources: Mic,
   settings: Settings,
   diagnostics: Gauge,
@@ -122,6 +131,15 @@ export function ControlApp() {
           {section === "sources" && (
             <div className="page-stack">
               <SourcesPanel />
+            </div>
+          )}
+          {section === "setup" && (
+            <div className="page-stack">
+              <SetupWizard
+                onFinish={() => {
+                  setSection("sources");
+                }}
+              />
             </div>
           )}
           {section === "settings" && <SettingsPage controller={controller} />}
