@@ -94,40 +94,17 @@ const CUDA_REQUIRED_DLLS: &[&str] = &["cublas64_12.dll", "cudart64_12.dll"];
 /// adds to PATH). Returns the matching path, or `None`.
 #[cfg(target_os = "windows")]
 fn find_windows_dll(name: &str) -> Option<PathBuf> {
-    use std::os::windows::ffi::OsStrExt;
-
     let system32 = std::env::var_os("SystemRoot")
         .map(|root| PathBuf::from(root).join("System32"))
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32"));
-    for dir in std::iter::once(system32).chain(
-        std::env::var_os("PATH")
-            .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-            .unwrap_or_default(),
-    ) {
-        let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    // Fallback: `LoadLibraryEx` search for the bare name (System32 + app dir).
-    let wide: Vec<u16> = std::os::windows::ffi::OsStr::encode_wide(OsStr::new(name)).collect();
-    let mut buf = [0_u16; 1024];
-    let path = {
-        let found = windows_sys::Win32::System::LibraryLoader::SearchPathW(
-            std::ptr::null(),
-            wide.as_ptr(),
-            std::ptr::null(),
-            buf.len() as u32,
-            buf.as_mut_ptr(),
-            std::ptr::null_mut(),
-        );
-        if found == 0 {
-            None
-        } else {
-            Some(String::from_utf16_lossy(&buf[..found as usize]))
-        }
-    };
-    path.map(PathBuf::from)
+    std::iter::once(system32)
+        .chain(
+            std::env::var_os("PATH")
+                .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+                .unwrap_or_default(),
+        )
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
 }
 
 /// Non-Windows placeholder: no system CUDA runtime detection.
