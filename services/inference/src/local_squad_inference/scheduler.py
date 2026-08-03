@@ -25,12 +25,24 @@ import heapq
 import threading
 import time
 from dataclasses import dataclass
+from typing import Literal
 
 from local_squad_inference.vad import AudioUtterance
 
 DEFAULT_SOURCE_PRIORITY = 100
 FINAL_RANK = 0
 PROVISIONAL_RANK = 1
+
+# v0.4 adaptive scheduling resource policy (§11): how aggressively the
+# scheduler throttles provisional decoding under pressure.
+# - maximum_accuracy: provisionals always allowed (v0.3 behavior).
+# - balanced: provisionals allowed, but secondary sources fall back to
+#   finals-only once any final is queued.
+# - protect_game_performance: finals-only for secondary sources whenever a
+#   final is queued (TEAM's own provisionals are preserved).
+ResourcePolicy = Literal["maximum_accuracy", "balanced", "protect_game_performance"]
+
+DEFAULT_RESOURCE_POLICY: ResourcePolicy = "balanced"
 
 
 @dataclass(frozen=True, order=True)
@@ -111,11 +123,13 @@ class InferenceScheduler:
         *,
         max_queued: int = 8,
         provisional_high_water: int | None = None,
+        resource_policy: ResourcePolicy = DEFAULT_RESOURCE_POLICY,
     ) -> None:
         if max_queued < 2:
             raise ValueError("max_queued must be at least 2")
         self._max_queued = max_queued
         self._high_water = provisional_high_water or max_queued - 2
+        self._resource_policy = resource_policy
         self._heap: list[InferenceJob] = []
         self._provisional_slots: dict[tuple[str | None, str], InferenceJob] = {}
         self._closed = False
@@ -131,6 +145,12 @@ class InferenceScheduler:
         self._queue_delay_total_ms = 0.0
         self._queue_delay_max_ms = 0.0
         self._queue_delay_samples = 0
+
+    def set_resource_policy(self, policy: ResourcePolicy) -> None:
+        """Switch the adaptive resource policy at runtime (hot, no restart)."""
+        with self._lock:
+            self._resource_policy = policy
+            self._wake_all()
 
     # ---- submission ---------------------------------------------------
 
@@ -180,6 +200,13 @@ class InferenceScheduler:
             self._provisionals_coalesced += 1
             self._wake_all()
             return True
+        # Adaptive scheduling (§11): under pressure, secondary sources fall
+        # back to finals-only. A provisional from the highest-priority source
+        # with queued work is preserved; the rest are throttled (counted, not
+        # overload — this is deliberate resource policy, not queue pressure).
+        if self._throttled(job):
+            self._provisionals_dropped += 1
+            return False
         # Overload step 2: pause secondary provisional decoding while the
         # queue sits at or above high water.
         if len(self._heap) >= self._high_water:
@@ -191,6 +218,31 @@ class InferenceScheduler:
             return False
         self._push(job)
         return True
+
+    def _throttled(self, job: InferenceJob) -> bool:
+        """True when the resource policy should hold this provisional back.
+
+        - maximum_accuracy: never throttled.
+        - balanced: a secondary-source provisional is held while any final is
+          queued (finals-only for secondary sources under pressure).
+        - protect_game_performance: same as balanced, but the primary (highest
+          priority queued) source keeps its provisionals.
+        """
+        if self._resource_policy == "maximum_accuracy":
+            return False
+        if not any(queued.is_final for queued in self._heap):
+            return False
+        if self._resource_policy == "balanced":
+            return True
+        # protect_game_performance: keep only the primary source's provisionals.
+        primary = max(
+            (queued for queued in self._heap if queued.is_final),
+            key=lambda queued: queued.priority,
+            default=None,
+        )
+        if primary is None:
+            return False
+        return job.priority < primary.priority
 
     def _push(self, job: InferenceJob) -> None:
         heapq.heappush(self._heap, job)

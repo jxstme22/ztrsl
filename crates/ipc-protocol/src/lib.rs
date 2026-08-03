@@ -112,6 +112,21 @@ pub struct CaptionPayload {
     /// Machine-readable reason when `filter_applied` is not `off`/`passed`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter_reason: Option<String>,
+    /// v0.4 certainty state (normal / uncertain / suppressed). Absent in v1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certainty: Option<CaptionCertainty>,
+}
+
+/// v0.4 caption certainty (BUILD_PLAN_V0_4 §4). `uncertain` carries reasons;
+/// `suppressed` carries a single suppression reason. Suppressed captions are
+/// still delivered so the overlay can show *why* content was withheld.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CaptionCertainty {
+    pub state: String,
+    #[serde(default)]
+    pub uncertainty_reasons: Vec<String>,
+    #[serde(default)]
+    pub suppression_reason: Option<String>,
 }
 
 /// Presentation metadata stamped onto v2 captions (IPC v2 freeze §3).
@@ -651,11 +666,12 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use super::{
-        AUDIO_HEADER_V2_BYTES, AudioPacket, AudioPacketV2, Authenticator, CaptionLabelStyle,
-        CaptionPayload, CaptionStatus, CaptionStrictness, Envelope, FilterApplied, HelloPayload,
-        MAX_AUDIO_MESSAGE_BYTES, MAX_CONTROL_MESSAGE_BYTES, PROTOCOL_V2, PROTOCOL_VERSION,
-        ProtocolError, SourceMode, SourceSnapshot, negotiate_protocol_version, source_id_from_hex,
-        source_id_to_hex, validate_control_message_size,
+        AUDIO_HEADER_V2_BYTES, AudioPacket, AudioPacketV2, Authenticator, CaptionCertainty,
+        CaptionLabelStyle, CaptionPayload, CaptionStatus, CaptionStrictness, Envelope,
+        FilterApplied, HelloPayload, MAX_AUDIO_MESSAGE_BYTES, MAX_CONTROL_MESSAGE_BYTES,
+        PROTOCOL_V2, PROTOCOL_VERSION, ProtocolError, SourceMode, SourceSnapshot,
+        negotiate_protocol_version, source_id_from_hex, source_id_to_hex,
+        validate_control_message_size,
     };
 
     fn hello(token: &str) -> HelloPayload {
@@ -897,6 +913,11 @@ mod tests {
             strictness: Some(CaptionStrictness::Balanced),
             filter_applied: Some(FilterApplied::Passed),
             filter_reason: None,
+            certainty: Some(CaptionCertainty {
+                state: "uncertain".to_owned(),
+                uncertainty_reasons: vec!["overlapping_speech".to_owned()],
+                suppression_reason: None,
+            }),
         }
     }
 
@@ -936,6 +957,7 @@ mod tests {
             strictness: None,
             filter_applied: None,
             filter_reason: None,
+            certainty: None,
         };
         let value: serde_json::Value = serde_json::to_value(&v1).expect("caption should serialize");
         assert!(value.get("source_id").is_none());
@@ -943,6 +965,7 @@ mod tests {
         assert!(value.get("strictness").is_none());
         assert!(value.get("filter_applied").is_none());
         assert!(value.get("filter_reason").is_none());
+        assert!(value.get("certainty").is_none());
     }
 
     #[test]

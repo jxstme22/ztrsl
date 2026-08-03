@@ -46,14 +46,19 @@ export function CaptionStack({
       aria-live="polite"
     >
       {captions.map((caption) => {
+        const uncertain = caption.certainty?.state === "uncertain";
+        const uncertainReasons = caption.certainty?.uncertaintyReasons ?? [];
         const label = renderLabel(
-          caption.source?.captionTag ?? "",
+          uncertain
+            ? `${caption.source?.captionTag ?? ""}?`
+            : (caption.source?.captionTag ?? ""),
           caption.source?.labelStyle ?? "brackets",
         );
         return (
           <article
             className="caption-entry"
             data-status={caption.status}
+            data-uncertain={uncertain || undefined}
             data-source={caption.source?.sourceId}
             key={caption.id}
             style={
@@ -74,8 +79,17 @@ export function CaptionStack({
             )}
             <p className="caption-english">{caption.englishText}</p>
             <span className="caption-state">
-              {caption.status === "provisional" ? "Listening" : "Final"}
+              {uncertain
+                ? "Uncertain"
+                : caption.status === "provisional"
+                  ? "Listening"
+                  : "Final"}
             </span>
+            {uncertain && uncertainReasons.length > 0 && (
+              <span className="caption-uncertain-reasons">
+                {uncertainReasons.join(" · ")}
+              </span>
+            )}
           </article>
         );
       })}

@@ -45,6 +45,11 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
     const createdAtMs = Date.now();
     for (const payload of next.captions) {
       setLastCaption(payload);
+      // v0.4: suppressed captions are withheld from the overlay lanes — they
+      // are never flashed briefly (final-caption terminality is preserved).
+      if (payload.certainty?.state === "suppressed") {
+        continue;
+      }
       onCaptionRef.current({
         id: payload.caption_id,
         revision: payload.revision,
@@ -65,6 +70,14 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
                 captionTag: payload.source_snapshot.caption_tag,
                 labelStyle: payload.source_snapshot.label_style,
                 color: payload.source_snapshot.color,
+              },
+        certainty:
+          payload.certainty === undefined
+            ? undefined
+            : {
+                state: payload.certainty.state,
+                uncertaintyReasons: payload.certainty.uncertainty_reasons,
+                suppressionReason: payload.certainty.suppression_reason,
               },
       });
     }

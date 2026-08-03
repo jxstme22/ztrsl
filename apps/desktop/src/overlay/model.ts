@@ -18,6 +18,17 @@ export const captionSourceSchema = z.object({
 });
 export type CaptionSource = z.infer<typeof captionSourceSchema>;
 
+/** v0.4 certainty: uncertain captions render with a ? marker; suppressed
+ * captions are withheld from the visible lanes (never flashed briefly). */
+export const captionCertaintySchema = z
+  .object({
+    state: z.enum(["normal", "uncertain", "suppressed"]),
+    uncertaintyReasons: z.array(z.string()),
+    suppressionReason: z.string().nullable(),
+  })
+  .optional();
+export type CaptionCertainty = z.infer<typeof captionCertaintySchema>;
+
 export const captionSchema = z.object({
   id: z.string().min(1).max(128),
   revision: z.number().int().nonnegative(),
@@ -28,6 +39,7 @@ export const captionSchema = z.object({
   expiresAtMs: z.number().nonnegative(),
   /** Source presentation snapshot when this caption came from a v2 source. */
   source: captionSourceSchema.optional(),
+  certainty: captionCertaintySchema,
 });
 
 export type Caption = z.infer<typeof captionSchema>;

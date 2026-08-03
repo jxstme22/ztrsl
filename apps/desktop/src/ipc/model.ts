@@ -37,6 +37,31 @@ export const sidecarStatusSchema = z.object({
   restartable: z.boolean(),
 });
 
+export const captionCertaintySchema = z.object({
+  state: z.enum(["normal", "uncertain", "suppressed"]),
+  uncertainty_reasons: z.array(
+    z.enum([
+      "overlapping_speech",
+      "low_asr_confidence",
+      "unexpected_language",
+      "audio_clipping",
+      "segment_too_short",
+      "translation_instability",
+    ]),
+  ),
+  suppression_reason: z
+    .enum([
+      "heavy_overlap",
+      "low_confidence",
+      "unexpected_language",
+      "phrase_filter",
+      "clipping",
+    ])
+    .nullable(),
+});
+
+export type CaptionCertainty = z.infer<typeof captionCertaintySchema>;
+
 export const captionPayloadSchema = z.object({
   caption_id: z.string().min(1).max(128),
   utterance_id: z.string().min(1).max(128),
@@ -57,6 +82,7 @@ export const captionPayloadSchema = z.object({
   strictness: strictnessSchema.optional(),
   filter_applied: filterAppliedSchema.optional(),
   filter_reason: z.string().max(128).optional(),
+  certainty: captionCertaintySchema.optional(),
 });
 
 export const captionEnvelopeSchema = z.object({

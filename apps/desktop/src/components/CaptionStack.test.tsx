@@ -205,4 +205,27 @@ describe("CaptionStack lanes", () => {
     expect(tag.querySelector("img")).toBeNull();
     expect((window as Window & { __xss?: unknown }).__xss).toBeUndefined();
   });
+
+  it("renders uncertain captions with a distinct marker and reasons", () => {
+    const uncertainCaption = {
+      ...caption(
+        "team",
+        "Possibly two at B main",
+        source({ captionTag: "TEAM" }),
+        "final",
+      ),
+      certainty: {
+        state: "uncertain" as const,
+        uncertaintyReasons: ["overlapping_speech", "low_asr_confidence"],
+        suppressionReason: null,
+      },
+    };
+    render(<CaptionStack snapshot={snapshot([uncertainCaption])} />);
+
+    expect(screen.getByText("[TEAM?]")).toBeInTheDocument();
+    expect(screen.getByText("Uncertain")).toBeInTheDocument();
+    expect(
+      screen.getByText("overlapping_speech · low_asr_confidence"),
+    ).toBeInTheDocument();
+  });
 });

@@ -27,7 +27,7 @@ from local_squad_inference.http_translation import (
     HttpTranslationError,
 )
 from local_squad_inference.live import LivePipeline, LivePipelineMetrics, source_key_of
-from local_squad_inference.profiles import FilterApplied, apply_language_gate
+from local_squad_inference.profiles import FilterApplied, GateDecision, apply_language_gate
 from local_squad_inference.protocol import (
     AUDIO_HEADER_V2,
     MAX_AUDIO_MESSAGE_BYTES,
@@ -35,6 +35,7 @@ from local_squad_inference.protocol import (
     PROTOCOL_V2,
     PROTOCOL_VERSION,
     AudioPacket,
+    CaptionCertainty,
     CaptionPayload,
     ClipComparePayload,
     ClipProcessPayload,
@@ -47,6 +48,7 @@ from local_squad_inference.protocol import (
     SourceRegistryPayload,
     SourceSnapshot,
     Strictness,
+    UncertaintyReason,
     dump_caption,
     encode_source_id_hex,
     negotiate_protocol_version,
@@ -148,11 +150,11 @@ def stamp_v2_caption(
     caption: CaptionPayload,
     source_registry: dict[str, SourceRegistryEntry],
     source_snapshots: dict[str, SourceSnapshot],
+    overlap_status: Callable[[str], object] | None = None,
 ) -> CaptionPayload:
     """Return a copy of the caption with the registry presentation
-    snapshot, strictness, and language-gate result attached, so live
-    captions stay source-correct after mid-session renames. Unknown sources
-    keep the caption's own fields (unchanged copy)."""
+    snapshot, strictness, language-gate result, and v0.4 certainty attached.
+    Unknown sources keep the caption's own fields (unchanged copy)."""
     if caption.source_id is None:
         return caption
     entry = source_registry.get(caption.source_id)
@@ -173,14 +175,55 @@ def stamp_v2_caption(
         utterance_duration_ms=duration_ms,
     )
     filter_stats_for(entry.source_id).reconcile(decided.applied)
+    certainty = _certainty_for(caption, decided, overlap_status)
     return caption.model_copy(
         update={
             "source_snapshot": source_snapshots.get(entry.source_id) or entry_snapshot(entry),
             "strictness": entry.strictness,
             "filter_applied": decided.applied,
             "filter_reason": decided.reason,
+            "certainty": certainty,
         }
     )
+
+
+def _certainty_for(
+    caption: CaptionPayload,
+    decided: GateDecision,
+    overlap_status: Callable[[str], object] | None,
+) -> CaptionCertainty | None:
+    """v0.4 certainty (BUILD_PLAN_V0_4 §4). Builds a certainty state from the
+    language-gate outcome and the per-source overlap verdict. Final captions
+    remain terminal; suppressed content is delivered (never flashed) so the
+    overlay can show why."""
+    source_id = caption.source_id
+    if source_id is None:
+        return None
+    if decided.applied == "suppressed":
+        return CaptionCertainty(
+            state="suppressed",
+            uncertainty_reasons=[],
+            suppression_reason=decided.reason or "low_confidence",
+        )
+    reasons: list[UncertaintyReason] = []
+    if decided.applied == "flagged":
+        reasons.append("unexpected_language")
+    if caption.confidence is not None and caption.confidence < 0.3:
+        reasons.append("low_asr_confidence")
+    if overlap_status is not None:
+        status = overlap_status(source_id)
+        verdict = getattr(status, "verdict", None)
+        if verdict == "suppressed":
+            return CaptionCertainty(
+                state="suppressed",
+                uncertainty_reasons=[],
+                suppression_reason="heavy_overlap",
+            )
+        if verdict == "uncertain":
+            reasons.append("overlapping_speech")
+    if not reasons:
+        return None
+    return CaptionCertainty(state="uncertain", uncertainty_reasons=reasons, suppression_reason=None)
 
 
 def _configure_file_logging() -> None:

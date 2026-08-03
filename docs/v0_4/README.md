@@ -17,13 +17,13 @@ Source: [`BUILD_PLAN_V0_4_CAPTION_TRUST.md`](../../BUILD_PLAN_V0_4_CAPTION_TRUST
 |---|-------|--------|-----------|
 | 0 | Freeze baseline | ☑ | reproducible baseline report exists |
 | 1 | Accuracy Lab | ☑ | same clip comparison is reproducible |
-| 2 | Language strictness | ☐ | profile selection changes real processing behavior |
-| 3 | Phrase filters | ☐ | filtered phrases never reach MT or overlay |
-| 4 | Glossary editor | ☐ | corrections work without large-model restart |
-| 5 | Certainty states | ☐ | uncertain output is visibly distinct |
-| 6 | Overlap detection | ☐ | heavy overlap is not confidently captioned by default |
-| 7 | Adaptive scheduler | ☐ | final jobs survive and queues stay bounded |
-| 8 | Recommendations + validation | ☐ | release checklist passes |
+| 2 | Language strictness | ☑ | profile selection changes real processing behavior |
+| 3 | Phrase filters | ☑ (core) | filtered phrases never reach MT or overlay |
+| 4 | Glossary editor | ☑ (core) | corrections work without large-model restart |
+| 5 | Certainty states | ☑ | uncertain output is visibly distinct |
+| 6 | Overlap detection | ☑ (core) | heavy overlap is not confidently captioned by default |
+| 7 | Adaptive scheduler | ☑ | final jobs survive and queues stay bounded |
+| 8 | Recommendations + validation | ☑ | release checklist passes |
 
 ## Hard boundaries (unchanged)
 

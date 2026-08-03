@@ -1670,6 +1670,25 @@ input[type="range"]::-moz-range-thumb {
   opacity: 0.82;
 }
 
+/* v0.4 uncertain captions: visibly distinct, never presented as confident. */
+.caption-entry[data-uncertain] {
+  border-color: rgba(251, 191, 36, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.caption-uncertain-reasons {
+  display: block;
+  margin-top: 4px;
+  color: #fbbf24;
+  font-size: 0.68em;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .caption-source {
   margin: 0 0 3px;
   overflow: hidden;

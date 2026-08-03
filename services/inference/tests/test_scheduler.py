@@ -116,7 +116,9 @@ def test_stale_revision_never_replaces_newer_queued_provisional() -> None:
 
 
 def test_provisionals_refused_at_high_water_and_overload_reported() -> None:
-    scheduler = InferenceScheduler(max_queued=4, provisional_high_water=3)
+    scheduler = InferenceScheduler(
+        max_queued=4, provisional_high_water=3, resource_policy="maximum_accuracy"
+    )
     for index in range(3):
         assert scheduler.submit(final_job(TEAM, f"f{index}"))
     refused = scheduler.submit(provisional_job(DISCORD, "p1", revision=1))
@@ -206,3 +208,67 @@ def test_close_unblocks_takes_and_discards_pending() -> None:
     scheduler.close()
     assert scheduler.take(timeout=0.01) is None
     assert scheduler.metrics().queue_depth == 0
+
+
+def test_maximum_accuracy_never_throttles_provisionals() -> None:
+    scheduler = InferenceScheduler(resource_policy="maximum_accuracy")
+    scheduler.submit(final_job(TEAM, "f1"))
+    provisional = make_job(
+        utterance("p1", DISCORD, final=False),
+        is_final=False,
+        revision=1,
+        priority=100,
+    )
+    assert scheduler.submit(provisional) is True
+    assert scheduler.metrics().provisionals_dropped == 0
+
+
+def test_balanced_throttles_secondary_provisionals_when_final_queued() -> None:
+    scheduler = InferenceScheduler(resource_policy="balanced")
+    scheduler.submit(final_job(TEAM, "f1"))
+    provisional = make_job(
+        utterance("p1", DISCORD, final=False),
+        is_final=False,
+        revision=1,
+        priority=100,
+    )
+    # A final is queued, so the secondary-source provisional is held.
+    assert scheduler.submit(provisional) is False
+    assert scheduler.metrics().provisionals_dropped == 1
+    # No overload event: this is deliberate resource policy, not queue pressure.
+    assert scheduler.metrics().overload_events == 0
+
+
+def test_protect_game_performance_keeps_primary_provisional_only() -> None:
+    scheduler = InferenceScheduler(resource_policy="protect_game_performance")
+    # Primary source (TEAM, higher priority) final is queued.
+    scheduler.submit(final_job(TEAM, "f1", priority=200))
+    team_provisional = make_job(
+        utterance("p-team", TEAM, final=False),
+        is_final=False,
+        revision=1,
+        priority=200,
+    )
+    discord_provisional = make_job(
+        utterance("p-discord", DISCORD, final=False),
+        is_final=False,
+        revision=1,
+        priority=100,
+    )
+    assert scheduler.submit(team_provisional) is True  # primary keeps provisional
+    assert scheduler.submit(discord_provisional) is False  # secondary held
+    assert scheduler.metrics().provisionals_dropped == 1
+
+
+def test_policy_switches_at_runtime() -> None:
+    scheduler = InferenceScheduler(resource_policy="maximum_accuracy")
+    scheduler.submit(final_job(TEAM, "f1"))
+    scheduler.set_resource_policy("balanced")
+    provisional = make_job(
+        utterance("p1", DISCORD, final=False),
+        is_final=False,
+        revision=1,
+        priority=100,
+    )
+    assert scheduler.submit(provisional) is False  # now throttled
+    assert scheduler.metrics().provisionals_dropped == 1

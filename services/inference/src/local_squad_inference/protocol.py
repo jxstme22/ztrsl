@@ -22,6 +22,21 @@ SourceMode = Literal["filipino", "cebuano", "english", "chinese", "mixed"]
 LabelStyle = Literal["brackets", "colon", "bullet", "stacked", "hidden"]
 Strictness = Literal["off", "balanced", "strict"]
 FilterApplied = Literal["off", "suppressed", "flagged", "passed"]
+UncertaintyReason = Literal[
+    "overlapping_speech",
+    "low_asr_confidence",
+    "unexpected_language",
+    "audio_clipping",
+    "segment_too_short",
+    "translation_instability",
+]
+SuppressionReason = Literal[
+    "heavy_overlap",
+    "low_confidence",
+    "unexpected_language",
+    "phrase_filter",
+    "clipping",
+]
 
 _SOURCE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
@@ -97,6 +112,19 @@ class SourceSnapshot(StrictModel):
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
 
 
+class CaptionCertainty(StrictModel):
+    """v0.4 certainty state (BUILD_PLAN_V0_4 §4). One of:
+    - `normal` — no qualification;
+    - `uncertain` — shown with `uncertainty_reasons` (e.g. overlapping speech);
+    - `suppressed` — withheld; the overlay hides it, never flashes it briefly.
+    Suppressed captions are still sent so the overlay can show *why*.
+    """
+
+    state: Literal["normal", "uncertain", "suppressed"]
+    uncertainty_reasons: list[UncertaintyReason] = Field(default_factory=list, max_length=4)
+    suppression_reason: SuppressionReason | None = None
+
+
 class CaptionPayload(StrictModel):
     caption_id: str
     utterance_id: str
@@ -120,12 +148,20 @@ class CaptionPayload(StrictModel):
     strictness: Strictness | None = None
     filter_applied: FilterApplied | None = None
     filter_reason: str | None = Field(default=None, max_length=128)
+    certainty: CaptionCertainty | None = None
 
 
 # v2-only fields; stripped from the wire for v1 sessions so v1 captions are
 # byte-identical to v0.2 output.
 _V2_CAPTION_FIELDS = frozenset(
-    {"source_id", "source_snapshot", "strictness", "filter_applied", "filter_reason"}
+    {
+        "source_id",
+        "source_snapshot",
+        "strictness",
+        "filter_applied",
+        "filter_reason",
+        "certainty",
+    }
 )
 
 
