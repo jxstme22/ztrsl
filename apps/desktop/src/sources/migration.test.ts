@@ -1,0 +1,87 @@
+import { describe, expect, it } from "vitest";
+
+import type { OverlaySettings } from "../overlay/model";
+import { migrateFromV02 } from "./migration";
+import { sourceConfigsSchema } from "./model";
+import { isValidSourceId } from "./identity";
+
+const SEQUENTIAL_RANDOM = () => 0.5;
+
+const BASE_OVERLAY: OverlaySettings = {
+  schemaVersion: 1,
+  monitorId: null,
+  xNormalized: 0.5,
+  yNormalized: 0.72,
+  widthNormalized: 0.8,
+  fontScale: 1,
+  backgroundOpacity: 0.45,
+  showSource: true,
+  hotkeys: {
+    toggleOverlay: "CommandOrControl+Shift+T",
+    toggleTranslation: "CommandOrControl+Shift+Y",
+    toggleEditMode: "CommandOrControl+Shift+E",
+    clearCaptions: "CommandOrControl+Shift+Backspace",
+    increaseText: "CommandOrControl+Shift+=",
+    decreaseText: "CommandOrControl+Shift+-",
+  },
+};
+
+describe("migrateFromV02", () => {
+  it("creates one migrated source on first run", () => {
+    const { configs, migrated } = migrateFromV02(
+      null,
+      BASE_OVERLAY,
+      SEQUENTIAL_RANDOM,
+    );
+    expect(migrated).toBe(true);
+    expect(sourceConfigsSchema.safeParse(configs).success).toBe(true);
+    expect(configs.sources).toHaveLength(1);
+    expect(configs.sources[0]?.displayName).toBe("Valorant Team");
+    expect(configs.sources[0]?.captionTag).toBe("TEAM");
+    expect(isValidSourceId(configs.sources[0]?.sourceId ?? "")).toBe(true);
+  });
+
+  it("is idempotent when a v3 document already exists", () => {
+    const first = migrateFromV02(null, BASE_OVERLAY, SEQUENTIAL_RANDOM);
+    const second = migrateFromV02(
+      first.configs,
+      BASE_OVERLAY,
+      SEQUENTIAL_RANDOM,
+    );
+    expect(second.migrated).toBe(false);
+    expect(second.configs).toEqual(first.configs);
+  });
+
+  it("keeps the migrated source id stable across calls", () => {
+    const first = migrateFromV02(null, BASE_OVERLAY, SEQUENTIAL_RANDOM);
+    const again = migrateFromV02(first.configs, null, SEQUENTIAL_RANDOM);
+    expect(again.configs.sources[0]?.sourceId).toBe(
+      first.configs.sources[0]?.sourceId,
+    );
+  });
+
+  it("maps showSource=false to a hidden label style", () => {
+    const { configs } = migrateFromV02(
+      null,
+      { ...BASE_OVERLAY, showSource: false },
+      SEQUENTIAL_RANDOM,
+    );
+    expect(configs.sources[0]?.labelStyle).toBe("hidden");
+  });
+
+  it("keeps default label style when showSource is true", () => {
+    const { configs } = migrateFromV02(null, BASE_OVERLAY, SEQUENTIAL_RANDOM);
+    expect(configs.sources[0]?.labelStyle).toBe("brackets");
+  });
+
+  it("migrates with no overlay settings at all", () => {
+    const { configs, migrated } = migrateFromV02(null, null, SEQUENTIAL_RANDOM);
+    expect(migrated).toBe(true);
+    expect(configs.sources[0]?.labelStyle).toBe("brackets");
+  });
+
+  it("ignores garbage v0.2 overlay state (null is passed by the loader)", () => {
+    const { configs } = migrateFromV02(null, null, SEQUENTIAL_RANDOM);
+    expect(configs.sources).toHaveLength(1);
+  });
+});

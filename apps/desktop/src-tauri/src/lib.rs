@@ -27,6 +27,57 @@ struct AppStatus {
     phase: u8,
     capture_active: bool,
     inference_active: bool,
+    /// v0.3 feature flag: multi-source audio, IPC v2, per-source language
+    /// strictness. When disabled the app behaves exactly like v0.2.
+    multi_source: bool,
+}
+
+/// `LST_MULTI_SOURCE=0` disables the multi-source feature; anything else
+/// (including unset) enables it in v0.3 development builds.
+fn multi_source_enabled() -> bool {
+    std::env::var("LST_MULTI_SOURCE").as_deref() != Ok("0")
+}
+
+#[cfg(test)]
+mod feature_flag_tests {
+    use std::sync::{Mutex, MutexGuard};
+
+    use super::*;
+
+    /// Tests mutate the process env var; serialize them against each other.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_env() -> MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[test]
+    fn multi_source_enabled_by_default() {
+        let _guard = lock_env();
+        // SAFETY: test-only env mutation; serialized by ENV_LOCK.
+        unsafe { std::env::remove_var("LST_MULTI_SOURCE") };
+        assert!(multi_source_enabled());
+    }
+
+    #[test]
+    fn multi_source_disabled_by_zero() {
+        let _guard = lock_env();
+        // SAFETY: see above.
+        unsafe { std::env::set_var("LST_MULTI_SOURCE", "0") };
+        assert!(!multi_source_enabled());
+    }
+
+    #[test]
+    fn multi_source_enabled_by_other_values() {
+        let _guard = lock_env();
+        // SAFETY: see above.
+        unsafe { std::env::set_var("LST_MULTI_SOURCE", "1") };
+        assert!(multi_source_enabled());
+        unsafe { std::env::set_var("LST_MULTI_SOURCE", "on") };
+        assert!(multi_source_enabled());
+    }
 }
 
 #[derive(Debug, Default)]
@@ -646,7 +697,7 @@ fn app_status(
         .map(|state| state.selected_endpoint_id.is_some())
         .unwrap_or(false);
     AppStatus {
-        phase: 5,
+        phase: 7,
         capture_active,
         inference_active: live
             .state
@@ -658,6 +709,7 @@ fn app_status(
                 .lock()
                 .map(|supervisor| supervisor.is_some())
                 .unwrap_or(false),
+        multi_source: multi_source_enabled(),
     }
 }
 
@@ -1782,11 +1834,13 @@ mod tests {
                 phase: 5,
                 capture_active: state.selected_endpoint_id.is_some(),
                 inference_active: false,
+                multi_source: true,
             },
             AppStatus {
                 phase: 5,
                 capture_active: false,
                 inference_active: false,
+                multi_source: true,
             }
         );
     }
