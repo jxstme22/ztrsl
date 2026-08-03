@@ -147,6 +147,9 @@ class SourceRegistryEntry(StrictModel):
     strictness: Strictness = "balanced"
     label_style: LabelStyle = "brackets"
     color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
+    # Scheduling priority (spec §7.2): higher numbers decode first within
+    # the final/provisional tiers. Never derived from names or tags.
+    priority: int = Field(default=100, ge=0, le=1000)
 
 
 class SourceRegistryPayload(StrictModel):

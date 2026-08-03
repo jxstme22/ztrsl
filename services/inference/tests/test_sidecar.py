@@ -5,6 +5,7 @@ import time
 import wave
 from array import array
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -342,13 +343,20 @@ def test_worker_survives_slow_inference_with_bounded_drops() -> None:
     assert dropped > 0
 
 
+@dataclass
+class FakeUtterance:
+    sequence: int
+    utterance_id: str
+    source_id: str | None = None
+
+
 def test_worker_delivers_results_in_order_and_never_blocks() -> None:
     class EmittingPipeline:
-        def feed_utterances(self, packet: AudioPacket) -> list[tuple[int]]:
-            return [(packet.sequence,)]
+        def feed_utterances(self, packet: AudioPacket) -> list[FakeUtterance]:
+            return [FakeUtterance(sequence=packet.sequence, utterance_id=str(packet.sequence))]
 
-        def infer_utterances(self, utterances: list[tuple[int]]) -> tuple[int, ...]:
-            return tuple(utterance[0] for utterance in utterances)
+        def infer_utterances(self, utterances: list[FakeUtterance]) -> tuple[int, ...]:
+            return tuple(utterance.sequence for utterance in utterances)
 
         def flush_utterances(self) -> list[tuple[int, ...]]:
             return []
@@ -392,11 +400,11 @@ def test_worker_vad_stays_realtime_while_inference_is_slow() -> None:
             self.fed = 0
             self.inferred = 0
 
-        def feed_utterances(self, packet: AudioPacket) -> list[tuple[int]]:
+        def feed_utterances(self, packet: AudioPacket) -> list[FakeUtterance]:
             self.fed += 1
-            return [(packet.sequence,)]
+            return [FakeUtterance(sequence=packet.sequence, utterance_id=str(packet.sequence))]
 
-        def infer_utterances(self, utterances: list[tuple[int]]) -> tuple[tuple[int, ...], ...]:
+        def infer_utterances(self, utterances: list[FakeUtterance]) -> tuple[tuple[int, ...], ...]:
             self.inferred += len(utterances)
             time.sleep(0.25)
             return tuple(utterances)

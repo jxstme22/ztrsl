@@ -140,10 +140,16 @@ def test_groq_live_session_produces_caption(
                 )
                 await websocket.send(encode_audio_packet(packet))
 
-            caption: dict[str, Any] = json.loads(
-                await asyncio.wait_for(websocket.recv(), timeout=5)
-            )
-            assert caption["type"] == "caption.final"
+            # A 900 ms utterance crosses the provisional threshold, so a
+            # provisional caption may stream first; collect until the final
+            # arrives (same convention as the other live-session tests).
+            caption: dict[str, Any] | None = None
+            while caption is None:
+                message: dict[str, Any] = json.loads(
+                    await asyncio.wait_for(websocket.recv(), timeout=5)
+                )
+                if message["type"] == "caption.final":
+                    caption = message
             assert caption["payload"]["english_text"] != ""
             stop.set()
 

@@ -371,6 +371,7 @@ impl SidecarSupervisor {
                 strictness: CaptionStrictness::Balanced,
                 label_style: CaptionLabelStyle::Brackets,
                 color: team_snapshot.color.clone(),
+                priority: 200,
             },
             SourceRegistryEntry {
                 source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -384,6 +385,7 @@ impl SidecarSupervisor {
                 strictness: CaptionStrictness::Off,
                 label_style: CaptionLabelStyle::Brackets,
                 color: discord_snapshot.color.clone(),
+                priority: 100,
             },
         ])?;
 
@@ -761,6 +763,35 @@ impl SidecarSupervisor {
             "source.error",
             "source.diagnostics rejected",
         )
+    }
+
+    /// Shared scheduler metrics (Phase 6, spec §7.3): queue depth, queue
+    /// delay, coalescing and drop counters. Any session version.
+    pub fn scheduler_metrics(&mut self) -> Result<serde_json::Value, SupervisorError> {
+        self.ensure_running()?;
+        let request = Envelope {
+            protocol_version: self.negotiated_version,
+            message_id: format!("scheduler-metrics-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "scheduler.metrics.request".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: serde_json::json!({}),
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        if response.message_type == "scheduler.error" {
+            return Err(SupervisorError::Protocol(error_message(
+                &response.payload,
+                "scheduler.metrics rejected",
+            )));
+        }
+        if response.message_type != "scheduler.metrics" {
+            return Err(SupervisorError::Protocol(
+                "unexpected scheduler.metrics response".to_owned(),
+            ));
+        }
+        Ok(response.payload)
     }
 
     pub fn process_clip(
@@ -1212,6 +1243,7 @@ mod tests {
                     strictness: CaptionStrictness::Balanced,
                     label_style: CaptionLabelStyle::Brackets,
                     color: Some("#7dd3fc".to_owned()),
+                    priority: 200,
                 },
                 SourceRegistryEntry {
                     source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -1225,6 +1257,7 @@ mod tests {
                     strictness: CaptionStrictness::Off,
                     label_style: CaptionLabelStyle::Brackets,
                     color: Some("#fda4af".to_owned()),
+                    priority: 100,
                 },
             ])
             .expect("registry push must succeed");

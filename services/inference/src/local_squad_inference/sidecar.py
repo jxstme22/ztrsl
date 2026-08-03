@@ -61,6 +61,12 @@ from local_squad_inference.providers import (
     TranslationProvider,
     provider_readiness,
 )
+from local_squad_inference.scheduler import (
+    DEFAULT_SOURCE_PRIORITY,
+    InferenceScheduler,
+    SchedulerMetrics,
+    make_job,
+)
 from local_squad_inference.vad import AudioUtterance, vad_config_from_sensitivity
 
 SendJson = Callable[[dict[str, object]], Awaitable[None]]
@@ -78,6 +84,29 @@ def profile_source_mode(
     if language_profile == "chinese":
         return "chinese"
     return "filipino"
+
+
+def _priority_of_source(
+    source_key: str | None,
+    source_registry: dict[str, SourceRegistryEntry],
+) -> int:
+    """Scheduler priority for a source (spec §7.2). Derived from the
+    immutable source id and the registry's explicit priority — never from
+    display names or tags, so renames cannot change scheduling."""
+    if source_key is None:
+        return DEFAULT_SOURCE_PRIORITY
+    entry = source_registry.get(source_key)
+    return entry.priority if entry is not None else DEFAULT_SOURCE_PRIORITY
+
+
+def _language_profile_of_source(
+    source_key: str | None,
+    source_registry: dict[str, SourceRegistryEntry],
+) -> str:
+    if source_key is None:
+        return "auto"
+    entry = source_registry.get(source_key)
+    return entry.language_profile if entry is not None else "auto"
 
 
 def stamp_v2_caption(
@@ -371,9 +400,11 @@ class LivePipelineWorker:
     - a small inference pool runs ASR + translation for completed
       utterances, so captions pipeline instead of serializing.
 
-    Overload is explicit: the packet queue is bounded latest-wins, and so
-    is the utterance job queue — a slow inference drops the oldest pending
-    work instead of stalling the audio path or the Rust capture.
+    Overload is explicit: the packet queue is bounded latest-wins, and
+    completed utterances flow through one shared bounded priority
+    scheduler (spec §7) — finals always beat provisionals and are never
+    dropped silently, provisional revisions coalesce latest-wins, and
+    overload surfaces via `scheduler.overloaded`.
     """
 
     def __init__(
@@ -383,15 +414,21 @@ class LivePipelineWorker:
         max_pending: int = 8,
         max_pending_utterances: int = 4,
         num_inference: int = 2,
+        priority_of: Callable[[str | None], int] | None = None,
+        language_profile_of: Callable[[str | None], str] | None = None,
     ) -> None:
         self._pipeline = pipeline
         self._input: queue.Queue[AudioPacket | object | None] = queue.Queue(maxsize=max_pending)
-        self._jobs: queue.Queue[AudioUtterance | None] = queue.Queue(maxsize=max_pending_utterances)
-        # Provisional decodes use a single latest-wins slot: a newer snapshot
-        # of the same utterance supersedes an older pending one, and workers
-        # drain this queue before the finals queue because provisionals are
-        # cheap and time-sensitive.
-        self._provisional: queue.Queue[AudioUtterance] = queue.Queue(maxsize=1)
+        # One shared scheduler for every source's decode work: models are
+        # loaded once per process (shared VRAM), and scheduling keys on the
+        # immutable source id plus a per-source priority — never on editable
+        # names or tags.
+        self._scheduler = InferenceScheduler(max_queued=max_pending_utterances)
+        self._priority_of = priority_of or (lambda source_id: DEFAULT_SOURCE_PRIORITY)
+        self._language_profile_of = language_profile_of or (lambda source_id: "auto")
+        # Monotonic per-(source, utterance) revision counter for provisional
+        # coalescing: the newest snapshot supersedes older queued ones.
+        self._provisional_revisions: dict[tuple[str | None, str], int] = {}
         # Per-source controls (flush/stop) are executed on the VAD thread:
         # the utterance managers are not thread-safe, and every manager is
         # touched only from the VAD thread. The control handler blocks on
@@ -461,6 +498,12 @@ class LivePipelineWorker:
     def source_diagnostics(self, source_id: str) -> dict[str, object]:
         return self._pipeline.diagnostics_for(source_id)
 
+    def scheduler_metrics(self) -> SchedulerMetrics:
+        return self._scheduler.metrics()
+
+    def scheduler_overload_events(self) -> int:
+        return self._scheduler.overload_events()
+
     def _run_source_control(
         self,
         operation: str,
@@ -495,6 +538,10 @@ class LivePipelineWorker:
         if self._stopped:
             return (), self._dropped_packets
         self._stopped = True
+        # Do NOT close the scheduler here: the VAD thread's shutdown flush
+        # still enqueues trailing utterances, and closing first would drop
+        # them. `_run_vad` closes the scheduler after its final flush, which
+        # then wakes the workers to exit.
         while True:
             try:
                 self._input.put_nowait(None)
@@ -523,28 +570,35 @@ class LivePipelineWorker:
         return tuple(captions), self._dropped_packets
 
     def _enqueue_utterance(self, utterance: AudioUtterance) -> None:
-        while True:
-            try:
-                self._jobs.put_nowait(utterance)
-                return
-            except queue.Full:
-                try:
-                    self._jobs.get_nowait()
-                except queue.Empty:
-                    return
-                self._pipeline.note_utterances_dropped(1, source_id=utterance.source_id)
+        # Final jobs are never dropped silently: the scheduler evicts stale
+        # provisionals (and only as a counted last resort, the oldest final)
+        # instead of refusing the work.
+        self._scheduler.submit(
+            make_job(
+                utterance,
+                is_final=True,
+                revision=0,
+                priority=self._priority_of(utterance.source_id),
+                language_profile_id=self._language_profile_of(utterance.source_id),
+            )
+        )
 
     def _enqueue_provisional(self, utterance: AudioUtterance) -> None:
-        # Latest-wins: keep the newest snapshot of the open utterance.
-        while True:
-            try:
-                self._provisional.put_nowait(utterance)
-                return
-            except queue.Full:
-                try:
-                    self._provisional.get_nowait()
-                except queue.Empty:
-                    return
+        # Latest-wins per (source, utterance): a newer snapshot supersedes
+        # an older queued one; at high water the scheduler pauses secondary
+        # provisional decoding and counts the refusal.
+        key = (utterance.source_id, utterance.utterance_id)
+        revision = self._provisional_revisions.get(key, 0) + 1
+        self._provisional_revisions[key] = revision
+        self._scheduler.submit(
+            make_job(
+                utterance,
+                is_final=False,
+                revision=revision,
+                priority=self._priority_of(utterance.source_id),
+                language_profile_id=self._language_profile_of(utterance.source_id),
+            )
+        )
 
     def _run_vad(self) -> None:
         next_provisional_at_ns: dict[str, int | None] = {}
@@ -592,15 +646,7 @@ class LivePipelineWorker:
             utterances = []
         for utterance in utterances:
             self._enqueue_utterance(utterance)
-        for _ in self._workers:
-            while True:
-                try:
-                    self._jobs.put(None, timeout=1.0)
-                    break
-                except queue.Full:
-                    # Workers keep consuming jobs, so a slot always
-                    # frees eventually; never drop a sentinel.
-                    continue
+        self._scheduler.close()
 
     def _drain_controls(self) -> None:
         while True:
@@ -619,26 +665,18 @@ class LivePipelineWorker:
                 event.set()
 
     def _take_job(self) -> AudioUtterance | None:
-        # Provisional snapshots arrive on a separate latest-wins queue, and a
-        # worker parked in a blocking `_jobs.get()` would never see them, so
-        # poll the provisional slot with a short timeout around each blocking
-        # wait. The sentinel `None` is only ever placed in `_jobs`.
-        while True:
-            try:
-                return self._provisional.get_nowait()
-            except queue.Empty:
-                pass
-            try:
-                job = self._jobs.get(timeout=0.05)
-            except queue.Empty:
-                continue
-            return job
+        job = self._scheduler.take(timeout=0.05)
+        return job.utterance if job is not None else None
 
     def _run_inference(self) -> None:
-        while True:
+        # Poll until the scheduler is closed: `take` returns None both on
+        # timeout (idle) and after close, so the pool must exit on `closed`,
+        # not on a single None — otherwise workers vanish on the first idle
+        # period and later finals would wait forever.
+        while not self._scheduler.closed:
             job = self._take_job()
             if job is None:
-                return
+                continue
             try:
                 captions = self._pipeline.infer_utterances([job])
                 self._results.put(captions)
@@ -668,7 +706,44 @@ async def drain_live_results(
     """
     sequence = 0
     finalized_ids: set[str] = set()
+    overload_events = 0
     while not worker.stopped:
+        # Overload is pushed, not polled: any new scheduler overload event
+        # (provisional refusal, evicted final) is reported immediately.
+        current_overloads = await asyncio.to_thread(worker.scheduler_overload_events)
+        if current_overloads > overload_events:
+            overload_events = current_overloads
+            metrics = await asyncio.to_thread(worker.scheduler_metrics)
+            logger.warning(
+                "scheduler overload: events=%s provisionals_dropped=%s finals_dropped=%s depth=%s",
+                metrics.overload_events,
+                metrics.provisionals_dropped,
+                metrics.finals_dropped,
+                metrics.queue_depth,
+            )
+            if version < 2:
+                # v1 is a legacy audio-only protocol with no control plane:
+                # a scheduler.overloaded push would corrupt its caption
+                # stream. Scheduling behavior is identical; only the
+                # diagnostic event is withheld.
+                continue
+            async with send_lock:
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "scheduler.overloaded",
+                            f"scheduler-overloaded-{overload_events}",
+                            session_id,
+                            {
+                                "overload_events": metrics.overload_events,
+                                "provisionals_dropped": metrics.provisionals_dropped,
+                                "finals_dropped": metrics.finals_dropped,
+                                "queue_depth": metrics.queue_depth,
+                            },
+                            version=version,
+                        )
+                    )
+                )
         result = await asyncio.to_thread(worker.wait_next, 0.05)
         if result is None:
             continue
@@ -1106,6 +1181,32 @@ async def handle_connection(
                         )
                     )
                 )
+            elif control.type == "scheduler.metrics.request":
+                if live_worker is None:
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "scheduler.error",
+                                control.message_id,
+                                control.session_id,
+                                {"code": "NO_LIVE_SESSION", "message": "no live session"},
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                    continue
+                metrics = await asyncio.to_thread(live_worker.scheduler_metrics)
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "scheduler.metrics",
+                            control.message_id,
+                            control.session_id,
+                            asdict(metrics),
+                            version=negotiated_version,
+                        )
+                    )
+                )
             elif control.type == "live.start":
                 live_request = LiveStartPayload.model_validate(control.payload)
                 try:
@@ -1131,7 +1232,15 @@ async def handle_connection(
                         vad_config=vad_config_from_sensitivity(live_request.vad_sensitivity),
                         use_silero=live_request.provider != "demo",
                     )
-                    live_worker = LivePipelineWorker(live_pipeline)
+                    live_worker = LivePipelineWorker(
+                        live_pipeline,
+                        priority_of=lambda source_key: _priority_of_source(
+                            source_key, source_registry
+                        ),
+                        language_profile_of=lambda source_key: _language_profile_of_source(
+                            source_key, source_registry
+                        ),
+                    )
                     drain_task = asyncio.create_task(
                         drain_live_results(
                             connection,

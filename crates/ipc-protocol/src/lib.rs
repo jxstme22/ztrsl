@@ -221,6 +221,14 @@ pub struct SourceRegistryEntry {
     pub strictness: CaptionStrictness,
     pub label_style: CaptionLabelStyle,
     pub color: Option<String>,
+    /// Scheduling priority (spec §7.2): higher numbers decode first within
+    /// the final/provisional tiers. Never derived from names or tags.
+    #[serde(default = "default_source_priority")]
+    pub priority: u32,
+}
+
+fn default_source_priority() -> u32 {
+    100
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
