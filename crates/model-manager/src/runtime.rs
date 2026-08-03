@@ -80,14 +80,26 @@ pub const CUDA_DLL_DIR: &str = "cuda12";
 /// This lets the UI say "GPU already available — no download needed" instead
 /// of asking users who already installed CUDA to download the ~1.3 GB pack.
 pub fn system_cuda_available() -> bool {
-    system_cuda_dlls()
-        .iter()
-        .any(|name| find_windows_dll(name).is_some())
+    let required = required_cuda_dlls();
+    !required.is_empty() && required.iter().all(|name| find_windows_dll(name).is_some())
 }
 
-/// DLLs that must be present for ctranslate2 to use CUDA on Windows.
-#[cfg(target_os = "windows")]
-const CUDA_REQUIRED_DLLS: &[&str] = &["cublas64_12.dll", "cudart64_12.dll"];
+/// DLLs that must be present for ctranslate2 to use CUDA on Windows: cuBLAS
+/// (cublas64_12.dll + cublasLt64_12.dll), the CUDA runtime (cudart64_12.dll),
+/// and cuDNN 9 (cudnn64_9.dll). On non-Windows platforms this is empty so
+/// both the system detector and the pack "installed" check return false.
+fn required_cuda_dlls() -> Vec<&'static str> {
+    if cfg!(target_os = "windows") {
+        vec![
+            "cublas64_12.dll",
+            "cublasLt64_12.dll",
+            "cudart64_12.dll",
+            "cudnn64_9.dll",
+        ]
+    } else {
+        Vec::new()
+    }
+}
 
 /// Search the Windows DLL search path for `name`: System32 first, then every
 /// `PATH` entry (allowing the common CUDA Toolkit `bin` directory that setup
@@ -113,18 +125,6 @@ fn find_windows_dll(_name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Non-Windows placeholder: no system CUDA runtime detection.
-#[cfg(not(target_os = "windows"))]
-fn system_cuda_dlls() -> Vec<&'static str> {
-    Vec::new()
-}
-
-/// Windows: the DLLs ctranslate2 needs to run on CUDA.
-#[cfg(target_os = "windows")]
-fn system_cuda_dlls() -> Vec<&'static str> {
-    CUDA_REQUIRED_DLLS.to_vec()
-}
-
 /// On-disk runtime store. The pack lives at `<store>/cuda12/` alongside the
 /// model store so it can share the same writable app-data location.
 #[derive(Clone)]
@@ -142,25 +142,17 @@ impl GpuRuntimeStore {
         self.root.join(CUDA_DLL_DIR)
     }
 
-    /// True when a previous install produced a DLL directory with at least one
-    /// loadable `.dll` (a conservative "installed" signal; full verification
-    /// re-happens at sidecar load).
+    /// True when a previous install produced the DLLs ctranslate2 actually
+    /// needs. Checking for *specific* DLLs (not "any .dll") catches partial or
+    /// corrupt extractions so a broken pack is never reported as installed.
+    /// Returns false on non-Windows platforms (no CUDA pack applies there).
     pub fn is_installed(&self) -> bool {
         let dir = self.dll_dir();
         if !dir.is_dir() {
             return false;
         }
-        std::fs::read_dir(&dir)
-            .map(|entries| {
-                entries.flatten().any(|entry| {
-                    entry
-                        .path()
-                        .extension()
-                        .map(|ext| ext.eq_ignore_ascii_case("dll"))
-                        .unwrap_or(false)
-                })
-            })
-            .unwrap_or(false)
+        let required = required_cuda_dlls();
+        !required.is_empty() && required.iter().all(|name| dir.join(name).is_file())
     }
 
     /// Total size in bytes of the installed DLLs (honest disk usage).
@@ -212,7 +204,7 @@ impl GpuRuntimeInstaller {
         &self.store
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "windows"))]
     fn with_wheels_for_test(mut self, wheels: &'static [CudaWheel]) -> Self {
         self.wheels = wheels;
         self
@@ -299,6 +291,10 @@ impl GpuRuntimeInstaller {
                 extract_whl_dlls(&wheel_path, &staging.join("dll"), cancel)?;
                 downloaded += wheel.size_bytes;
             }
+            // Verify the extraction produced every DLL ctranslate2 needs before
+            // committing: a partial extraction (e.g. a wheel layout change or a
+            // truncated read) must never be reported as "installed".
+            verify_staged_dlls(&staging)?;
             commit_dlls(&staging, &self.store)
         }
         .await;
@@ -370,6 +366,35 @@ fn commit_dlls(staging: &Path, store: &GpuRuntimeStore) -> Result<(), Error> {
     Ok(())
 }
 
+/// Ensure the staged DLL directory contains every DLL ctranslate2 needs.
+/// Returns a descriptive error naming the missing file so the UI can say
+/// "the runtime pack is incomplete" instead of silently committing a broken
+/// pack.
+fn verify_staged_dlls(staging: &Path) -> Result<(), Error> {
+    let staged = staging.join("dll");
+    if !staged.is_dir() {
+        return Err(Error::Layout {
+            detail: "staging produced no DLL directory".to_owned(),
+        });
+    }
+    let required = required_cuda_dlls();
+    if required.is_empty() {
+        // A pack that installs nothing is always wrong (on non-Windows the
+        // CUDA pack is not applicable, so committing an empty dir is a bug).
+        return Err(Error::Layout {
+            detail: "CUDA runtime pack produced no required DLLs".to_owned(),
+        });
+    }
+    for name in required {
+        if !staged.join(name).is_file() {
+            return Err(Error::Layout {
+                detail: format!("CUDA runtime pack is missing required {name}"),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Write;
@@ -437,10 +462,24 @@ mod tests {
         let dir = store.dll_dir();
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("cudart64_12.dll"), vec![0u8; 10]).unwrap();
-        assert!(store.is_installed());
-        assert_eq!(store.installed_size_bytes(), 10);
-        store.delete().unwrap();
+        // A partial extraction (only cudart) must NOT report installed on
+        // Windows; on non-Windows the pack never applies so is_installed is
+        // always false.
         assert!(!store.is_installed());
+        for name in required_cuda_dlls() {
+            std::fs::write(dir.join(name), vec![0u8; 10]).unwrap();
+        }
+        if cfg!(target_os = "windows") {
+            assert!(store.is_installed());
+            assert_eq!(
+                store.installed_size_bytes(),
+                10 * required_cuda_dlls().len() as u64
+            );
+            store.delete().unwrap();
+            assert!(!store.is_installed());
+        } else {
+            assert!(!store.is_installed());
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -488,6 +527,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "windows")]
     #[tokio::test]
     async fn install_verifies_wheels_and_commits_atomically() {
         struct FakeFetcher(std::collections::HashMap<String, Vec<u8>>);
@@ -519,7 +559,12 @@ mod tests {
             let path = root.join("fake.whl");
             make_wheel_with_dlls(
                 &path,
-                &[("nvidia/cuda_runtime/bin/cudart64_12.dll", b"cudart")],
+                &[
+                    ("nvidia/cuda_runtime/bin/cudart64_12.dll", b"cudart"),
+                    ("nvidia/cublas/bin/cublas64_12.dll", b"cublas"),
+                    ("nvidia/cublas/bin/cublasLt64_12.dll", b"cublaslt"),
+                    ("nvidia/cudnn/bin/cudnn64_9.dll", b"cudnn"),
+                ],
             );
             std::fs::read(&path).unwrap()
         };
@@ -553,8 +598,19 @@ mod tests {
             std::fs::read(store.dll_dir().join("cudart64_12.dll")).unwrap(),
             b"cudart"
         );
+        assert_eq!(
+            std::fs::read(store.dll_dir().join("cublas64_12.dll")).unwrap(),
+            b"cublas"
+        );
+        assert_eq!(
+            std::fs::read(store.dll_dir().join("cudnn64_9.dll")).unwrap(),
+            b"cudnn"
+        );
         assert!(store.is_installed());
-        assert_eq!(store.installed_size_bytes(), 6);
+        assert_eq!(
+            store.installed_size_bytes(),
+            (b"cudart".len() + b"cublas".len() + b"cublaslt".len() + b"cudnn".len()) as u64
+        );
         // No leftover staging dir.
         assert!(!std::fs::read_dir(&root).unwrap().any(|entry| {
             entry
@@ -571,6 +627,75 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, Error::AlreadyInstalled { .. }));
 
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn install_rejects_incomplete_extraction() {
+        // A wheel that extracts only cudart (missing cuBLAS/cuDNN) must NOT
+        // commit: the friend's "installed but CPU" bug came from a partial
+        // pack being accepted. The install must error and leave no dir.
+        struct FakeFetcher(std::collections::HashMap<String, Vec<u8>>);
+        impl Fetcher for FakeFetcher {
+            fn fetch(
+                &self,
+                url: &str,
+                destination: &Path,
+                _cancel: &CancelHandle,
+                _on_progress: ProgressFn,
+            ) -> futures_util::future::BoxFuture<'_, Result<u64, Error>> {
+                let owned_url = url.to_owned();
+                let bytes = self.0.get(url).cloned();
+                let destination = destination.to_owned();
+                Box::pin(async move {
+                    let bytes = bytes.ok_or_else(|| {
+                        Error::Transport(format!("no fake wheel for {owned_url}"))
+                    })?;
+                    std::fs::write(&destination, &bytes)?;
+                    Ok(bytes.len() as u64)
+                })
+            }
+        }
+
+        let root = std::env::temp_dir().join(format!("lst-gpu-partial-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let wheel_bytes = {
+            let path = root.join("fake.whl");
+            make_wheel_with_dlls(
+                &path,
+                &[("nvidia/cuda_runtime/bin/cudart64_12.dll", b"cudart")],
+            );
+            std::fs::read(&path).unwrap()
+        };
+        let wheel_sha = {
+            use sha2::Digest;
+            format!("{:x}", sha2::Sha256::digest(&wheel_bytes))
+        };
+        let wheel_sha: &'static str = Box::leak(wheel_sha.into_boxed_str());
+        static FAKE_URL: &str = "https://files.pythonhosted.org/fake/partial.whl";
+        let fake_wheel = CudaWheel {
+            package: "fake",
+            url: FAKE_URL,
+            size_bytes: wheel_bytes.len() as u64,
+            sha256: wheel_sha,
+        };
+        let fake_wheels: &'static [CudaWheel] = Box::leak(vec![fake_wheel].into_boxed_slice());
+        let mut fetcher_map = std::collections::HashMap::new();
+        fetcher_map.insert(FAKE_URL.to_owned(), wheel_bytes);
+        let fetcher: std::sync::Arc<dyn Fetcher> = std::sync::Arc::new(FakeFetcher(fetcher_map));
+
+        let store = GpuRuntimeStore::new(root.clone());
+        let installer =
+            GpuRuntimeInstaller::new(store.clone(), fetcher).with_wheels_for_test(fake_wheels);
+        let err = installer
+            .install(&CancelHandle::default(), std::sync::Arc::new(|_| {}))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::Layout { .. }), "got: {err}");
+        assert!(!store.is_installed());
+        assert!(!store.dll_dir().exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -346,21 +346,11 @@ function ModelCard({
       <div className="lst-model-card-head">
         <h3>{model.name}</h3>
         {installed && (
-          <span className="lst-badge lst-badge-installed">
-            {t("modelsInstalled")}
-          </span>
-        )}
-        {model.recommended && (
-          <span className="lst-badge">{t("modelsRecommended")}</span>
-        )}
-        {localOnly && (
-          <span className="lst-badge lst-badge-local">
-            {t("modelsLocalExportBadge")}
-          </span>
-        )}
-        {model.licenseSpdx === "CC-BY-NC-4.0" && (
-          <span className="lst-badge lst-badge-warn">
-            {t("modelsNonCommercial")}
+          <span
+            className="lst-model-status-dot"
+            aria-label={t("modelsInstalled")}
+          >
+            <span aria-hidden="true" />
           </span>
         )}
       </div>
@@ -375,6 +365,19 @@ function ModelCard({
         </span>
         <span>·</span>
         <span>{model.licenseSpdx}</span>
+        {model.recommended && (
+          <span className="lst-chip">{t("modelsRecommended")}</span>
+        )}
+        {localOnly && (
+          <span className="lst-chip lst-chip-local">
+            {t("modelsLocalExportBadge")}
+          </span>
+        )}
+        {model.licenseSpdx === "CC-BY-NC-4.0" && (
+          <span className="lst-chip lst-chip-warn">
+            {t("modelsNonCommercial")}
+          </span>
+        )}
         <span className="lst-capability">
           {capabilityLabel(model.capabilities.languageCapability, t)}
         </span>
@@ -732,8 +735,7 @@ export function ModelsPanel({
           <Database aria-hidden="true" size={17} />
           <h2>{t("modelsPageTitle")}</h2>
         </div>
-        <span className="pill on" aria-live="polite">
-          <span aria-hidden="true" />
+        <span className="lst-model-count" aria-live="polite">
           {models.installed.length} {t("modelsInstalledCount")} ·{" "}
           {models.available.length} {t("modelsAvailableCount")}
         </span>

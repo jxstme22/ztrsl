@@ -2068,14 +2068,20 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.5;
   margin: 4px 0 16px;
 }
+.lst-model-count {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
 .lst-model-section {
-  margin-top: 26px;
+  margin-top: 20px;
 }
 .lst-model-section:first-child {
   margin-top: 4px;
 }
 .lst-model-section .section-heading {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.02em;
@@ -2084,18 +2090,18 @@ input[type="range"]::-moz-range-thumb {
 .lst-model-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
   align-items: stretch;
 }
 .lst-model-card {
   border: 1px solid var(--stroke);
-  background: var(--glass);
-  border-radius: var(--radius-lg);
-  padding: 20px 22px;
+  background: var(--glass-strong);
+  border-radius: var(--radius);
+  padding: 18px 20px;
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto auto;
-  column-gap: 24px;
+  column-gap: 20px;
   row-gap: 10px;
   min-width: 0;
   min-height: 0;
@@ -2105,11 +2111,11 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-model-card:hover {
   border-color: var(--stroke-strong);
-  background: var(--glass-strong);
+  background: rgba(255, 255, 255, 0.03);
 }
 .lst-model-card[data-installed] {
-  border-color: rgba(74, 222, 128, 0.28);
-  background: rgba(74, 222, 128, 0.04);
+  border-color: rgba(74, 222, 128, 0.22);
+  background: rgba(74, 222, 128, 0.035);
 }
 .lst-model-card-head {
   display: flex;
@@ -2126,6 +2132,23 @@ input[type="range"]::-moz-range-thumb {
   color: var(--fg-strong);
   flex: 1 1 auto;
   min-width: 0;
+}
+/* Quiet "installed" indicator: a small green dot instead of a loud badge. */
+.lst-model-status-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: rgba(74, 222, 128, 0.08);
+}
+.lst-model-status-dot > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #4ade80;
 }
 .lst-model-description {
   margin: 0;
@@ -2159,6 +2182,28 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 0.03em;
   color: var(--muted);
   white-space: nowrap;
+}
+/* Subtle status chips inside the meta row (Recommended / Local / license). */
+.lst-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke-strong);
+  background: transparent;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.lst-chip-local {
+  color: #7dd3fc;
+  border-color: rgba(124, 211, 252, 0.28);
+}
+.lst-chip-warn {
+  color: #f5c07a;
+  border-color: rgba(255, 190, 90, 0.28);
 }
 .lst-model-card-actions {
   display: flex;
@@ -2218,11 +2263,11 @@ input[type="range"]::-moz-range-thumb {
   white-space: nowrap;
 }
 .lst-gpu-card {
-  margin: 18px 0 4px;
-  padding: 16px 18px;
-  border: 1px solid rgba(124, 211, 252, 0.18);
-  border-radius: var(--radius-lg);
-  background: rgba(124, 211, 252, 0.04);
+  margin: 16px 0 4px;
+  padding: 18px 20px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: var(--glass-strong);
   display: flex;
   flex-direction: column;
   gap: 12px;

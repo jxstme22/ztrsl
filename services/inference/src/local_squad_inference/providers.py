@@ -26,6 +26,11 @@ def _register_cuda_dll_directory() -> None:
     runtime pack on demand and points `LST_CUDA_LIBS_DIR` at the flattened DLL
     directory. Calling `os.add_dll_directory` here (before any ctranslate2
     import) lets Windows resolve those libraries without a system CUDA install.
+
+    We ALSO prepend the dir to `PATH`: in a PyInstaller-frozen sidecar the
+    standard DLL search can miss `add_dll_directory` entries for DLLs loaded by
+    a second extension module (ctranslate2's `_ext.pyd`), while a PATH entry is
+    honored everywhere. Both are additive and idempotent.
     """
     cuda_libs = os.environ.get("LST_CUDA_LIBS_DIR")
     if not cuda_libs:
@@ -34,10 +39,12 @@ def _register_cuda_dll_directory() -> None:
         return
     if os.name != "nt":
         return
-    # Python 3.8+; must be called before the extension module that depends on
-    # the DLLs is loaded. Additive and idempotent.
     with contextlib.suppress(OSError):
         os.add_dll_directory(cuda_libs)  # type: ignore[attr-defined]
+    current = os.environ.get("PATH", "")
+    entries = current.split(os.pathsep) if current else []
+    if cuda_libs not in entries:
+        os.environ["PATH"] = cuda_libs + os.pathsep + current
 
 
 # Register the optional CUDA runtime pack before anything imports ctranslate2,

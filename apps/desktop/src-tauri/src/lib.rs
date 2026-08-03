@@ -207,6 +207,9 @@ struct SidecarPaths {
 /// Build a sidecar config for the current runtime mode: the frozen exe when a
 /// bundled build is present, otherwise the workspace `.venv` interpreter.
 fn sidecar_config(bundled: Option<&BundledPaths>, extra_env: &[(String, String)]) -> SidecarConfig {
+    let model_root = bundled
+        .map(|paths| paths.model_root.clone())
+        .unwrap_or_else(|| workspace_root_from_manifest().join("models"));
     let mut config = match bundled {
         Some(paths) => SidecarConfig::for_bundled(
             paths.sidecar_exe.clone(),
@@ -215,7 +218,18 @@ fn sidecar_config(bundled: Option<&BundledPaths>, extra_env: &[(String, String)]
         ),
         None => SidecarConfig::for_workspace(&workspace_root_from_manifest()),
     };
-    config.extra_env = extra_env.to_vec();
+    // Always forward the optional CUDA runtime pack directory so EVERY sidecar
+    // (live worker, clip analysis, accuracy lab) can call os.add_dll_directory
+    // before importing ctranslate2 — not just the live worker.
+    let mut env = extra_env.to_vec();
+    env.push((
+        "LST_CUDA_LIBS_DIR".to_owned(),
+        model_root
+            .join(model_manager::CUDA_DLL_DIR)
+            .display()
+            .to_string(),
+    ));
+    config.extra_env = env;
     config
 }
 
@@ -1907,23 +1921,11 @@ fn worker_sidecar_config(
     translation_env: &Arc<Mutex<Vec<(String, String)>>>,
     bundled: Option<&BundledPaths>,
 ) -> SidecarConfig {
-    let mut env = translation_env
+    let env = translation_env
         .lock()
         .map(|guard| guard.clone())
         .unwrap_or_default();
-    // Forward the optional CUDA runtime pack directory so the sidecar can call
-    // `os.add_dll_directory` before importing ctranslate2. The path always
-    // matches where `gpu_runtime` installs the pack (models dir / cuda12).
-    let model_root = bundled
-        .map(|paths| paths.model_root.clone())
-        .unwrap_or_else(|| workspace_root_from_manifest().join("models"));
-    env.push((
-        "LST_CUDA_LIBS_DIR".to_owned(),
-        model_root
-            .join(model_manager::CUDA_DLL_DIR)
-            .display()
-            .to_string(),
-    ));
+    // LST_CUDA_LIBS_DIR is added inside sidecar_config for every sidecar.
     sidecar_config(bundled, &env)
 }
 
