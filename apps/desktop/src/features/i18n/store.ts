@@ -45,7 +45,11 @@ export function subscribeUiLanguage(listener: () => void): () => void {
 
 /** React hook: re-renders the component whenever the language changes. */
 export function useUiLanguageValue(): UiLanguage {
-  return useSyncExternalStore(subscribeUiLanguage, getUiLanguage, getUiLanguage);
+  return useSyncExternalStore(
+    subscribeUiLanguage,
+    getUiLanguage,
+    getUiLanguage,
+  );
 }
 
 /** Translate a key using the current global language. */

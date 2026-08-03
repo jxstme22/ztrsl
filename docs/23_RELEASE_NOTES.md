@@ -1,4 +1,26 @@
-# 23 — Release Notes (v0.4.2)
+# 23 — Release Notes
+
+## v0.5.0 — GPU acceleration + full Chinese UI
+
+**Live on a machine with an NVIDIA GPU but no CUDA Toolkit installed?** The
+CUDA runtime is no longer a silent dead end. The app now ships an optional,
+opt-in **GPU runtime pack**:
+
+- The Models page gets a **"Enable GPU acceleration"** card. It downloads the
+  pinned, checksum-verified NVIDIA `cu12` wheels (CUDA runtime + cuBLAS +
+  cuDNN, ~1.3 GB) from PyPI and flattens their DLLs into the models dir —
+  nothing ships in the ~74 MB installer.
+- At sidecar startup the DLL dir is registered via `os.add_dll_directory`
+  before ctranslate2 loads, so the GPU path (ASR + translation) works without
+  a system CUDA install, admin rights, or PATH editing.
+- The Live readout now shows the **active device** (`cuda/float16` vs
+  `cpu/int8`), and a missing GPU runtime falls back to CPU cleanly instead of
+  killing the session with a `cublas64_12.dll not found` error.
+
+**Chinese (Simplified) is now applied across the whole interface** — Models,
+Sources, Live, and Diagnostics read from the same global language store, so
+changing the language in Settings re-renders every page (previously only
+Settings itself changed).
 
 ## v0.4.2 — no more terminal window, polished UI
 
@@ -98,5 +120,5 @@ corrections, and making Off/Balanced/Strict language handling real.
 - VB-CABLE must be installed separately.
 - Hardware-validated matrix rows are tracked in
   `docs/v0_3/PHASE_11_EVIDENCE.md` (`[WINDOWS]`).
-- Deep, dense surfaces (Clip Lab, Accuracy Lab, Diagnostics) remain English;
-  the i18n framework is in place to extend.
+- Deep, dense surfaces (Clip Lab, Accuracy Lab) remain English; the i18n
+  framework is in place to extend.

@@ -12,6 +12,7 @@ mod downloader;
 mod installer;
 mod offline_pack;
 mod provider;
+mod runtime;
 mod signed_catalog;
 mod store;
 
@@ -31,6 +32,10 @@ pub use offline_pack::import_offline_pack;
 pub use provider::{
     Provider, Region, candidate_urls, provider_order, region_from_env, region_from_str,
     rewrite_for_provider,
+};
+pub use runtime::{
+    CUDA_12_RUNTIME_PACK, CUDA_DLL_DIR, CudaWheel, GpuRuntimeInstaller, GpuRuntimeStore,
+    cuda_pack_download_bytes,
 };
 pub use signed_catalog::{public_key_for, sign_payload, verify_catalog_signature};
 pub use store::{InstalledModel, ModelStore};

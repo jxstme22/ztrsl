@@ -143,17 +143,20 @@ export function DiagnosticsPanel({
             <h3>{t("diagnosticsScheduler")}</h3>
           </div>
           <div className="diag-metric-row">
-            <Metric label="Queue depth" value={scheduler.queueDepth} />
             <Metric
-              label="Oldest queued"
+              label={t("diagnosticsQueueDepth")}
+              value={scheduler.queueDepth}
+            />
+            <Metric
+              label={t("diagnosticsOldestQueued")}
               value={`${String(scheduler.oldestQueuedMs)} ms`}
             />
             <Metric
-              label="Avg delay"
+              label={t("diagnosticsAvgDelay")}
               value={`${String(scheduler.avgQueueDelayMs)} ms`}
             />
             <Metric
-              label="Max delay"
+              label={t("diagnosticsMaxDelay")}
               value={`${String(scheduler.maxQueueDelayMs)} ms`}
             />
           </div>
@@ -210,7 +213,7 @@ export function DiagnosticsPanel({
             ) : (
               <ShieldX aria-hidden="true" size={16} />
             )}
-            <h3>Isolation check</h3>
+            <h3>{t("diagnosticsIsolation")}</h3>
             {onRunLeakage !== undefined && (
               <button
                 className="button quiet"
@@ -227,8 +230,8 @@ export function DiagnosticsPanel({
             <div>
               <strong>
                 {snapshot.leakage.passed
-                  ? "No cross-source leakage detected"
-                  : "Leakage detected"}
+                  ? t("diagnosticsIsolationOk")
+                  : t("diagnosticsIsolationLeak")}
               </strong>
               <p>{snapshot.leakage.detail}</p>
             </div>

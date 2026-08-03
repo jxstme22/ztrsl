@@ -97,3 +97,43 @@ export const EMPTY_PROVIDER_STATUS: ProviderStatus = {
   region: "global",
   providers: [],
 };
+
+export const gpuRuntimeWheelSchema = z.object({
+  package: z.string(),
+  sizeBytes: z.number().nonnegative(),
+});
+
+export type GpuRuntimeWheel = z.infer<typeof gpuRuntimeWheelSchema>;
+
+export const gpuRuntimeStatusSchema = z.object({
+  installed: z.boolean(),
+  installing: z.boolean(),
+  installedSizeBytes: z.number().nonnegative(),
+  downloadSizeBytes: z.number().nonnegative(),
+  wheels: z.array(gpuRuntimeWheelSchema),
+});
+
+export type GpuRuntimeStatus = z.infer<typeof gpuRuntimeStatusSchema>;
+
+export const EMPTY_GPU_RUNTIME_STATUS: GpuRuntimeStatus = {
+  installed: false,
+  installing: false,
+  installedSizeBytes: 0,
+  downloadSizeBytes: 0,
+  wheels: [],
+};
+
+export const gpuRuntimeProgressSchema = z.object({
+  done: z.boolean(),
+  canceled: z.boolean(),
+  error: z.string().nullable(),
+  phase: z.enum(["download", "done"]),
+  fileIndex: z.number().int().nonnegative(),
+  fileCount: z.number().int().nonnegative(),
+  fileBytesDone: z.number().nonnegative(),
+  fileBytesTotal: z.number().nonnegative(),
+  totalBytesDone: z.number().nonnegative(),
+  totalBytesTotal: z.number().nonnegative(),
+});
+
+export type GpuRuntimeProgress = z.infer<typeof gpuRuntimeProgressSchema>;

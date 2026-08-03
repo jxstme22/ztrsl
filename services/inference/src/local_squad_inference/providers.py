@@ -18,6 +18,33 @@ from typing import Any, ClassVar, Protocol, cast
 from local_squad_inference.vad import AudioUtterance
 
 
+def _register_cuda_dll_directory() -> None:
+    """Add the optional CUDA runtime pack dir to the Windows DLL search path.
+
+    ctranslate2/faster-whisper require cuBLAS/cuDNN/cudart at load time, but the
+    packaged wheels do not bundle them. The app downloads a pinned, verified
+    runtime pack on demand and points `LST_CUDA_LIBS_DIR` at the flattened DLL
+    directory. Calling `os.add_dll_directory` here (before any ctranslate2
+    import) lets Windows resolve those libraries without a system CUDA install.
+    """
+    cuda_libs = os.environ.get("LST_CUDA_LIBS_DIR")
+    if not cuda_libs:
+        return
+    if not Path(cuda_libs).is_dir():
+        return
+    if os.name != "nt":
+        return
+    # Python 3.8+; must be called before the extension module that depends on
+    # the DLLs is loaded. Additive and idempotent.
+    with contextlib.suppress(OSError):
+        os.add_dll_directory(cuda_libs)  # type: ignore[attr-defined]
+
+
+# Register the optional CUDA runtime pack before anything imports ctranslate2,
+# so Windows can resolve cuBLAS/cuDNN/cudart when the GPU path is used.
+_register_cuda_dll_directory()
+
+
 class ModelUnavailableError(RuntimeError):
     pass
 
@@ -159,6 +186,51 @@ class DemoTranslationProvider:
             inference_ms=0.0,
             model_id="demo-mt",
         )
+
+
+def resolve_inference_device(
+    env_key: str,
+    compute_env_key: str,
+    *,
+    cuda_compute: str,
+    cpu_compute: str,
+) -> tuple[str, str]:
+    """Pick a decode device for ctranslate2/faster-whisper, degrading safely.
+
+    `ctranslate2.get_cuda_device_count() > 0` only means a CUDA-capable GPU is
+    visible to the driver — it does NOT guarantee the CUDA runtime libraries
+    (cublas64_12.dll / cudnn64_*.dll) are installed and loadable. On a machine
+    with a GPU but no CUDA runtime, choosing "cuda" makes the model load fail
+    with a library-not-found error and the whole live session dies.
+
+    So we prefer the configured value, else CUDA only when the runtime probes
+    cleanly, else CPU. The env overrides are respected (an explicit
+    `LST_*_DEVICE=cuda` is honored even if it then fails loudly).
+    """
+    configured = os.environ.get(env_key)
+    if configured:
+        compute = os.environ.get(compute_env_key)
+        return configured, compute or ("float16" if configured == "cuda" else cpu_compute)
+    if platform.system() == "Windows":
+        try:
+            ctranslate2 = importlib.import_module("ctranslate2")
+            if ctranslate2.get_cuda_device_count() > 0:
+                # Probe whether the CUDA runtime actually loads by creating a
+                # tiny in-memory translation model; a missing cuBLAS/cuDNN DLL
+                # raises here, letting us fall back to CPU instead of dying on
+                # the real model load.
+                probe = ctranslate2.Translator(device="cuda", compute_type="int8")
+                del probe
+                return "cuda", cuda_compute
+        except Exception:
+            # CUDA runtime unavailable (missing DLL) — run on CPU.
+            pass
+    return "cpu", cpu_compute
+
+
+def _device_was_forced(env_key: str) -> bool:
+    """True when the user explicitly pinned the device via env (no fallback)."""
+    return bool(os.environ.get(env_key))
 
 
 def verify_manifest(model_dir: Path, manifest_path: Path) -> dict[str, object]:
@@ -311,23 +383,18 @@ class FasterWhisperProvider:
         manifest = verify_manifest(model_dir, model_dir / "manifest.json")
         try:
             faster_whisper = importlib.import_module("faster_whisper")
-            ctranslate2 = importlib.import_module("ctranslate2")
         except ImportError as error:
             raise ModelUnavailableError(
                 "faster-whisper and CTranslate2 are required for quality local ASR"
             ) from error
 
-        configured_device = os.environ.get("LST_WHISPER_DEVICE")
-        if configured_device:
-            device = configured_device
-        elif platform.system() == "Windows" and ctranslate2.get_cuda_device_count() > 0:
-            device = "cuda"
-        else:
-            device = "cpu"
-        compute_type = os.environ.get(
+        device, compute_type = resolve_inference_device(
+            "LST_WHISPER_DEVICE",
             "LST_WHISPER_COMPUTE_TYPE",
-            "float16" if device == "cuda" else "int8",
+            cuda_compute="float16",
+            cpu_compute="int8",
         )
+        forced = _device_was_forced("LST_WHISPER_DEVICE")
         try:
             self._model: Any = faster_whisper.WhisperModel(
                 str(model_dir.resolve()),
@@ -337,7 +404,20 @@ class FasterWhisperProvider:
                 num_workers=1,
             )
         except (OSError, RuntimeError, ValueError) as error:
-            raise ModelUnavailableError("Whisper ASR model could not load") from error
+            if device == "cuda" and not forced:
+                # CUDA runtime is unusable (missing cublas64_12.dll etc.) even
+                # though a GPU is present. Fall back to CPU so the live session
+                # starts instead of dying on a missing library.
+                device, compute_type = "cpu", "int8"
+                self._model = faster_whisper.WhisperModel(
+                    str(model_dir.resolve()),
+                    device=device,
+                    compute_type=compute_type,
+                    cpu_threads=max(1, int(os.environ.get("LST_WHISPER_CPU_THREADS", "4"))),
+                    num_workers=1,
+                )
+            else:
+                raise ModelUnavailableError("Whisper ASR model could not load") from error
         manifest_id = manifest.get("id")
         self._model_id = (
             model_id or (manifest_id if isinstance(manifest_id, str) else None) or model_dir.name
@@ -590,14 +670,13 @@ class NllbCTranslate2Provider:
             raise ModelUnavailableError(
                 "ctranslate2 and tokenizers are required for local translation"
             ) from error
-        configured_device = os.environ.get("LST_TRANSLATION_DEVICE")
-        if configured_device:
-            device = configured_device
-        elif platform.system() == "Windows" and ctranslate2.get_cuda_device_count() > 0:
-            device = "cuda"
-        else:
-            device = "cpu"
-        compute_type = os.environ.get("LST_TRANSLATION_COMPUTE_TYPE", "int8")
+        device, compute_type = resolve_inference_device(
+            "LST_TRANSLATION_DEVICE",
+            "LST_TRANSLATION_COMPUTE_TYPE",
+            cuda_compute="int8",
+            cpu_compute="int8",
+        )
+        forced = _device_was_forced("LST_TRANSLATION_DEVICE")
         try:
             self._translator: Any = ctranslate2.Translator(
                 str(model_dir.resolve()),
@@ -605,7 +684,18 @@ class NllbCTranslate2Provider:
                 compute_type=compute_type,
             )
         except (OSError, RuntimeError, ValueError) as error:
-            raise ModelUnavailableError("NLLB translation model could not load") from error
+            if device == "cuda" and not forced:
+                # CUDA runtime is unusable (missing cublas64_12.dll etc.) even
+                # though a GPU is present. Fall back to CPU so the live session
+                # starts instead of dying on a missing library.
+                device, compute_type = "cpu", "int8"
+                self._translator = ctranslate2.Translator(
+                    str(model_dir.resolve()),
+                    device=device,
+                    compute_type=compute_type,
+                )
+            else:
+                raise ModelUnavailableError("NLLB translation model could not load") from error
         try:
             self._tokenizer: Any = tokenizers.Tokenizer.from_file(
                 str((model_dir / "tokenizer.json").resolve())

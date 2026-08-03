@@ -4,6 +4,7 @@ import {
   HardDriveDownload,
   Trash2,
   X,
+  Cpu,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -12,6 +13,7 @@ import { useT } from "../features/i18n/store";
 
 import type { ModelInfo, ModelProgress } from "../models/model";
 import type { ModelUiState } from "../models/useModels";
+import type { GpuRuntimeUiState } from "../models/useGpuRuntime";
 import { Select } from "./Select";
 
 export function formatBytes(bytes: number): string {
@@ -32,32 +34,37 @@ export function formatBytes(bytes: number): string {
   return `${formatted} ${units[magnitude] ?? ""}`;
 }
 
-function kindLabel(kind: string): string {
-  return kind === "asr" ? "Speech recognition" : "Translation";
+function kindLabel(kind: string, t: ReturnType<typeof useT>): string {
+  return kind === "asr"
+    ? t("modelsSpeechRecognitionLabel")
+    : t("modelsTranslationLabel");
 }
 
 /** Honest capability labels (Phase 9, ADR-016): never overclaim a decoder
  * lock. `forced` means a fixed-language CTC model; `preferred`/`post-filter`
  * mean the decoder is multilingual and the language gate does the filtering. */
-function capabilityLabel(languageCapability: string): string {
+function capabilityLabel(
+  languageCapability: string,
+  t: ReturnType<typeof useT>,
+): string {
   switch (languageCapability) {
     case "forced":
-      return "Fixed-language decoder";
+      return t("modelsCapabilityForced");
     case "preferred":
-      return "Language-biased (no hard lock)";
+      return t("modelsCapabilityPreferred");
     default:
-      return "Filters after recognition";
+      return t("modelsCapabilityPostFilter");
   }
 }
 
-function vramLabel(vramClass: string): string {
+function vramLabel(vramClass: string, t: ReturnType<typeof useT>): string {
   switch (vramClass) {
     case "low":
-      return "Low VRAM";
+      return t("modelsVramLow");
     case "medium":
-      return "Medium VRAM";
+      return t("modelsVramMedium");
     case "high":
-      return "High VRAM";
+      return t("modelsVramHigh");
     default:
       return vramClass;
   }
@@ -109,6 +116,7 @@ export function ConfirmModelDialog({
   onInstall,
   onDelete,
   onClose,
+  t,
 }: {
   action: Exclude<DialogAction, null>;
   inUse: boolean;
@@ -116,6 +124,7 @@ export function ConfirmModelDialog({
   onInstall: (id: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
+  t: ReturnType<typeof useT>;
 }) {
   const { model } = action;
   const isDelete = action.kind === "delete";
@@ -128,7 +137,11 @@ export function ConfirmModelDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={isDelete ? "Delete model" : "Install model"}
+        aria-label={
+          isDelete
+            ? t("modelsDialogDeleteTitle")
+            : t("modelsDialogInstallTitle")
+        }
         className="lst-modal"
         onMouseDown={(event) => {
           event.stopPropagation();
@@ -136,12 +149,14 @@ export function ConfirmModelDialog({
       >
         <div className="lst-modal-head">
           <h3>
-            {isDelete ? `Delete ${model.name}?` : `Install ${model.name}?`}
+            {isDelete
+              ? `${t("modelsDialogDeleteTitle")} ${model.name}?`
+              : `${t("modelsDialogInstallTitle")} ${model.name}?`}
           </h3>
           <button
             type="button"
             className="button quiet"
-            aria-label="Close"
+            aria-label={t("close")}
             onClick={onClose}
           >
             <X aria-hidden="true" size={15} />
@@ -149,25 +164,25 @@ export function ConfirmModelDialog({
         </div>
         {isDelete ? (
           <p className="lst-modal-body">
-            This removes <strong>{model.name}</strong> and frees{" "}
-            <strong>{formatBytes(model.installedSizeBytes)}</strong>. You can
-            reinstall it later.{" "}
-            {inUse && "It is in use — stop the live session first."}
+            {t("modelsDialogDeleteBody")
+              .replace("{model}", model.name)
+              .replace("{size}", formatBytes(model.installedSizeBytes))
+              .replace("{inUse}", inUse ? t("modelsDialogInUseNotice") : "")}
           </p>
         ) : (
           <>
             <p className="lst-modal-body">{model.description}</p>
             <dl className="lst-modal-details">
               <div>
-                <dt>Type</dt>
-                <dd>{kindLabel(model.kind)}</dd>
+                <dt>{t("modelsDialogType")}</dt>
+                <dd>{kindLabel(model.kind, t)}</dd>
               </div>
               <div>
-                <dt>Download size</dt>
+                <dt>{t("modelsDialogDownloadSize")}</dt>
                 <dd>{formatBytes(model.downloadSizeBytes)}</dd>
               </div>
               <div>
-                <dt>License</dt>
+                <dt>{t("modelsDialogLicense")}</dt>
                 <dd>
                   {model.licenseSpdx}
                   {model.licenseNotice ? (
@@ -179,14 +194,14 @@ export function ConfirmModelDialog({
                 </dd>
               </div>
               <div>
-                <dt>Source</dt>
+                <dt>{t("modelsDialogSource")}</dt>
                 <dd className="lst-modal-url">{model.source}</dd>
               </div>
               <div>
-                <dt>Files</dt>
+                <dt>{t("modelsDialogFiles")}</dt>
                 <dd>
-                  {model.fileCount} artifact{model.fileCount === 1 ? "" : "s"} ·
-                  checksums verified
+                  {model.fileCount} artifact{model.fileCount === 1 ? "" : "s"} ·{" "}
+                  {t("modelsDialogFileArtifacts")}
                 </dd>
               </div>
             </dl>
@@ -195,7 +210,7 @@ export function ConfirmModelDialog({
         {error !== null && <p className="lst-error-text">{error}</p>}
         <div className="lst-modal-actions">
           <button type="button" className="button" onClick={onClose}>
-            Cancel
+            {t("cancel")}
           </button>
           {isDelete ? (
             <button
@@ -207,7 +222,7 @@ export function ConfirmModelDialog({
               }}
             >
               <Trash2 aria-hidden="true" size={14} />
-              Delete
+              {t("modelsDeleteAction")}
             </button>
           ) : (
             <button
@@ -218,7 +233,7 @@ export function ConfirmModelDialog({
               }}
             >
               <HardDriveDownload aria-hidden="true" size={14} />
-              Download &amp; install
+              {t("modelsDialogDownloadInstall")}
             </button>
           )}
         </div>
@@ -235,6 +250,7 @@ function ModelCard({
   localOnly = false,
   onInstallClick,
   onDeleteClick,
+  t,
 }: {
   model: ModelInfo;
   progress: ModelProgress | null;
@@ -244,47 +260,53 @@ function ModelCard({
   localOnly?: boolean;
   onInstallClick: (model: ModelInfo) => void;
   onDeleteClick: (model: ModelInfo) => void;
+  t: ReturnType<typeof useT>;
 }) {
   const installing = progress !== null && !progress.done;
   const installed = model.status === "installed";
   const finishedError =
     progress !== null && progress.done && progress.error !== null;
   return (
-    <article
-      className="lst-model-card"
-      data-installed={installed || undefined}
-    >
+    <article className="lst-model-card" data-installed={installed || undefined}>
       <div className="lst-model-card-head">
         <h3>{model.name}</h3>
         {installed && (
-          <span className="lst-badge lst-badge-installed">Installed</span>
+          <span className="lst-badge lst-badge-installed">
+            {t("modelsInstalled")}
+          </span>
         )}
-        {model.recommended && <span className="lst-badge">Recommended</span>}
+        {model.recommended && (
+          <span className="lst-badge">{t("modelsRecommended")}</span>
+        )}
         {localOnly && (
-          <span className="lst-badge lst-badge-local">Local export</span>
+          <span className="lst-badge lst-badge-local">
+            {t("modelsLocalExportBadge")}
+          </span>
         )}
         {model.licenseSpdx === "CC-BY-NC-4.0" && (
-          <span className="lst-badge lst-badge-warn">Non-commercial</span>
+          <span className="lst-badge lst-badge-warn">
+            {t("modelsNonCommercial")}
+          </span>
         )}
       </div>
       <p className="lst-model-description">{model.description}</p>
       <div className="lst-model-meta">
-        <span>{kindLabel(model.kind)}</span>
+        <span>{kindLabel(model.kind, t)}</span>
         <span>·</span>
         <span>
           {installed
-            ? `${formatBytes(model.installedSizeBytes)} on disk`
-            : `${formatBytes(model.downloadSizeBytes)} download`}
+            ? `${formatBytes(model.installedSizeBytes)} ${t("modelsOnDiskMeta")}`
+            : `${formatBytes(model.downloadSizeBytes)} ${t("modelsDownloadMeta")}`}
         </span>
         <span>·</span>
         <span>{model.licenseSpdx}</span>
       </div>
       <div className="lst-model-meta">
         <span className="lst-capability">
-          {capabilityLabel(model.capabilities.languageCapability)}
+          {capabilityLabel(model.capabilities.languageCapability, t)}
         </span>
         <span className="lst-capability">
-          {vramLabel(model.capabilities.vramClass)}
+          {vramLabel(model.capabilities.vramClass, t)}
         </span>
         {model.capabilities.recommendedProfiles.length > 0 && (
           <span className="lst-capability">
@@ -300,13 +322,13 @@ function ModelCard({
             type="button"
             className="button secondary"
             disabled={inUse || installing}
-            title={inUse ? "In use by the live session" : undefined}
+            title={inUse ? t("modelsInUseTitle") : undefined}
             onClick={() => {
               onDeleteClick(model);
             }}
           >
             <Trash2 aria-hidden="true" size={14} />
-            Delete
+            {t("modelsDeleteAction")}
           </button>
         ) : installing ? (
           <button
@@ -315,12 +337,14 @@ function ModelCard({
             onClick={() => {
               onInstallClick(model);
             }}
-            aria-label={`Cancel install ${model.name}`}
+            aria-label={`${t("modelsCancelInstall")} ${model.name}`}
           >
-            Cancel
+            {t("modelsCancelInstall")}
           </button>
         ) : localOnly ? (
-          <span className="lst-model-local-hint">Requires local export</span>
+          <span className="lst-model-local-hint">
+            {t("modelsLocalExportHint")}
+          </span>
         ) : (
           <button
             type="button"
@@ -331,7 +355,7 @@ function ModelCard({
             }}
           >
             <HardDriveDownload aria-hidden="true" size={14} />
-            Install
+            {t("modelsInstallAction2")}
           </button>
         )}
       </div>
@@ -447,7 +471,115 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
   );
 }
 
-export function ModelsPanel({ models }: { models: ModelUiState }) {
+function GpuRuntimePanel({
+  gpuRuntime,
+  t,
+}: {
+  gpuRuntime: GpuRuntimeUiState;
+  t: ReturnType<typeof useT>;
+}) {
+  const { status, progress, error, install, cancel, remove, isInstalling } =
+    gpuRuntime;
+  const installed = status.installed;
+  const pct =
+    progress !== null && progress.totalBytesTotal > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (progress.totalBytesDone / progress.totalBytesTotal) * 100,
+          ),
+        )
+      : 0;
+  return (
+    <section className="lst-gpu-card" aria-label={t("gpuTitle")}>
+      <div className="lst-gpu-head">
+        <div className="lst-gpu-title">
+          <Cpu aria-hidden="true" size={16} />
+          <div>
+            <h3>{t("gpuTitle")}</h3>
+            <p>{t("gpuDescription")}</p>
+          </div>
+        </div>
+        {installed && (
+          <span className="lst-badge lst-badge-installed">
+            {t("gpuInstalled")}
+          </span>
+        )}
+      </div>
+
+      {!installed && !isInstalling && (
+        <div className="lst-gpu-meta">
+          <span>
+            {t("gpuDownloadSize")}: {formatBytes(status.downloadSizeBytes)}
+          </span>
+          {status.wheels.length > 0 && (
+            <span>
+              {status.wheels.map((wheel) => wheel.package).join(" · ")}
+            </span>
+          )}
+        </div>
+      )}
+
+      {isInstalling && progress !== null && (
+        <div className="lst-gpu-progress">
+          <div className="lst-progress">
+            <div className="lst-progress-track">
+              <div
+                className="lst-progress-fill"
+                style={{ width: `${String(pct)}%` }}
+              />
+            </div>
+            <span className="lst-progress-meta">
+              {progress.fileCount > 0
+                ? `${t("gpuDownloading")} ${String(progress.fileIndex + 1)} of ${String(progress.fileCount)} · ${formatBytes(progress.totalBytesDone)} / ${formatBytes(progress.totalBytesTotal)}`
+                : `${t("gpuDownloading")} · ${formatBytes(progress.totalBytesDone)}`}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {error !== null && <p className="lst-error-text">{error}</p>}
+
+      <div className="lst-model-card-actions">
+        {installed ? (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => void remove()}
+          >
+            <Trash2 aria-hidden="true" size={14} />
+            {t("gpuRemove")}
+          </button>
+        ) : isInstalling ? (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => void cancel()}
+          >
+            {t("cancel")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => void install()}
+          >
+            <HardDriveDownload aria-hidden="true" size={14} />
+            {t("gpuInstall")}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export function ModelsPanel({
+  models,
+  gpuRuntime,
+}: {
+  models: ModelUiState;
+  gpuRuntime: GpuRuntimeUiState;
+}) {
   const [action, setAction] = useState<DialogAction>(null);
   const [instantiating, setInstantiating] = useState<string | null>(null);
   const t = useT();
@@ -486,31 +618,29 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
             onDeleteClick={(clicked) => {
               setAction({ kind: "delete", model: clicked });
             }}
+            t={t}
           />
         ))}
       </div>
     );
 
   return (
-    <section className="glass-panel" aria-label="Models">
+    <section className="glass-panel" aria-label={t("modelsPageTitle")}>
       <div className="card-head">
         <div className="card-title">
           <Database aria-hidden="true" size={17} />
-          <h2>Models</h2>
+          <h2>{t("modelsPageTitle")}</h2>
         </div>
         <span className="pill on" aria-live="polite">
           <span aria-hidden="true" />
-          {models.installed.length} installed · {models.available.length} available
+          {models.installed.length} {t("modelsInstalledCount")} ·{" "}
+          {models.available.length} {t("modelsAvailableCount")}
         </span>
       </div>
-      <p className="lst-page-description">
-        Model files are downloaded only when you choose them, from the pinned
-        official sources referenced in the confirmation dialogs. Nothing is
-        fetched at install time. Installed models are verified by checksum on
-        disk.
-      </p>
+      <p className="lst-page-description">{t("modelsPageDescription")}</p>
       <DownloadServerRow models={models} />
       <OfflinePackRow models={models} />
+      <GpuRuntimePanel gpuRuntime={gpuRuntime} t={t} />
       {models.error !== null && (
         <p className="lst-error-text">{models.error}</p>
       )}
@@ -530,7 +660,7 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
         >
           <h3 className="section-heading">{t("modelsLocalExports")}</h3>
           <p className="lst-page-description">
-            Fixed-language CTC models generated on this PC via
+            {t("modelsLocalExportsDescription")}
             <code> scripts/export_ncspeech_onnx.py</code>. They are not
             downloaded through the catalog.
           </p>
@@ -546,6 +676,7 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
                   localOnly
                   onInstallClick={() => undefined}
                   onDeleteClick={() => undefined}
+                  t={t}
                 />
               ),
             )}
@@ -564,6 +695,7 @@ export function ModelsPanel({ models }: { models: ModelUiState }) {
               setAction(null);
             }
           }}
+          t={t}
         />
       )}
     </section>

@@ -4,13 +4,18 @@ import { isTauri } from "@tauri-apps/api/core";
 import { z } from "zod";
 
 import {
+  EMPTY_GPU_RUNTIME_STATUS,
   EMPTY_MODELS_LIST,
   EMPTY_PROVIDER_STATUS,
   downloadEndpointSchema,
+  gpuRuntimeProgressSchema,
+  gpuRuntimeStatusSchema,
   modelsListSchema,
   modelProgressSchema,
   providerStatusSchema,
   type DownloadEndpointInfo,
+  type GpuRuntimeProgress,
+  type GpuRuntimeStatus,
   type ModelsList,
   type ModelProgress,
   type ProviderStatus,
@@ -103,6 +108,55 @@ export function onInstallProgress(handler: ProgressHandler): () => void {
   }
   const unlisten = listen("models://progress", (event) => {
     handler(modelProgressSchema.parse(event.payload));
+  });
+  return () => {
+    void unlisten.then((stop) => {
+      stop();
+    });
+  };
+}
+
+export type GpuRuntimeProgressHandler = (event: GpuRuntimeProgress) => void;
+
+/** Current CUDA runtime pack state (opt-in GPU acceleration). */
+export async function getGpuRuntimeStatus(): Promise<GpuRuntimeStatus> {
+  if (!isTauri()) {
+    return EMPTY_GPU_RUNTIME_STATUS;
+  }
+  return gpuRuntimeStatusSchema.parse(await invoke("gpu_runtime_status"));
+}
+
+/** Start downloading + installing the CUDA runtime pack. */
+export async function installGpuRuntime(): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke("gpu_runtime_install");
+}
+
+export async function cancelGpuRuntimeInstall(): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke("gpu_runtime_cancel");
+}
+
+export async function deleteGpuRuntime(): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke("gpu_runtime_delete");
+}
+
+/** Subscribe to CUDA runtime install progress. */
+export function onGpuRuntimeProgress(
+  handler: GpuRuntimeProgressHandler,
+): () => void {
+  if (!isTauri()) {
+    return () => undefined;
+  }
+  const unlisten = listen("gpu://progress", (event) => {
+    handler(gpuRuntimeProgressSchema.parse(event.payload));
   });
   return () => {
     void unlisten.then((stop) => {

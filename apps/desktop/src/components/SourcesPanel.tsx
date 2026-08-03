@@ -120,7 +120,7 @@ function SourceCard({
       <div className="card-head">
         <h3 className="card-title" id={`source-${source.sourceId}`}>
           {source.displayName.trim() === ""
-            ? "Unnamed source"
+            ? t("sourcesUnnamed")
             : source.displayName}
         </h3>
         <span className="pill">

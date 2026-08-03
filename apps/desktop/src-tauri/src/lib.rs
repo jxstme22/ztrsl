@@ -133,6 +133,10 @@ struct ModelRuntimeState {
     /// User-selected Hugging Face endpoint override (mirror support). `None`
     /// means resolve from `LST_HF_ENDPOINT`/`HF_ENDPOINT`/default.
     hf_endpoint: Option<String>,
+    /// Optional CUDA runtime pack (opt-in GPU acceleration, ADR-019).
+    gpu_runtime: model_manager::GpuRuntimeStore,
+    /// In-flight CUDA runtime install (downloads ~1.3 GB; cancel supported).
+    gpu_runtime_install: Option<model_manager::CancelHandle>,
 }
 
 impl ModelRuntimeState {
@@ -149,11 +153,13 @@ impl ModelRuntime {
     fn new(models_dir: std::path::PathBuf) -> Self {
         Self {
             state: Arc::new(Mutex::new(ModelRuntimeState {
-                store: model_manager::ModelStore::new(models_dir),
+                store: model_manager::ModelStore::new(models_dir.clone()),
                 catalog: model_manager::ModelCatalog::embedded(),
                 installs: HashMap::new(),
                 in_use: HashSet::new(),
                 hf_endpoint: None,
+                gpu_runtime: model_manager::GpuRuntimeStore::new(models_dir),
+                gpu_runtime_install: None,
             })),
         }
     }
@@ -670,6 +676,188 @@ async fn models_delete(models: tauri::State<'_, ModelRuntime>, id: String) -> Re
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GpuRuntimeStatus {
+    installed: bool,
+    installing: bool,
+    installed_size_bytes: u64,
+    /// Total bytes that must be downloaded for the pack.
+    download_size_bytes: u64,
+    /// Package names + per-wheel sizes shown in the UI.
+    wheels: Vec<GpuRuntimeWheelStatus>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GpuRuntimeWheelStatus {
+    package: String,
+    size_bytes: u64,
+}
+
+#[tauri::command]
+fn gpu_runtime_status(models: tauri::State<'_, ModelRuntime>) -> Result<GpuRuntimeStatus, String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    Ok(GpuRuntimeStatus {
+        installed: state.gpu_runtime.is_installed(),
+        installing: state.gpu_runtime_install.is_some(),
+        installed_size_bytes: state.gpu_runtime.installed_size_bytes(),
+        download_size_bytes: model_manager::cuda_pack_download_bytes(),
+        wheels: model_manager::CUDA_12_RUNTIME_PACK
+            .iter()
+            .map(|wheel| GpuRuntimeWheelStatus {
+                package: wheel.package.to_owned(),
+                size_bytes: wheel.size_bytes,
+            })
+            .collect(),
+    })
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GpuRuntimeProgressPayload {
+    done: bool,
+    canceled: bool,
+    error: Option<String>,
+    phase: String,
+    file_index: usize,
+    file_count: usize,
+    file_bytes_done: u64,
+    file_bytes_total: u64,
+    total_bytes_done: u64,
+    total_bytes_total: u64,
+}
+
+#[tauri::command]
+async fn gpu_runtime_install(
+    app: tauri::AppHandle,
+    models: tauri::State<'_, ModelRuntime>,
+) -> Result<(), String> {
+    let (store, cancel) = {
+        let mut state = models.state.lock().map_err(lock_error)?;
+        if state.gpu_runtime.is_installed() {
+            return Err("the CUDA runtime pack is already installed".to_owned());
+        }
+        if state.gpu_runtime_install.is_some() {
+            return Err("the CUDA runtime pack is already being installed".to_owned());
+        }
+        let handle = model_manager::CancelHandle::default();
+        state.gpu_runtime_install = Some(handle.clone());
+        (state.gpu_runtime.clone(), handle)
+    };
+    let state_arc = Arc::clone(&models.state);
+    tauri::async_runtime::spawn(async move {
+        let emit = |app: &tauri::AppHandle, payload: &GpuRuntimeProgressPayload| {
+            let _ = app.emit("gpu://progress", payload);
+        };
+        let fetcher = match model_manager::ReqwestFetcher::new() {
+            Ok(fetcher) => Arc::new(fetcher) as Arc<dyn model_manager::Fetcher>,
+            Err(error) => {
+                emit(
+                    &app,
+                    &GpuRuntimeProgressPayload {
+                        done: true,
+                        canceled: false,
+                        error: Some(error.to_string()),
+                        phase: "download".to_owned(),
+                        file_index: 0,
+                        file_count: 0,
+                        file_bytes_done: 0,
+                        file_bytes_total: 0,
+                        total_bytes_done: 0,
+                        total_bytes_total: 0,
+                    },
+                );
+                return;
+            }
+        };
+        let installer = model_manager::GpuRuntimeInstaller::new(store.clone(), fetcher);
+        let app_for_progress = app.clone();
+        let progress = std::sync::Arc::new(move |event: model_manager::DownloadProgress| {
+            emit(
+                &app_for_progress,
+                &GpuRuntimeProgressPayload {
+                    done: false,
+                    canceled: false,
+                    error: None,
+                    phase: "download".to_owned(),
+                    file_index: event.file_index,
+                    file_count: event.file_count,
+                    file_bytes_done: event.file_bytes_done,
+                    file_bytes_total: event.file_bytes_total,
+                    total_bytes_done: event.total_bytes_done,
+                    total_bytes_total: event.total_bytes_total,
+                },
+            );
+        });
+        let result = installer.install(&cancel, progress).await;
+        if let Ok(mut state) = state_arc.lock() {
+            state.gpu_runtime_install = None;
+        }
+        let payload = match result {
+            Ok(()) => GpuRuntimeProgressPayload {
+                done: true,
+                canceled: false,
+                error: None,
+                phase: "done".to_owned(),
+                file_index: 0,
+                file_count: 0,
+                file_bytes_done: 0,
+                file_bytes_total: 0,
+                total_bytes_done: 0,
+                total_bytes_total: 0,
+            },
+            Err(model_manager::Error::Canceled) => GpuRuntimeProgressPayload {
+                done: true,
+                canceled: true,
+                error: None,
+                phase: "done".to_owned(),
+                file_index: 0,
+                file_count: 0,
+                file_bytes_done: 0,
+                file_bytes_total: 0,
+                total_bytes_done: 0,
+                total_bytes_total: 0,
+            },
+            Err(error) => GpuRuntimeProgressPayload {
+                done: true,
+                canceled: false,
+                error: Some(error.to_string()),
+                phase: "done".to_owned(),
+                file_index: 0,
+                file_count: 0,
+                file_bytes_done: 0,
+                file_bytes_total: 0,
+                total_bytes_done: 0,
+                total_bytes_total: 0,
+            },
+        };
+        emit(&app, &payload);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn gpu_runtime_cancel(models: tauri::State<'_, ModelRuntime>) -> Result<(), String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    if let Some(handle) = &state.gpu_runtime_install {
+        handle.cancel();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn gpu_runtime_delete(models: tauri::State<'_, ModelRuntime>) -> Result<(), String> {
+    let state = models.state.lock().map_err(lock_error)?;
+    if state.gpu_runtime_install.is_some() {
+        return Err("cannot delete the CUDA runtime while it is being installed".to_owned());
+    }
+    state
+        .gpu_runtime
+        .delete()
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Default)]
 struct AudioRuntime {
     state: Mutex<AudioRuntimeState>,
@@ -743,6 +931,8 @@ struct SidecarStatus {
 struct LiveStarted {
     provider: String,
     asr_model: String,
+    asr_runtime: String,
+    translation_runtime: String,
     source_mode: String,
     target_language: String,
     resource_profile: String,
@@ -823,6 +1013,8 @@ struct LiveSnapshot {
     state: &'static str,
     provider: Option<String>,
     asr_model: Option<String>,
+    asr_runtime: Option<String>,
+    translation_runtime: Option<String>,
     source_mode: Option<String>,
     target_language: Option<String>,
     resource_profile: Option<String>,
@@ -1658,10 +1850,23 @@ fn worker_sidecar_config(
     translation_env: &Arc<Mutex<Vec<(String, String)>>>,
     bundled: Option<&BundledPaths>,
 ) -> SidecarConfig {
-    let env = translation_env
+    let mut env = translation_env
         .lock()
         .map(|guard| guard.clone())
         .unwrap_or_default();
+    // Forward the optional CUDA runtime pack directory so the sidecar can call
+    // `os.add_dll_directory` before importing ctranslate2. The path always
+    // matches where `gpu_runtime` installs the pack (models dir / cuda12).
+    let model_root = bundled
+        .map(|paths| paths.model_root.clone())
+        .unwrap_or_else(|| workspace_root_from_manifest().join("models"));
+    env.push((
+        "LST_CUDA_LIBS_DIR".to_owned(),
+        model_root
+            .join(model_manager::CUDA_DLL_DIR)
+            .display()
+            .to_string(),
+    ));
     sidecar_config(bundled, &env)
 }
 
@@ -1719,6 +1924,16 @@ fn run_live_worker(
             .get("asr_model")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("unknown")
+            .to_owned(),
+        asr_runtime: detail
+            .get("asr_runtime")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("cpu/int8")
+            .to_owned(),
+        translation_runtime: detail
+            .get("translation_runtime")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("cpu/int8")
             .to_owned(),
         source_mode,
         target_language,
@@ -1939,6 +2154,8 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         },
         provider: started.map(|item| item.provider.clone()),
         asr_model: started.map(|item| item.asr_model.clone()),
+        asr_runtime: started.map(|item| item.asr_runtime.clone()),
+        translation_runtime: started.map(|item| item.translation_runtime.clone()),
         source_mode: started.map(|item| item.source_mode.clone()),
         target_language: started.map(|item| item.target_language.clone()),
         resource_profile: started.map(|item| item.resource_profile.clone()),
@@ -2064,7 +2281,11 @@ pub fn run() {
             models_download_endpoint,
             models_set_download_endpoint,
             models_providers,
-            models_import_offline_pack
+            models_import_offline_pack,
+            gpu_runtime_status,
+            gpu_runtime_install,
+            gpu_runtime_cancel,
+            gpu_runtime_delete
         ])
         .run(tauri::generate_context!());
 

@@ -87,9 +87,7 @@ describe("DiagnosticsPanel", () => {
 
   it("shows the isolation check result", () => {
     renderPanel();
-    expect(
-      screen.getByText("No cross-source leakage detected"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Clean")).toBeInTheDocument();
   });
 
   it("renders the empty state when no sources are active", () => {

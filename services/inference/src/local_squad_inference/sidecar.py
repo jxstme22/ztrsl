@@ -1520,6 +1520,10 @@ async def handle_connection(
                                 "provider": live_request.provider,
                                 "resource_profile": live_request.resource_profile,
                                 "asr_model": getattr(asr_provider, "model_id", "demo-asr"),
+                                "asr_runtime": getattr(asr_provider, "runtime_detail", "cpu/int8"),
+                                "translation_runtime": getattr(
+                                    translation_provider, "runtime_detail", "cpu/int8"
+                                ),
                                 "audio_format": {
                                     "sample_rate": 16_000,
                                     "channels": 1,

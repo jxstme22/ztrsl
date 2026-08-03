@@ -117,7 +117,10 @@ const UI_STRINGS = {
   // Models page
   modelsInstalled: { en: "Installed", zh: "已安装" },
   modelsAvailable: { en: "Available to install", zh: "可安装" },
-  modelsLocalExports: { en: "Local exports (NCSpeech)", zh: "本地导出（NCSpeech）" },
+  modelsLocalExports: {
+    en: "Local exports (NCSpeech)",
+    zh: "本地导出（NCSpeech）",
+  },
   modelsSpeechRecognition: { en: "Speech recognition", zh: "语音识别" },
   modelsTranslation: { en: "Translation", zh: "翻译" },
   modelsOnDisk: { en: "on disk", zh: "已存在" },
@@ -129,6 +132,84 @@ const UI_STRINGS = {
   modelsNoInstalled: { en: "No models installed yet.", zh: "尚未安装模型。" },
   modelsNoAvailable: { en: "No models available.", zh: "没有可用模型。" },
   modelsInstallAction: { en: "Install", zh: "安装" },
+  modelsInstalledCount: {
+    en: "installed",
+    zh: "已安装",
+  },
+  modelsAvailableCount: { en: "available", zh: "可安装" },
+  modelsPageDescription: {
+    en: "Model files are downloaded only when you choose them, from the pinned official sources referenced in the confirmation dialogs. Nothing is fetched at install time. Installed models are verified by checksum on disk.",
+    zh: "模型文件仅在你选择时从确认对话框中列出的固定官方来源下载。安装时不会获取其他内容。已安装的模型会在磁盘上进行校验和验证。",
+  },
+  modelsLocalExportsDescription: {
+    en: "Fixed-language CTC models generated on this PC via",
+    zh: "在本机通过以下脚本生成的固定语言 CTC 模型",
+  },
+  modelsSpeechRecognitionLabel: {
+    en: "Speech recognition",
+    zh: "语音识别",
+  },
+  modelsTranslationLabel: { en: "Translation", zh: "翻译" },
+  modelsOnDiskMeta: { en: "on disk", zh: "已存在" },
+  modelsDownloadMeta: { en: "download", zh: "下载" },
+  modelsCapabilityForced: {
+    en: "Fixed-language decoder",
+    zh: "固定语言解码器",
+  },
+  modelsCapabilityPreferred: {
+    en: "Language-biased (no hard lock)",
+    zh: "语言偏置（无硬性锁定）",
+  },
+  modelsCapabilityPostFilter: {
+    en: "Filters after recognition",
+    zh: "识别后过滤",
+  },
+  modelsVramLow: { en: "Low VRAM", zh: "低显存" },
+  modelsVramMedium: { en: "Medium VRAM", zh: "中显存" },
+  modelsVramHigh: { en: "High VRAM", zh: "高显存" },
+  modelsNonCommercial: { en: "Non-commercial", zh: "非商用" },
+  modelsRecommended: { en: "Recommended", zh: "推荐" },
+  modelsLocalExportBadge: { en: "Local export", zh: "本地导出" },
+  modelsDeleteAction: { en: "Delete", zh: "删除" },
+  modelsInstallAction2: { en: "Install", zh: "安装" },
+  modelsCancelInstall: { en: "Cancel", zh: "取消" },
+  modelsInUseTitle: {
+    en: "In use by the live session",
+    zh: "实时会话正在使用",
+  },
+  modelsDialogInstallTitle: { en: "Install", zh: "安装" },
+  modelsDialogDeleteTitle: { en: "Delete", zh: "删除" },
+  modelsDialogType: { en: "Type", zh: "类型" },
+  modelsDialogDownloadSize: { en: "Download size", zh: "下载大小" },
+  modelsDialogLicense: { en: "License", zh: "许可证" },
+  modelsDialogSource: { en: "Source", zh: "来源" },
+  modelsDialogFiles: { en: "Files", zh: "文件" },
+  modelsDialogFileArtifacts: { en: "checksums verified", zh: "校验和已验证" },
+  modelsDialogDeleteBody: {
+    en: "This removes {model} and frees {size}. You can reinstall it later. {inUse}",
+    zh: "这将移除 {model} 并释放 {size}。你可以稍后重新安装。{inUse}",
+  },
+  modelsDialogInUseNotice: {
+    en: "It is in use — stop the live session first.",
+    zh: "该模型正在使用中——请先停止实时会话。",
+  },
+  modelsDialogDownloadInstall: {
+    en: "Download & install",
+    zh: "下载并安装",
+  },
+  modelsPageTitle: { en: "Models", zh: "模型" },
+
+  // GPU acceleration (CUDA runtime pack)
+  gpuInstall: { en: "Enable GPU acceleration", zh: "启用 GPU 加速" },
+  gpuTitle: { en: "GPU acceleration", zh: "GPU 加速" },
+  gpuDescription: {
+    en: "Run local ASR and translation on your NVIDIA GPU instead of CPU. A one-time, checksum-verified download (~1.3 GB); nothing ships in the installer.",
+    zh: "让本地语音识别与翻译在 NVIDIA GPU 上运行，而不是 CPU。一次性、经校验的下载（约 1.3 GB）；安装包中不包含任何内容。",
+  },
+  gpuInstalled: { en: "Installed", zh: "已安装" },
+  gpuRemove: { en: "Remove CUDA runtime", zh: "移除 CUDA 运行时" },
+  gpuDownloadSize: { en: "Download size", zh: "下载大小" },
+  gpuDownloading: { en: "Downloading", zh: "下载中" },
 
   // Sources page
   sourcesTitle: { en: "Audio sources", zh: "音频源" },
@@ -140,6 +221,7 @@ const UI_STRINGS = {
   sourcesStrictness: { en: "Strictness", zh: "严格度" },
   sourcesAdd: { en: "Add source", zh: "添加音频源" },
   sourcesRemove: { en: "Remove", zh: "移除" },
+  sourcesUnnamed: { en: "Unnamed source", zh: "未命名音源" },
 
   // Diagnostics page
   diagnosticsTitle: { en: "Diagnostics", zh: "诊断" },
@@ -151,6 +233,12 @@ const UI_STRINGS = {
     en: "No active sources. Start a live session to see per-source metrics.",
     zh: "没有活动音源。启动实时会话以查看各音源指标。",
   },
+  diagnosticsQueueDepth: { en: "Queue depth", zh: "队列深度" },
+  diagnosticsOldestQueued: { en: "Oldest queued", zh: "最旧排队" },
+  diagnosticsAvgDelay: { en: "Avg delay", zh: "平均延迟" },
+  diagnosticsMaxDelay: { en: "Max delay", zh: "最大延迟" },
+  diagnosticsIsolationOk: { en: "Clean", zh: "干净" },
+  diagnosticsIsolationLeak: { en: "Leakage detected", zh: "检测到泄漏" },
 
   // Live page
   liveSpeechRecognitionSource: {
@@ -161,6 +249,33 @@ const UI_STRINGS = {
   liveNotInstalled: { en: "not installed", zh: "未安装" },
   liveStart: { en: "Start subtitles", zh: "开始字幕" },
   liveStop: { en: "Stop subtitles", zh: "停止字幕" },
+  liveStartListening: { en: "Start listening", zh: "开始聆听" },
+  liveStopListening: { en: "Stop listening", zh: "停止聆听" },
+  liveLoadingModels: { en: "Loading models…", zh: "正在加载模型…" },
+  liveStopping: { en: "Stopping", zh: "正在停止" },
+  liveNeedsAttention: { en: "Needs attention", zh: "需要注意" },
+  liveSimulatorMode: { en: "Simulator mode", zh: "模拟器模式" },
+  liveSimulatorModeText: {
+    en: "Generated signal — real capture activates in the Windows build.",
+    zh: "生成的信号——真实采集将在 Windows 版本中启用。",
+  },
+  liveVoiceChatChannel: { en: "Voice-chat channel", zh: "语音聊天频道" },
+  liveChooseInput: {
+    en: "Choose incoming communications…",
+    zh: "选择传入的通讯…",
+  },
+  liveSourceLanguage: { en: "Source language", zh: "源语言" },
+  liveOutputLanguage: { en: "Output language", zh: "目标语言" },
+  liveSpeechRecognition: { en: "Speech recognition", zh: "语音识别" },
+  liveMonitoringOutput: { en: "Monitoring output", zh: "监听输出" },
+  liveCustomHttp: { en: "Custom HTTP endpoint", zh: "自定义 HTTP 端点" },
+  liveCaptions: { en: "Captions", zh: "字幕" },
+  livePackets: { en: "Packets", zh: "数据包" },
+  liveDrops: { en: "Drops", zh: "丢失" },
+  liveCouldNotContinue: {
+    en: "Live translation could not continue",
+    zh: "实时翻译无法继续",
+  },
 
   // Common
   speechRecognition: { en: "Speech recognition", zh: "语音识别" },

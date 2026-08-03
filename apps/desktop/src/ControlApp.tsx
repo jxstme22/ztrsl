@@ -32,6 +32,7 @@ import { useAudioMeter } from "./audio/useAudioMeter";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useLiveTranslation } from "./live/useLiveTranslation";
+import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime } from "./overlay/bridge";
 import type { OverlaySettings } from "./overlay/model";
@@ -43,12 +44,13 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 type SectionId =
   "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
 
-const APP_VERSION = "0.4.2";
+const APP_VERSION = "0.5.0";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
 type LiveController = ReturnType<typeof useLiveTranslation>;
 type ModelsController = ReturnType<typeof useModels>;
+type GpuRuntimeController = ReturnType<typeof useGpuRuntime>;
 type DiagnosticsController = ReturnType<typeof useDiagnostics>;
 type LanguageController = ReturnType<typeof useUiLanguage>;
 
@@ -83,6 +85,7 @@ export function ControlApp() {
   const audio = useAudioMeter();
   const live = useLiveTranslation(controller.ingestCaption);
   const models = useModels();
+  const gpuRuntime = useGpuRuntime();
   const diagnostics = useDiagnostics();
   const language = useUiLanguage();
   const desktop = isDesktopRuntime();
@@ -103,9 +106,12 @@ export function ControlApp() {
   };
 
   const close = () => {
-    if (desktop) {
-      void getCurrentWindow().close();
-    }
+    if (!desktop) return;
+    getCurrentWindow()
+      .close()
+      .catch((error: unknown) => {
+        console.error("window close rejected:", error);
+      });
   };
 
   return (
@@ -157,7 +163,9 @@ export function ControlApp() {
               models={models}
             />
           )}
-          {section === "models" && <ModelsPage models={models} />}
+          {section === "models" && (
+            <ModelsPage models={models} gpuRuntime={gpuRuntime} />
+          )}
           {section === "sources" && (
             <div className="page-stack">
               <SourcesPanel />
@@ -203,10 +211,16 @@ export function ControlApp() {
   );
 }
 
-function ModelsPage({ models }: { models: ModelsController }) {
+function ModelsPage({
+  models,
+  gpuRuntime,
+}: {
+  models: ModelsController;
+  gpuRuntime: GpuRuntimeController;
+}) {
   return (
     <div className="page-stack">
-      <ModelsPanel models={models} />
+      <ModelsPanel models={models} gpuRuntime={gpuRuntime} />
     </div>
   );
 }

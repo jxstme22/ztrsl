@@ -44,7 +44,10 @@ export function ColorPicker({ label, value, onChange }: ColorPickerProps) {
     }
     setHighlighted(PRESET_COLORS.indexOf(selected));
     const onPointerDown = (event: PointerEvent) => {
-      if (rootRef.current !== null && !rootRef.current.contains(event.target as Node)) {
+      if (
+        rootRef.current !== null &&
+        !rootRef.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -71,7 +74,11 @@ export function ColorPicker({ label, value, onChange }: ColorPickerProps) {
   };
 
   const onButtonKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+    if (
+      event.key === "Enter" ||
+      event.key === " " ||
+      event.key === "ArrowDown"
+    ) {
       event.preventDefault();
       if (!open) {
         setOpen(true);
@@ -88,7 +95,8 @@ export function ColorPicker({ label, value, onChange }: ColorPickerProps) {
         break;
       case "ArrowUp":
         setHighlighted(
-          (current) => (current - 1 + PRESET_COLORS.length) % PRESET_COLORS.length,
+          (current) =>
+            (current - 1 + PRESET_COLORS.length) % PRESET_COLORS.length,
         );
         break;
       case "Enter":
@@ -148,7 +156,10 @@ export function ColorPicker({ label, value, onChange }: ColorPickerProps) {
                 setHighlighted(index);
               }}
             >
-              <span className="lst-color-swatch" style={{ background: color }} />
+              <span
+                className="lst-color-swatch"
+                style={{ background: color }}
+              />
               <span>{color}</span>
               {color === selected && <Check aria-hidden="true" size={14} />}
             </div>

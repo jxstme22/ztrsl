@@ -346,14 +346,14 @@ export function LiveTranslationPanel({
         >
           <span aria-hidden="true" />
           {live.state === "starting"
-            ? "Loading models"
+            ? t("liveLoadingModels")
             : live.state === "stopping"
-              ? "Stopping"
+              ? t("liveStopping")
               : listening
-                ? "Listening"
+                ? t("liveStop")
                 : live.state === "error"
-                  ? "Needs attention"
-                  : "Ready"}
+                  ? t("liveNeedsAttention")
+                  : t("liveStart")}
         </div>
         {listening ? (
           <button
@@ -368,7 +368,7 @@ export function LiveTranslationPanel({
             ) : (
               <Square aria-hidden="true" size={14} />
             )}
-            Stop listening
+            {t("liveStopListening")}
           </button>
         ) : (
           <button
@@ -412,7 +412,7 @@ export function LiveTranslationPanel({
             ) : (
               <Play aria-hidden="true" size={14} />
             )}
-            {busy ? "Loading models…" : "Start listening"}
+            {busy ? t("liveLoadingModels") : t("liveStartListening")}
           </button>
         )}
       </div>
@@ -420,10 +420,8 @@ export function LiveTranslationPanel({
       {isSimulator && (
         <div className="inline-alert" role="status">
           <div>
-            <strong>Simulator mode</strong>
-            <p>
-              Generated signal — real capture activates in the Windows build.
-            </p>
+            <strong>{t("liveSimulatorMode")}</strong>
+            <p>{t("liveSimulatorModeText")}</p>
           </div>
         </div>
       )}
@@ -431,7 +429,7 @@ export function LiveTranslationPanel({
       {live.error !== null && (
         <div className="inline-alert error" role="alert">
           <div>
-            <strong>Live translation could not continue</strong>
+            <strong>{t("liveCouldNotContinue")}</strong>
             <p>{live.error}</p>
           </div>
         </div>
@@ -439,14 +437,14 @@ export function LiveTranslationPanel({
 
       <div className="live-grid">
         <div className="field span-2">
-          <label htmlFor="live-input">Voice-chat channel</label>
+          <label htmlFor="live-input">{t("liveVoiceChatChannel")}</label>
           <Select
             id="live-input"
-            label="Voice-chat channel"
+            label={t("liveVoiceChatChannel")}
             value={inputEndpointId ?? ""}
             options={channelOptions}
             disabled={listening || busy}
-            placeholder="Choose incoming communications…"
+            placeholder={t("liveChooseInput")}
             onChange={(value) => {
               setInput(value || null);
             }}
@@ -454,10 +452,10 @@ export function LiveTranslationPanel({
         </div>
 
         <div className="field">
-          <label htmlFor="live-language">Source language</label>
+          <label htmlFor="live-language">{t("liveSourceLanguage")}</label>
           <Select
             id="live-language"
-            label="Source language"
+            label={t("liveSourceLanguage")}
             value={sourceMode}
             disabled={listening || busy}
             onChange={(value) => {
@@ -472,10 +470,12 @@ export function LiveTranslationPanel({
         </div>
 
         <div className="field">
-          <label htmlFor="live-target-language">Output language</label>
+          <label htmlFor="live-target-language">
+            {t("liveOutputLanguage")}
+          </label>
           <Select
             id="live-target-language"
-            label="Output language"
+            label={t("liveOutputLanguage")}
             value={targetLanguage}
             disabled={listening || busy}
             onChange={(value) => {
@@ -489,7 +489,7 @@ export function LiveTranslationPanel({
         </div>
 
         <div className="field">
-          <label htmlFor="live-asr">Speech recognition</label>
+          <label htmlFor="live-asr">{t("liveSpeechRecognition")}</label>
           <Select
             id="live-asr"
             label={t("liveSpeechRecognitionSource")}
@@ -517,7 +517,9 @@ export function LiveTranslationPanel({
                 value: "ncspeech",
                 label: tag(
                   "NCSpeech FastConformer (Tagalog)",
-                  installedModelIds.has("ncspeech-tl-fastconformer-hybrid-large"),
+                  installedModelIds.has(
+                    "ncspeech-tl-fastconformer-hybrid-large",
+                  ),
                 ),
               },
               {
@@ -573,7 +575,7 @@ export function LiveTranslationPanel({
                 label: "LibreTranslate (any instance URL)",
               },
               { value: "mymemory", label: "MyMemory (free, daily quota)" },
-              { value: "custom-http", label: "Custom HTTP endpoint" },
+              { value: "custom-http", label: t("liveCustomHttp") },
             ]}
           />
         </div>
@@ -718,10 +720,10 @@ export function LiveTranslationPanel({
 
       {monitorEnabled && (
         <div className="field">
-          <label htmlFor="live-playback">Monitoring output</label>
+          <label htmlFor="live-playback">{t("liveMonitoringOutput")}</label>
           <Select
             id="live-playback"
-            label="Monitoring output"
+            label={t("liveMonitoringOutput")}
             value={playbackEndpointId ?? ""}
             disabled={listening || busy}
             placeholder="Choose where to hear friends…"
@@ -750,7 +752,11 @@ export function LiveTranslationPanel({
           )}
           <dl className="metrics">
             <div>
-              <dt>Captions</dt>
+              <dt>Device</dt>
+              <dd>{live.snapshot.asrRuntime ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>{t("liveCaptions")}</dt>
               <dd>{live.snapshot.metrics.captionsReceived}</dd>
             </div>
             <div>
@@ -762,11 +768,11 @@ export function LiveTranslationPanel({
               </dd>
             </div>
             <div>
-              <dt>Packets</dt>
+              <dt>{t("livePackets")}</dt>
               <dd>{live.snapshot.metrics.audioPacketsSent}</dd>
             </div>
             <div>
-              <dt>Drops</dt>
+              <dt>{t("liveDrops")}</dt>
               <dd>{live.snapshot.metrics.captureDrops}</dd>
             </div>
           </dl>
