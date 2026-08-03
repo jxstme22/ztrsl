@@ -31,6 +31,7 @@ export const endpointCatalogSchema = z.object({
   platform: z.enum(["windows", "development"]),
   endpoints: z.array(audioEndpointSchema),
   deviceChangeDetected: z.boolean(),
+  processCaptureSupported: z.boolean(),
 });
 
 export const levelSnapshotSchema = z.object({

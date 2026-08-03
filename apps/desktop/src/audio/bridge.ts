@@ -13,6 +13,7 @@ let browserSequence = 0;
 const BROWSER_CATALOG: EndpointCatalog = {
   platform: "development",
   deviceChangeDetected: false,
+  processCaptureSupported: false,
   endpoints: [
     {
       id: SYNTHETIC_ENDPOINT_ID,

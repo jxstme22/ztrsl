@@ -518,6 +518,10 @@ struct EndpointCatalog {
     platform: &'static str,
     endpoints: Vec<AudioEndpoint>,
     device_change_detected: bool,
+    /// True only when the Windows process-loopback capture exists. It is
+    /// deliberately false until the `windows-hw` acceptance chunk lands, so
+    /// the UI never advertises a capture method that cannot run.
+    process_capture_supported: bool,
 }
 
 struct RoutingRuntimeState {
@@ -1034,6 +1038,7 @@ fn audio_endpoints(runtime: tauri::State<'_, AudioRuntime>) -> Result<EndpointCa
             platform: "windows",
             endpoints,
             device_change_detected,
+            process_capture_supported: false,
         })
     }
 
@@ -1051,6 +1056,7 @@ fn audio_endpoints(runtime: tauri::State<'_, AudioRuntime>) -> Result<EndpointCa
             platform: "development",
             endpoints,
             device_change_detected: false,
+            process_capture_supported: false,
         })
     }
 }

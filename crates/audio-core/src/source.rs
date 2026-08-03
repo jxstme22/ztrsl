@@ -2,9 +2,11 @@
 //!
 //! Each source has an immutable [`SourceId`] (ADR-013), a [`CaptureTarget`]
 //! describing what audio it listens to, and its own [`SourceRuntime`]: a
-//! private buffer, resampler, sequence counter, and metrics. Audio that does
-//! not match a source's target is never mixed into that source's ASR path —
-//! routing happens at capture time, keyed by `source_id`.
+//! private buffer, resampler, sequence counter, metrics, meter, and
+//! monitoring settings. Audio that does not match a source's target is never
+//! mixed into that source's ASR path — routing happens at capture time, keyed
+//! by `source_id`. Monitoring is configuration for a headphone blend only;
+//! it never feeds the ASR path.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -13,7 +15,9 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{AudioError, AudioFormat, AudioFrame, StreamingLinearResampler};
+use crate::{
+    AtomicLevelMeter, AudioError, AudioFormat, AudioFrame, LevelSnapshot, StreamingLinearResampler,
+};
 
 /// Output sample rate of every source pipeline (matches the sidecar).
 pub const SOURCE_SAMPLE_RATE: u32 = 16_000;
@@ -158,8 +162,43 @@ pub struct SourceMetrics {
     pub audio_packets_sent: u64,
 }
 
+/// Per-source monitoring settings (Phase 3 acceptance #3/#4): an optional
+/// headphone blend, never fed to ASR. Volume must stay in `0.0..=1.0`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorConfig {
+    pub enabled: bool,
+    pub volume: f32,
+}
+
+impl MonitorConfig {
+    #[must_use]
+    pub const fn default() -> Self {
+        Self {
+            enabled: false,
+            volume: 0.5,
+        }
+    }
+
+    pub fn set_volume(&mut self, volume: f32) -> Result<(), AudioError> {
+        if !(0.0..=1.0).contains(&volume) {
+            return Err(AudioError::InvalidVolume);
+        }
+        self.volume = volume;
+        Ok(())
+    }
+}
+
+impl Default for MonitorConfig {
+    fn default() -> Self {
+        Self::default()
+    }
+}
+
 /// Per-source pipeline state: private buffer + resampler + sequence, so no
-/// source ever observes another source's frames or numbering.
+/// source ever observes another source's frames or numbering. The meter and
+/// monitor config are likewise per-source; monitoring is pure configuration
+/// and never enters the ASR path.
 pub struct SourceRuntime {
     source_id: SourceId,
     target: CaptureTarget,
@@ -168,6 +207,8 @@ pub struct SourceRuntime {
     next_sequence: u64,
     last_capture_drops: u64,
     metrics: SourceMetrics,
+    meter: AtomicLevelMeter,
+    monitor: MonitorConfig,
 }
 
 impl SourceRuntime {
@@ -189,6 +230,8 @@ impl SourceRuntime {
             next_sequence: 0,
             last_capture_drops: 0,
             metrics: SourceMetrics::default(),
+            meter: AtomicLevelMeter::default(),
+            monitor: MonitorConfig::default(),
         })
     }
 
@@ -207,6 +250,16 @@ impl SourceRuntime {
         let sequence = self.next_sequence;
         self.next_sequence = self.next_sequence.saturating_add(1);
         self.metrics.audio_packets_sent = self.metrics.audio_packets_sent.saturating_add(1);
+        self.meter.publish(
+            &AudioFrame {
+                sequence,
+                capture_monotonic_ns: frame.capture_monotonic_ns,
+                sample_rate: SOURCE_SAMPLE_RATE,
+                channels: 1,
+                samples: samples.clone(),
+            },
+            self.capture.dropped_frames(),
+        );
         Ok(Some(SourceFrame {
             source_id: self.source_id,
             sequence,
@@ -229,6 +282,24 @@ impl SourceRuntime {
     #[must_use]
     pub fn metrics(&self) -> &SourceMetrics {
         &self.metrics
+    }
+
+    #[must_use]
+    pub fn level(&self) -> LevelSnapshot {
+        self.meter.snapshot()
+    }
+
+    #[must_use]
+    pub fn monitor(&self) -> &MonitorConfig {
+        &self.monitor
+    }
+
+    pub fn set_monitor(&mut self, config: MonitorConfig) -> Result<(), AudioError> {
+        if !(0.0..=1.0).contains(&config.volume) {
+            return Err(AudioError::InvalidVolume);
+        }
+        self.monitor = config;
+        Ok(())
     }
 }
 
@@ -276,6 +347,26 @@ impl SourceManager {
             Some(runtime) => runtime.next_frame(),
             None => Err(AudioError::SourceNotFound),
         }
+    }
+
+    /// Set one source's monitoring blend. Monitoring is a headphone-only
+    /// path; it never feeds ASR.
+    pub fn set_monitor(
+        &mut self,
+        source_id: SourceId,
+        config: MonitorConfig,
+    ) -> Result<(), AudioError> {
+        match self.sources.get_mut(&source_id) {
+            Some(runtime) => runtime.set_monitor(config),
+            None => Err(AudioError::SourceNotFound),
+        }
+    }
+
+    pub fn level(&self, source_id: SourceId) -> Result<LevelSnapshot, AudioError> {
+        self.sources
+            .get(&source_id)
+            .map(SourceRuntime::level)
+            .ok_or(AudioError::SourceNotFound)
     }
 
     #[must_use]
@@ -572,6 +663,138 @@ mod tests {
         assert!(manager.is_empty());
         assert!(matches!(
             manager.next_frame(id),
+            Err(AudioError::SourceNotFound)
+        ));
+    }
+
+    #[test]
+    fn monitor_config_validates_volume() {
+        let mut config = MonitorConfig::default();
+        assert!(!config.enabled, "monitoring is opt-in");
+        assert_eq!(config.volume, 0.5);
+        assert!(config.set_volume(0.0).is_ok());
+        assert!(config.set_volume(1.0).is_ok());
+        assert!(matches!(
+            config.set_volume(1.1),
+            Err(AudioError::InvalidVolume)
+        ));
+        assert!(matches!(
+            config.set_volume(-0.01),
+            Err(AudioError::InvalidVolume)
+        ));
+        let wire = serde_json::to_string(&MonitorConfig {
+            enabled: true,
+            volume: 0.25,
+        })
+        .expect("serialize");
+        assert_eq!(wire, r#"{"enabled":true,"volume":0.25}"#);
+        let decoded: MonitorConfig =
+            serde_json::from_str(r#"{"enabled":false,"volume":0.75}"#).expect("deserialize");
+        assert!(!decoded.enabled);
+        assert_eq!(decoded.volume, 0.75);
+    }
+
+    #[test]
+    fn runtime_meter_tracks_only_its_own_frames_and_monitor_never_affects_asr() {
+        let mut manager = SourceManager::new();
+        let team = manager
+            .register(
+                endpoint_target("team-dev"),
+                Box::new(FakeCapture::new(
+                    AudioFormat {
+                        sample_rate: 16_000,
+                        channels: 1,
+                    },
+                    vec![frame(1, vec![0.0; 320]), frame(2, vec![0.5; 320])],
+                )),
+            )
+            .expect("team");
+        let discord = manager
+            .register(
+                endpoint_target("discord-dev"),
+                Box::new(FakeCapture::new(
+                    AudioFormat {
+                        sample_rate: 16_000,
+                        channels: 1,
+                    },
+                    vec![frame(1, vec![-0.25; 320])],
+                )),
+            )
+            .expect("discord");
+
+        let team_frame = manager.next_frame(team).expect("frame").expect("some");
+        let team_level = manager.level(team).expect("level");
+        assert_eq!(team_level.sequence, 0);
+        assert_eq!(team_level.peak, 0.5);
+
+        assert_eq!(
+            manager.level(discord).expect("level").sequence,
+            0,
+            "discord meter starts idle until its own frames flow"
+        );
+        manager.next_frame(discord).expect("frame").expect("some");
+        let discord_level = manager.level(discord).expect("level");
+        assert_eq!(discord_level.peak, 0.25);
+        assert_eq!(
+            manager.level(team).expect("level").peak,
+            0.5,
+            "discord frames never touch the team meter"
+        );
+
+        let monitor = MonitorConfig {
+            enabled: true,
+            volume: 0.9,
+        };
+        manager.set_monitor(team, monitor).expect("set monitor");
+        assert_eq!(manager.get(team).expect("runtime").monitor(), &monitor);
+
+        let mut without_monitor = SourceRuntime::new(
+            team_frame.source_id,
+            endpoint_target("team-dev"),
+            Box::new(FakeCapture::new(
+                AudioFormat {
+                    sample_rate: 16_000,
+                    channels: 1,
+                },
+                vec![frame(1, vec![0.0; 320]), frame(2, vec![0.5; 320])],
+            )),
+        )
+        .expect("reference runtime");
+        let mut with_monitor = SourceRuntime::new(
+            team_frame.source_id,
+            endpoint_target("team-dev"),
+            Box::new(FakeCapture::new(
+                AudioFormat {
+                    sample_rate: 16_000,
+                    channels: 1,
+                },
+                vec![frame(1, vec![0.0; 320]), frame(2, vec![0.5; 320])],
+            )),
+        )
+        .expect("monitored runtime");
+        with_monitor.set_monitor(monitor).expect("set monitor");
+
+        while let (Some(reference), Some(monitored)) = (
+            without_monitor.next_frame().expect("reference frame"),
+            with_monitor.next_frame().expect("monitored frame"),
+        ) {
+            assert_eq!(
+                reference.samples, monitored.samples,
+                "monitor configuration must not alter ASR-bound samples"
+            );
+        }
+    }
+
+    #[test]
+    fn manager_level_and_set_monitor_reject_unknown_sources() {
+        let mut manager = SourceManager::new();
+        let unknown = SourceId::parse_str("0123456789abcdef0123456789abcdef").expect("id");
+        assert!(matches!(
+            manager.level(unknown),
+            Err(AudioError::SourceNotFound)
+        ));
+        assert!(matches!(
+            manager.set_monitor(unknown, MonitorConfig::default()),
             Err(AudioError::SourceNotFound)
         ));
     }

@@ -7,6 +7,7 @@ describe("audio IPC schemas", () => {
     const result = endpointCatalogSchema.safeParse({
       platform: "windows",
       deviceChangeDetected: false,
+      processCaptureSupported: false,
       endpoints: [
         {
           id: "",
@@ -25,6 +26,23 @@ describe("audio IPC schemas", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a catalog and requires the process capture capability flag", () => {
+    const result = endpointCatalogSchema.safeParse({
+      platform: "windows",
+      deviceChangeDetected: false,
+      processCaptureSupported: true,
+      endpoints: [],
+    });
+    expect(result.success).toBe(true);
+    expect(
+      endpointCatalogSchema.safeParse({
+        platform: "windows",
+        deviceChangeDetected: false,
+        endpoints: [],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects impossible negative meter levels", () => {
