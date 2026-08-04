@@ -228,9 +228,7 @@ class LiveStartPayload(StrictModel):
     ] = "filipino"
     provider: Literal["demo", "local", "http"] = "local"
     # Translation output language; applies to the local NLLB provider.
-    target_language: Literal[
-        "en", "zh", "fil", "ind", "vie", "tha", "zsm"
-    ] = "en"
+    target_language: Literal["en", "zh", "fil", "ind", "vie", "tha", "zsm"] = "en"
     asr_provider: Literal[
         "local",
         "whisper-turbo",
