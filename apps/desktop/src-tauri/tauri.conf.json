@@ -61,8 +61,6 @@
       "signingIdentity": "-",
       "infoPlist": "Info.plist"
     },
-    "resources": [
-      "sidecars/"
-    ]
+    "resources": ["sidecars/"]
   }
 }

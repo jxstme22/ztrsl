@@ -115,7 +115,9 @@ export const overlaySettingsSchema = z.object({
   overlayContent: overlayContentSchema.default("captions"),
   /** Cap on chat lines shown in the overlay history panel; "auto" keeps the
    * full panel (up to the stored 10-entry buffer). */
-  historyMaxRows: z.union([z.literal("auto"), z.literal(5), z.literal(10)]).default("auto"),
+  historyMaxRows: z
+    .union([z.literal("auto"), z.literal(5), z.literal(10)])
+    .default("auto"),
   hotkeys: hotkeySettingsSchema,
 });
 

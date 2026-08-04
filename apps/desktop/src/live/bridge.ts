@@ -47,7 +47,8 @@ export type SourceMode =
   | "thai"
   | "malay";
 
-export type TargetLanguage = "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
+export type TargetLanguage =
+  "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
 
 export async function startLiveTranslation(
   endpointId: string,

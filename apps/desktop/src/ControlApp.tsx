@@ -46,12 +46,7 @@ import { captionTrustEnabled } from "./sources/captionTrustFlag";
 import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
-  | "live"
-  | "models"
-  | "history"
-  | "settings"
-  | "diagnostics"
-  | "sources";
+  "live" | "models" | "history" | "settings" | "diagnostics" | "sources";
 
 const APP_VERSION = "0.6.7";
 

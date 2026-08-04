@@ -95,7 +95,15 @@ class LivePipeline:
         phrase_filters: PhraseFilterSet | None = None,
         glossary: Glossary | None = None,
     ) -> None:
-        if source_mode not in {"filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"}:
+        if source_mode not in {
+            "filipino",
+            "chinese",
+            "english",
+            "indonesian",
+            "vietnamese",
+            "thai",
+            "malay",
+        }:
             raise ValueError("V1 live mode supports Filipino, Chinese or English only")
         self._asr = asr
         self._translation = translation
@@ -162,7 +170,10 @@ class LivePipeline:
         self,
         source_id: str,
         *,
-        source_mode: Literal["filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"] | None = None,
+        source_mode: Literal[
+            "filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"
+        ]
+        | None = None,
         use_silero: bool | None = None,
     ) -> bool:
         """Create VAD state for a v2 source. Idempotent: an existing state

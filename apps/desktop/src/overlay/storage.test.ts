@@ -69,14 +69,14 @@ describe("overlay settings storage", () => {
   });
 });
 
-  it("defaults historyMaxRows to auto for pre-existing settings", () => {
-    const legacy = { ...DEFAULT_OVERLAY_SETTINGS };
-    delete (legacy as Partial<OverlaySettings>).historyMaxRows;
-    const storage = {
-      getItem: () => JSON.stringify(legacy),
-    };
+it("defaults historyMaxRows to auto for pre-existing settings", () => {
+  const legacy = { ...DEFAULT_OVERLAY_SETTINGS };
+  delete (legacy as Partial<OverlaySettings>).historyMaxRows;
+  const storage = {
+    getItem: () => JSON.stringify(legacy),
+  };
 
-    const loaded = loadOverlaySettings(storage);
-    expect(loaded.historyMaxRows).toBe("auto");
-    expect(loaded).toEqual(DEFAULT_OVERLAY_SETTINGS);
-  });
+  const loaded = loadOverlaySettings(storage);
+  expect(loaded.historyMaxRows).toBe("auto");
+  expect(loaded).toEqual(DEFAULT_OVERLAY_SETTINGS);
+});

@@ -132,10 +132,7 @@ function captureOptions(
       continue;
     }
     if (endpoint.kind === "capture") {
-      if (
-        isMacos &&
-        !/blackhole|black hole/i.test(endpoint.friendlyName)
-      ) {
+      if (isMacos && !/blackhole|black hole/i.test(endpoint.friendlyName)) {
         continue;
       }
       microphones.push({
@@ -235,7 +232,10 @@ function AudioSourceFields({
   const monitoring = source.monitoring;
 
   return (
-    <section className="source-audio-fields" aria-label={t("sourcesAudioSection")}>
+    <section
+      className="source-audio-fields"
+      aria-label={t("sourcesAudioSection")}
+    >
       <div className="form-grid">
         <label className="field">
           <span>{t("sourcesAudioSource")}</span>
@@ -253,9 +253,7 @@ function AudioSourceFields({
             }}
             options={captureChoices}
           />
-          <small className="field-note">
-            {t("sourcesAudioSourceNote")}
-          </small>
+          <small className="field-note">{t("sourcesAudioSourceNote")}</small>
         </label>
       </div>
 
@@ -371,7 +369,11 @@ function SourceCard({
         </span>
       </div>
 
-      <AudioSourceFields source={source} catalog={catalog} onChange={onChange} />
+      <AudioSourceFields
+        source={source}
+        catalog={catalog}
+        onChange={onChange}
+      />
 
       <div className="form-grid">
         <label className="field">
@@ -595,8 +597,8 @@ export function SourcesPanel({
         </div>
         <p className="card-note">
           Each source captures one voice channel and labels its captions. Pick
-          its audio source and monitoring below; names and tags are free to
-          edit — the internal identity never changes.
+          its audio source and monitoring below; names and tags are free to edit
+          — the internal identity never changes.
         </p>
       </section>
 

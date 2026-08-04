@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { GripHorizontal } from "lucide-react";
 
-import { type HistoryEntry, loadHistoryState, visibleHistoryEntries } from "./captions/history";
+import {
+  type HistoryEntry,
+  loadHistoryState,
+  visibleHistoryEntries,
+} from "./captions/history";
 import { CaptionStack } from "./components/CaptionStack";
 import { useT } from "./features/i18n/store";
 import {
