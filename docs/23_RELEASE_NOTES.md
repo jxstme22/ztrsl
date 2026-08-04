@@ -1,5 +1,24 @@
 # 23 — Release Notes
 
+## v0.6.7 — Setup wizard removed, audio sources on the Sources page
+
+- **The 11-step setup wizard is gone.** All of its functionality now lives on
+  the Sources page, which was already the better surface for it.
+- **Audio source pickers moved into each source card.** Every source now
+  chooses its voice input directly: microphones (including VB-CABLE's
+  CABLE Output) and loopback endpoints ("game / teammate mix — no mic"),
+  plus the optional monitoring toggle, headphone output, and blend controls.
+- **VB-CABLE availability card at the top of the Sources page** (Windows
+  only) — shows a "VB-CABLE detected" pill when CABLE Output/Input are
+  present, or a "VB-CABLE not detected" pill with the routing guide
+  (VALORANT game output → CABLE Input, voice chat → CABLE Output) and a note
+  that VB-CABLE is installed separately from vb-audio.com.
+- **"Captions history (last 10)" label fixed** — the overlay content option
+  no longer claims a fixed 10-row history; it is just "Captions history"
+  (rows are configurable since v0.6.5).
+- Wizard-only strings and code removed (~70 dead i18n keys, ~17 dead tests);
+  207 frontend tests and 194 sidecar tests green.
+
 ## v0.6.6 — Cleaner chat: audio-source labels removed
 
 - The audio-input label ("Audio: …" / loopback names) is no longer shown in

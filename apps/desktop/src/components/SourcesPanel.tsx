@@ -2,6 +2,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAudioMeter } from "../audio/useAudioMeter";
+import type { EndpointCatalog } from "../audio/model";
 import { ColorPicker } from "./ColorPicker";
 import { Select } from "./Select";
 import { useT } from "../features/i18n/store";
@@ -10,6 +11,7 @@ import { type AsrProvider } from "../live/bridge";
 import { renderLabel } from "../sources/labels";
 import { SOURCE_PRESETS, createSourceFromPreset } from "../sources/presets";
 import { detectBlackHole } from "../setup/blackHole";
+import { detectVbCable } from "../setup/vbCable";
 import {
   MAX_SOURCES,
   type AudioSourceConfig,
@@ -109,18 +111,245 @@ export const PRESET_OPTIONS = SOURCE_PRESETS.map((preset) => ({
   label: preset.label,
 }));
 
+/**
+ * Capture choices for one source, mirroring the Live page: capture-class
+ * endpoints ("microphones") first, then loopback candidates (render
+ * endpoints on Windows via WASAPI loopback; BlackHole's input on macOS).
+ */
+function captureOptions(
+  catalog: EndpointCatalog | null,
+  isMacos: boolean,
+  t: ReturnType<typeof useT>,
+): readonly { value: string; label: string; group?: string }[] {
+  if (catalog === null) {
+    return [];
+  }
+  const endpoints = catalog.endpoints;
+  const microphones: { value: string; label: string; group: string }[] = [];
+  const loopback: { value: string; label: string; group: string }[] = [];
+  for (const endpoint of endpoints) {
+    if (endpoint.state !== "active") {
+      continue;
+    }
+    if (endpoint.kind === "capture") {
+      if (
+        isMacos &&
+        !/blackhole|black hole/i.test(endpoint.friendlyName)
+      ) {
+        continue;
+      }
+      microphones.push({
+        value: endpoint.id,
+        label: endpoint.friendlyName,
+        group: t("sourcesMicrophoneGroup"),
+      });
+    } else {
+      loopback.push({
+        value: endpoint.id,
+        label: `${endpoint.friendlyName} · loopback`,
+        group: t("sourcesLoopbackGroup"),
+      });
+    }
+  }
+  return [...microphones, ...loopback];
+}
+
+function VbCableCard() {
+  const t = useT();
+  const audio = useAudioMeter();
+  const catalog = audio.catalog;
+  if (catalog?.platform !== "windows") {
+    return null;
+  }
+  const detection = detectVbCable(catalog);
+  return (
+    <section className="card" aria-labelledby="vb-cable-title">
+      <div className="card-head">
+        <h2 className="card-title" id="vb-cable-title">
+          {t("wizardRouteValorant")}
+        </h2>
+        {detection.installed ? (
+          <span className="pill on">
+            <span aria-hidden="true" />
+            {t("wizardVbCableDetected")}
+          </span>
+        ) : (
+          <span className="pill">{t("sourcesVbCableMissing")}</span>
+        )}
+      </div>
+      <p className="card-note">{t("sourcesVbCableNotice")}</p>
+      <div className="routing-guide">
+        <div>
+          <strong>{t("wizardGameOutput")}</strong>
+          <span>{t("wizardPhysicalHeadphones")}</span>
+        </div>
+        <div>
+          <strong>{t("wizardVoiceChatOutput")}</strong>
+          <span>VB-CABLE Input</span>
+        </div>
+      </div>
+      {!detection.installed && detection.issues.length > 0 && (
+        <ul className="field-warnings" role="status">
+          {detection.issues.map((issue) => (
+            <li key={issue}>{issue}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function AudioSourceFields({
+  source,
+  catalog,
+  onChange,
+}: {
+  source: AudioSourceConfig;
+  catalog: EndpointCatalog | null;
+  onChange: (patch: Partial<AudioSourceConfig>) => void;
+}) {
+  const t = useT();
+  const isMacos = catalog?.platform === "macos";
+  const captureChoices = useMemo(
+    () => captureOptions(catalog, isMacos, t),
+    [catalog, isMacos, t],
+  );
+  const renderChoices = useMemo(
+    () =>
+      (catalog?.endpoints ?? [])
+        .filter(
+          (endpoint) =>
+            endpoint.kind === "render" && endpoint.state === "active",
+        )
+        .map((endpoint) => ({
+          value: endpoint.id,
+          label: endpoint.friendlyName,
+        })),
+    [catalog],
+  );
+  const currentEndpointId =
+    source.captureTarget.kind === "endpoint"
+      ? (source.captureTarget.endpointId ?? "")
+      : "";
+
+  const monitoring = source.monitoring;
+
+  return (
+    <section className="source-audio-fields" aria-label={t("sourcesAudioSection")}>
+      <div className="form-grid">
+        <label className="field">
+          <span>{t("sourcesAudioSource")}</span>
+          <Select
+            label={t("sourcesAudioSource")}
+            value={currentEndpointId}
+            placeholder={t("wizardChooseEndpoint")}
+            onChange={(value) => {
+              onChange({
+                captureTarget: {
+                  kind: "endpoint",
+                  endpointId: value === "" ? null : value,
+                },
+              });
+            }}
+            options={captureChoices}
+          />
+          <small className="field-note">
+            {t("sourcesAudioSourceNote")}
+          </small>
+        </label>
+      </div>
+
+      <div className="toggle-row">
+        <div>
+          <label htmlFor={`monitor-${source.sourceId}`}>
+            {t("wizardMonitorSource")}
+          </label>
+          <p>{t("wizardMonitorSourceNote")}</p>
+        </div>
+        <input
+          id={`monitor-${source.sourceId}`}
+          className="switch"
+          type="checkbox"
+          checked={monitoring.enabled}
+          onChange={(event) => {
+            onChange({
+              monitoring: {
+                ...monitoring,
+                enabled: event.currentTarget.checked,
+                headphoneEndpointId: event.currentTarget.checked
+                  ? monitoring.headphoneEndpointId
+                  : null,
+              },
+            });
+          }}
+        />
+      </div>
+
+      {monitoring.enabled && (
+        <div className="form-grid">
+          <label className="field">
+            <span>{t("wizardHeadphoneOutput")}</span>
+            <Select
+              label={t("wizardHeadphoneOutput")}
+              value={monitoring.headphoneEndpointId ?? ""}
+              placeholder={t("wizardChooseEndpoint")}
+              onChange={(value) => {
+                onChange({
+                  monitoring: {
+                    ...monitoring,
+                    headphoneEndpointId: value === "" ? null : value,
+                  },
+                });
+              }}
+              options={renderChoices}
+            />
+          </label>
+          <div className="field">
+            <div className="range-label">
+              <label htmlFor={`blend-${source.sourceId}`}>
+                {t("wizardBlend")}
+              </label>
+              <output htmlFor={`blend-${source.sourceId}`}>
+                {String(Math.round(monitoring.volume * 100))}%
+              </output>
+            </div>
+            <input
+              id={`blend-${source.sourceId}`}
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={monitoring.volume}
+              onChange={(event) => {
+                onChange({
+                  monitoring: {
+                    ...monitoring,
+                    volume: Number(event.currentTarget.value),
+                  },
+                });
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SourceCard({
   source,
   siblings,
   onChange,
   onRemove,
   asrProvider,
+  catalog,
 }: {
   source: AudioSourceConfig;
   siblings: readonly AudioSourceConfig[];
   onChange: (patch: Partial<AudioSourceConfig>) => void;
   onRemove: () => void;
   asrProvider: AsrProvider;
+  catalog: EndpointCatalog | null;
 }) {
   const t = useT();
   const validation = useMemo(
@@ -141,6 +370,8 @@ function SourceCard({
           {source.sourceId.slice(0, 8)}
         </span>
       </div>
+
+      <AudioSourceFields source={source} catalog={catalog} onChange={onChange} />
 
       <div className="form-grid">
         <label className="field">
@@ -351,6 +582,7 @@ export function SourcesPanel({
   return (
     <div className="page-stack">
       {audio.catalog?.platform === "macos" && <MacosSetupHint />}
+      <VbCableCard />
       <section className="card" aria-labelledby="sources-title">
         <div className="card-head">
           <h2 className="card-title" id="sources-title">
@@ -362,8 +594,9 @@ export function SourcesPanel({
           </span>
         </div>
         <p className="card-note">
-          Each source captures one voice channel and labels its captions. Names
-          and tags are free to edit — the internal identity never changes.
+          Each source captures one voice channel and labels its captions. Pick
+          its audio source and monitoring below; names and tags are free to
+          edit — the internal identity never changes.
         </p>
       </section>
 
@@ -376,6 +609,7 @@ export function SourcesPanel({
             removeSource(source.sourceId);
           }}
           asrProvider={asrProvider}
+          catalog={audio.catalog}
           onChange={(patch) => {
             updateSource(source.sourceId, patch);
           }}

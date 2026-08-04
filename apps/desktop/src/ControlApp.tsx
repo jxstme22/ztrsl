@@ -6,7 +6,6 @@ import {
   Minus,
   ScrollText,
   Settings,
-  Wand2,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -31,7 +30,6 @@ import { RoutingPanel } from "./components/RoutingPanel";
 import { Select } from "./components/Select";
 import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
-import { SetupWizard } from "./setup/SetupWizard";
 import { useAudioMeter } from "./audio/useAudioMeter";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useUiLanguage } from "./features/i18n/useUiLanguage";
@@ -53,10 +51,9 @@ type SectionId =
   | "history"
   | "settings"
   | "diagnostics"
-  | "sources"
-  | "setup";
+  | "sources";
 
-const APP_VERSION = "0.6.6";
+const APP_VERSION = "0.6.7";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -74,10 +71,7 @@ function navItems(
     { id: "history", label: t("navHistory") },
     { id: "models", label: t("navModels") },
     ...(multiSourceEnabled()
-      ? ([
-          { id: "setup", label: t("navSetup") },
-          { id: "sources", label: t("navSources") },
-        ] as const)
+      ? [{ id: "sources" as SectionId, label: t("navSources") }]
       : []),
     { id: "settings", label: t("navSettings") },
     { id: "diagnostics", label: t("navDiagnostics") },
@@ -88,7 +82,6 @@ const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
   models: Boxes,
   history: ScrollText,
-  setup: Wand2,
   sources: Mic,
   settings: Settings,
   diagnostics: Gauge,
@@ -238,15 +231,6 @@ export function ControlApp() {
           {section === "sources" && (
             <div className="page-stack">
               <SourcesPanel />
-            </div>
-          )}
-          {section === "setup" && (
-            <div className="page-stack">
-              <SetupWizard
-                onFinish={() => {
-                  setSection("sources");
-                }}
-              />
             </div>
           )}
           {section === "settings" && (

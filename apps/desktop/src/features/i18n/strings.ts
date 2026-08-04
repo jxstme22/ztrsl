@@ -22,7 +22,6 @@ const UI_STRINGS = {
   navLive: { en: "Live", zh: "实时" },
   navModels: { en: "Models", zh: "模型" },
   navHistory: { en: "History", zh: "历史" },
-  navSetup: { en: "Setup", zh: "设置向导" },
   navSources: { en: "Sources", zh: "音频源" },
   navSettings: { en: "Settings", zh: "设置" },
   navDiagnostics: { en: "Diagnostics", zh: "诊断" },
@@ -275,6 +274,28 @@ const UI_STRINGS = {
 
   // Sources page
   sourcesTitle: { en: "Audio sources", zh: "音频源" },
+  sourcesAudioSection: { en: "Audio source", zh: "音频来源" },
+  sourcesAudioSource: { en: "Voice input", zh: "语音输入" },
+  sourcesAudioSourceNote: {
+    en: "Where this channel's voice comes from. Loopback captures whatever plays through a device — no microphone needed. VB-CABLE's CABLE Output appears under microphones.",
+    zh: "该频道语音的来源。回环可捕获设备播放的任何声音——无需麦克风。VB-CABLE 的 CABLE Output 会出现在麦克风分组下。",
+  },
+  sourcesMicrophoneGroup: {
+    en: "Microphones (your voice)",
+    zh: "麦克风（你的声音）",
+  },
+  sourcesLoopbackGroup: {
+    en: "Loopback (game / teammate mix — no mic)",
+    zh: "回环（游戏/队友混合音——无需麦克风）",
+  },
+  sourcesVbCableMissing: {
+    en: "VB-CABLE not detected",
+    zh: "未检测到 VB-CABLE",
+  },
+  sourcesVbCableNotice: {
+    en: "VB-CABLE is installed separately from its official source (vb-audio.com). This app never bundles it.",
+    zh: "VB-CABLE 需从其官方网站（vb-audio.com）单独安装。本应用绝不捆绑该驱动。",
+  },
   sourcesName: { en: "Name", zh: "名称" },
   sourcesCaptionTag: { en: "Caption tag", zh: "字幕标签" },
   sourcesLabelStyle: { en: "Label style", zh: "标签样式" },
@@ -569,58 +590,7 @@ const UI_STRINGS = {
   closeApp: { en: "Close", zh: "关闭" },
 
   // Setup wizard
-  wizardTitle: { en: "Audio setup wizard", zh: "音频设置向导" },
-  wizardStep: { en: "Step", zh: "步骤" },
-  wizardOf: { en: "of", zh: "/" },
-  wizardNext: { en: "Next", zh: "下一步" },
-  wizardBack: { en: "Back", zh: "返回" },
-  wizardSavePreset: { en: "Save preset", zh: "保存预设" },
-  wizardSetupSaved: { en: "Setup saved", zh: "设置已保存" },
-  wizardDone: { en: "Done", zh: "完成" },
-  wizardSetupSavedNote: {
-    en: "Your source presets are saved. Open Sources to edit them at any time.",
-    zh: "你的音源预设已保存。可随时打开“音频源”页进行编辑。",
-  },
-  wizardChooseSetup: { en: "Choose a setup type", zh: "选择设置类型" },
-  wizardRecommended: { en: "Recommended", zh: "推荐" },
-  wizardRecommendedDetail: {
-    en: "One separately installed VB-CABLE for VALORANT voice + a second source for Discord.",
-    zh: "为 VALORANT 语音单独安装一个 VB-CABLE，并为 Discord 添加第二个音源。",
-  },
-  wizardAdvanced: { en: "Advanced", zh: "高级" },
-  wizardAdvancedDetail: {
-    en: "Multiple virtual audio endpoints or process captures for separate applications.",
-    zh: "为不同的应用程序使用多个虚拟音频端点或进程捕获。",
-  },
-  wizardVoiceSetup: { en: "Voice setup", zh: "语音设置" },
-  wizardCustomRouting: { en: "Custom routing", zh: "自定义路由" },
-  wizardAddFirstSource: { en: "Add the first source", zh: "添加第一个音源" },
-  wizardAddFirstSourceNote: {
-    en: "Start from a preset, then edit the name, tag, and label style. The internal identity is assigned once and never changes.",
-    zh: "从预设开始，然后编辑名称、标签和标签样式。内部标识只分配一次，永不改变。",
-  },
-  wizardPreset: { en: "Preset", zh: "预设" },
-  wizardAddSource: { en: "Add source", zh: "添加音源" },
-  wizardSourceName: { en: "Source name", zh: "音源名称" },
-  wizardCaptionTag: { en: "Caption tag", zh: "字幕标签" },
-  wizardCaptionStyle: { en: "Caption style", zh: "字幕样式" },
-  wizardCaptureMethod: { en: "Capture method", zh: "捕获方式" },
-  wizardChooseCapture: {
-    en: "Choose a capture method for each source",
-    zh: "为每个音源选择捕获方式",
-  },
-  wizardChooseCaptureNote: {
-    en: "Nothing is selected automatically. Pick the exact endpoint or process each voice channel comes from.",
-    zh: "不会自动选择。请为每个语音频道指定其来源端点或进程。",
-  },
-  wizardProcessUnavailable: {
-    en: "Process capture (loopback of a named app) is not available yet on this build; choose endpoints for now.",
-    zh: "此版本尚不支持进程捕获（指定应用的环回）；请先选择端点。",
-  },
-  wizardSet: { en: "Set", zh: "已设置" },
-  wizardUnset: { en: "Unset", zh: "未设置" },
   wizardChooseEndpoint: { en: "Choose an endpoint…", zh: "选择端点…" },
-  wizardEndpointState: { en: "Endpoint state", zh: "端点状态" },
   wizardRouteValorant: { en: "Route VALORANT audio", zh: "路由 VALORANT 音频" },
   wizardGameOutput: { en: "VALORANT game output", zh: "VALORANT 游戏输出" },
   wizardPhysicalHeadphones: {
@@ -635,119 +605,14 @@ const UI_STRINGS = {
     en: "VB-CABLE detected: game voice can be captured as its own source.",
     zh: "已检测到 VB-CABLE：可将游戏语音作为独立音源捕获。",
   },
-  wizardAddSocial: {
-    en: "Add a Discord or social source",
-    zh: "添加 Discord 或社交音源",
-  },
-  wizardAddSocialNote: {
-    en: "Recommended: capture Discord as its own source so friends' voices get their own caption lane.",
-    zh: "建议：将 Discord 捕获为独立音源，让朋友的语音拥有独立字幕道。",
-  },
-  wizardMonitoringOutput: {
-    en: "Choose the monitoring output",
-    zh: "选择监听输出",
-  },
-  wizardMonitoringOutputNote: {
-    en: "Monitoring blends captured voice into your headphones only. It never feeds translation. Beware of feedback loops, disconnected endpoints, and microphones selected as playback.",
-    zh: "监听仅将捕获的语音混合到你的耳机中，绝不会进入翻译。请注意反馈回路、断开的端点以及被选为播放设备的麦克风。",
-  },
   wizardHeadphoneOutput: { en: "Headphone output", zh: "耳机输出" },
   wizardMonitorSource: { en: "Monitor", zh: "监听" },
   wizardMonitorSourceNote: {
     en: "Hear this source in your headphones while playing.",
     zh: "游戏时在耳机中收听此音源。",
   },
-  wizardFeedbackLoop: {
-    en: "Captures and monitors the same endpoint — audio would loop.",
-    zh: "捕获与监听了同一端点——音频会形成回路。",
-  },
-  wizardLiveMeter: { en: "live meter", zh: "实时电平表" },
-  wizardEndpointUnderTest: { en: "Endpoint under test", zh: "待测端点" },
-  wizardInputLevel: { en: "Input level", zh: "输入电平" },
-  wizardIsolationTest: { en: "Source isolation test", zh: "音源隔离测试" },
-  wizardIsolationNote: {
-    en: "Each source must only ever hear its own voice channel. Play voice into the cable and confirm only its meter moves.",
-    zh: "每个音源只能听到自己的语音频道。向线缆播放语音，并确认只有对应电平表有反应。",
-  },
-  wizardIsolation1: {
-    en: "Play voice into the selected cable (or another app's voice).",
-    zh: "向选定的线缆播放语音（或其他应用的语音）。",
-  },
-  wizardIsolation2: {
-    en: "Trigger VALORANT game or announcer audio.",
-    zh: "触发 VALORANT 游戏或播报音频。",
-  },
-  wizardIsolation3: {
-    en: "The TEAM meter must move only for voice into the cable.",
-    zh: "TEAM 电平表应仅对输入线缆的语音有反应。",
-  },
-  wizardIsolation4: {
-    en: "The other source's meter must stay silent.",
-    zh: "其他音源的电平表应保持静止。",
-  },
-  wizardTeamInstruction: {
-    en: "TEAM: should move only when voice plays into its cable.",
-    zh: "TEAM：仅当语音输入其线缆时应有反应。",
-  },
-  wizardSocialInstruction: {
-    en: "SOCIAL: must stay silent when VALORANT game audio plays.",
-    zh: "SOCIAL：播放 VALORANT 游戏音频时必须保持静止。",
-  },
-  wizardMonitoringTest: { en: "Monitoring test", zh: "监听测试" },
-  wizardMonitoringTestNote: {
-    en: "All enabled voice sources should be audible in your headphones without feedback. Adjust each blend; verify by ear. The blend never enters translation.",
-    zh: "所有已启用的语音音源都应在耳机中无反馈地清晰可闻。逐项调整混合音量并以耳朵确认。混合永远不会进入翻译。",
-  },
   wizardBlend: { en: "blend", zh: "混合" },
   wizardBlendOff: { en: "off", zh: "关闭" },
-  wizardBlendConfirm: {
-    en: "Optional: confirm the blend output still carries voice.",
-    zh: "可选：确认混合输出仍带有语音。",
-  },
-  wizardLanguageStep: {
-    en: "Language profile and strictness per source",
-    zh: "各音源的语言档案与严格度",
-  },
-  wizardLanguageNote: {
-    en: "Balanced is recommended for mixed gaming speech. Strict rejects unexpected languages more aggressively.",
-    zh: "建议对混合游戏语音使用“平衡”。“严格”会更积极地拒绝意外语言。",
-  },
-  wizardProfile: { en: "profile", zh: "档案" },
-  wizardOverlayPreview: { en: "Overlay preview", zh: "字幕层预览" },
-  wizardOverlayPreviewNote: {
-    en: "Both captions appear at once, each in its own lane. Edit tags and label styles directly.",
-    zh: "两条字幕同时显示，各自独立一行。可直接编辑标签与标签样式。",
-  },
-  wizardSaveNote: {
-    en: "Saving writes {count} source preset{plural} to this device. Suggested name:",
-    zh: "保存将向本设备写入 {count} 个音源预设{plural}。建议名称：",
-  },
-  wizardNoEndpoint: { en: "no endpoint yet", zh: "尚未选择端点" },
-  wizardMonitoringAt: { en: "monitored at", zh: "监听于" },
-  wizardMonitoringOff: { en: "monitoring off", zh: "监听关闭" },
-  wizardStepLabel_chooseSetup: { en: "Setup type", zh: "设置类型" },
-  wizardStepLabel_addFirstSource: {
-    en: "Add the first source",
-    zh: "添加第一个音源",
-  },
-  wizardStepLabel_selectCapture: { en: "Capture method", zh: "捕获方式" },
-  wizardStepLabel_valorantRouting: {
-    en: "Valorant routing",
-    zh: "VALORANT 路由",
-  },
-  wizardStepLabel_addSocial: { en: "Social source", zh: "社交音源" },
-  wizardStepLabel_monitoringOutput: { en: "Monitoring output", zh: "监听输出" },
-  wizardStepLabel_isolationTest: {
-    en: "Source isolation test",
-    zh: "音源隔离测试",
-  },
-  wizardStepLabel_monitoringTest: { en: "Monitoring test", zh: "监听测试" },
-  wizardStepLabel_languageStrictness: {
-    en: "Language & strictness",
-    zh: "语言与严格度",
-  },
-  wizardStepLabel_overlayPreview: { en: "Overlay preview", zh: "字幕层预览" },
-  wizardStepLabel_savePreset: { en: "Save preset", zh: "保存预设" },
 
   // Audio device panel
   audioInputMeter: { en: "Voice-chat input meter", zh: "语音聊天输入电平表" },
@@ -807,8 +672,8 @@ const UI_STRINGS = {
   settingsOverlayContent: { en: "Overlay content", zh: "悬浮窗内容" },
   settingsOverlayCaptions: { en: "Latest caption bar", zh: "最新字幕栏" },
   settingsOverlayHistory: {
-    en: "Captions history (last 10)",
-    zh: "字幕历史（最近 10 条）",
+    en: "Captions history",
+    zh: "字幕历史",
   },
   settingsOverlayContentNote: {
     en: "The overlay shows exactly one of these: the live caption bar or the history panel. Switch anytime with the titlebar button or the hotkey.",

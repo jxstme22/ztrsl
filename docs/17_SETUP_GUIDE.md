@@ -20,10 +20,13 @@ local: your audio never leaves your machine.
    Pick the recommended pair: **Whisper Turbo** (speech recognition) and
    **NLLB** (translation). Downloads are pinned, checksum-verified, and happen
    only when you choose them.
-3. Open **Setup** and choose a routing mode (see Part 3):
-   - **Recommended (VB-CABLE)** — the wizard routes your voice chat through the
-     virtual cable so only the game/party voice is captured.
-   - **Advanced** — pick the exact capture and monitoring endpoints yourself.
+3. Open **Sources** — the VB-CABLE card at the top tells you whether the
+   cable was detected, and each source's **Voice input** picker covers both
+   microphones and loopback endpoints (see Part 3):
+   - **VB-CABLE routing** — the recommended setup: route the voice chat
+     through the virtual cable so only the game/party voice is captured.
+   - **Direct/loopback** — pick the exact capture and monitoring endpoints
+     yourself instead.
 
 ---
 
@@ -40,7 +43,8 @@ VB-Audio Software — you install it once yourself.
    in Sound settings right away.
 4. Verify: Windows **Sound → Playback** shows **CABLE Input**, and
    **Sound → Recording** shows **CABLE Output**.
-5. Restart xTRSNLTR and re-run **Setup** — it auto-detects the cable.
+5. Restart xTRSNLTR and reopen **Sources** — the VB-CABLE card auto-detects
+   the cable.
 
 > **Why the cable?** VB-CABLE is a "software wire". Whatever a game or voice
 > app plays to **CABLE Input** can be captured from **CABLE Output**. That lets
@@ -108,9 +112,10 @@ use a second virtual cable (the paid VB-CABLE product or a second instance):
 Because voice chat now plays into the cable (not your headset), xTRSNLTR must
 **monitor** it back to you:
 
-1. In xTRSNLTR **Setup**, set the **monitoring output** to your **headphones**.
+1. In xTRSNLTR **Sources**, open the source's **Audio source** section and set
+   the **headphone output** to your headphones.
 2. Turn on **monitoring** for the source.
-3. Adjust the monitor **volume** (default 50%). The app echoes the captured
+3. Adjust the monitor **blend** (default 50%). The app echoes the captured
    voice through the headphones so you keep hearing teammates.
 
 > Avoid echo: the monitoring output must be **different** from the capture
@@ -141,8 +146,8 @@ is selected or the game is routing all audio into the cable.
 
 | Symptom | Fix |
 |---------|-----|
-| No captions, session stuck "listening" | Capture endpoint wrong — re-pick **CABLE Output** in Setup |
+| No captions, session stuck "listening" | Capture endpoint wrong — re-pick **CABLE Output** in the source's Voice input selector |
 | Game sounds appear as speech | Game audio is leaking into the cable — set game output to headphones |
 | No voice heard in headphones | Enable monitoring and set monitor output to headphones (Part 3.4) |
 | Voice sounds doubled/echoed | Same voice routed twice — let xTRSNLTR be the only monitor path |
-| VB-CABLE not detected | Reinstall the driver, reboot, then re-run Setup |
+| VB-CABLE not detected | Reinstall the driver, reboot, then reopen Sources and check the VB-CABLE card |
