@@ -304,6 +304,7 @@ class FakeMlxModule:
 
 @pytest.fixture
 def mlx_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    pytest.importorskip("numpy")
     model_dir = tmp_path / "mlx-whisper"
     model_dir.mkdir()
     (model_dir / "config.json").write_bytes(b"{}")

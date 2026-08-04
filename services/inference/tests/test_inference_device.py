@@ -50,6 +50,7 @@ def test_register_cuda_dll_directory_adds_dir_on_windows(
 
 def test_cpu_when_cuda_not_visible(monkeypatch: pytest.MonkeyPatch) -> None:
     # No CUDA-capable GPU visible to the driver: must pick CPU.
+    pytest.importorskip("ctranslate2")
     monkeypatch.delenv("LST_WHISPER_DEVICE", raising=False)
     monkeypatch.delenv("LST_WHISPER_COMPUTE_TYPE", raising=False)
     monkeypatch.setattr(importlib.import_module("platform"), "system", lambda: "Windows")
@@ -70,6 +71,7 @@ def test_cuda_when_gpu_visible(monkeypatch: pytest.MonkeyPatch) -> None:
     # load if the CUDA runtime libraries are missing, so no pre-load probe is
     # used here (a model-less Translator probe always raises TypeError and
     # would falsely reject working CUDA installs).
+    pytest.importorskip("ctranslate2")
     monkeypatch.delenv("LST_WHISPER_DEVICE", raising=False)
     monkeypatch.setattr(importlib.import_module("platform"), "system", lambda: "Windows")
     monkeypatch.setattr(importlib.import_module("ctranslate2"), "get_cuda_device_count", lambda: 1)
