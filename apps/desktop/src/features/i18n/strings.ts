@@ -35,7 +35,6 @@ const UI_STRINGS = {
     zh: "暂无已完成字幕。启动实时会话后，只有最终确定的字幕会被保存到这里。",
   },
   historyUnknownSpeaker: { en: "Unknown speaker", zh: "未知说话人" },
-  historyAudioSource: { en: "Audio", zh: "音频源" },
   overlayToggleHistory: {
     en: "Toggle captions history on the overlay",
     zh: "在悬浮窗中切换字幕历史",

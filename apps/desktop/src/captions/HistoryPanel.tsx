@@ -79,11 +79,6 @@ export function HistoryPanel({
                         ? entry.sourceLabel
                         : t("historyUnknownSpeaker")}
                   </span>
-                  {entry.audioSource !== "" && (
-                    <span className="history-audio-source">
-                      {t("historyAudioSource")}: {entry.audioSource}
-                    </span>
-                  )}
                   <time>{formatTime(entry.timestampMs)}</time>
                   {entry.uncertain && (
                     <span className="history-uncertain">?</span>

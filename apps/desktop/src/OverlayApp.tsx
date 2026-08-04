@@ -181,17 +181,6 @@ export function OverlayApp() {
                   >
                     {entry.text}
                   </span>
-                  {entry.audioSource !== "" && (
-                    <span
-                      className="overlay-history-audio"
-                      style={{
-                        fontSize:
-                          String(Math.round(historyFontSize * 0.7)) + "px",
-                      }}
-                    >
-                      {entry.audioSource}
-                    </span>
-                  )}
                 </li>
               ))}
             </ol>

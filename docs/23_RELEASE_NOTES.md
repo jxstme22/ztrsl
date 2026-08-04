@@ -1,5 +1,11 @@
 # 23 — Release Notes
 
+## v0.6.6 — Cleaner chat: audio-source labels removed
+
+- The audio-input label ("Audio: …" / loopback names) is no longer shown in
+  the overlay chat or the History page — the transcript is just speaker,
+  text, and time.
+
 ## v0.6.5 — Overlay chat fixes, row cap, no scrollbars
 
 - **Chat order is now reliable.** The overlay history list renders newest
