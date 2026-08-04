@@ -815,6 +815,17 @@ const UI_STRINGS = {
     en: "The overlay shows exactly one of these: the live caption bar or the history panel. Switch anytime with the titlebar button or the hotkey.",
     zh: "悬浮窗每次只显示其中一种：实时字幕栏或历史面板。可随时通过标题栏按钮或快捷键切换。",
   },
+  settingsHistoryRows: { en: "History rows", zh: "历史行数" },
+  settingsHistoryRowsDefault: {
+    en: "Default (auto)",
+    zh: "默认（自动）",
+  },
+  settingsHistoryRows10: { en: "10 rows", zh: "10 行" },
+  settingsHistoryRows5: { en: "5 rows", zh: "5 行" },
+  settingsHistoryRowsNote: {
+    en: "Cap the overlay chat to a fixed number of lines. Default sizes the panel to its window.",
+    zh: "将悬浮窗聊天限制为固定行数。默认随窗口自适应。",
+  },
   strictnessOff: { en: "Off — process any language", zh: "关闭——处理任何语言" },
   strictnessBalanced: {
     en: "Balanced — prefer selected languages",

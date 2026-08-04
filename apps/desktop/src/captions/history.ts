@@ -59,6 +59,16 @@ export function emptyHistoryState(): HistoryState {
   return { version: 1, entries: [] };
 }
 
+/** Entries the overlay panel shows, capped by the user's row preference.
+ * "auto" keeps everything the buffer holds; fixed counts keep the newest N
+ * lines so the chat never overflows the panel. */
+export function visibleHistoryEntries(
+  entries: readonly HistoryEntry[],
+  maxRows: "auto" | 5 | 10,
+): HistoryEntry[] {
+  return maxRows === "auto" ? [...entries] : entries.slice(-maxRows);
+}
+
 function entryForCaption(
   caption: Caption,
   context: HistoryContext,

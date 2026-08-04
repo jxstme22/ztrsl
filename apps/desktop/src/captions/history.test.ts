@@ -6,6 +6,7 @@ import {
   historyReducer,
   loadHistoryState,
   saveHistoryState,
+  visibleHistoryEntries,
   type HistoryState,
 } from "./history";
 import type { Caption } from "../overlay/model";
@@ -212,5 +213,43 @@ describe("history storage", () => {
       },
     });
     expect(storage.has("lst.captions.history.v1")).toBe(false);
+  });
+});
+
+describe("visibleHistoryEntries", () => {
+  const entries = Array.from({ length: 12 }, (_, i) => ({
+    id: `c${String(i)}`,
+    text: `entry ${String(i)}`,
+    sourceLabel: "",
+    sourceId: "",
+    displayName: "",
+    color: "",
+    audioSource: "",
+    timestampMs: i * 1000,
+    uncertain: false,
+  }));
+
+  it("keeps every buffered entry in auto mode", () => {
+    expect(visibleHistoryEntries(entries, "auto")).toHaveLength(12);
+  });
+
+  it("keeps only the newest 10 lines", () => {
+    const shown = visibleHistoryEntries(entries, 10);
+    expect(shown).toHaveLength(10);
+    expect(shown[0]?.text).toBe("entry 2");
+    expect(shown.at(-1)?.text).toBe("entry 11");
+  });
+
+  it("keeps only the newest 5 lines", () => {
+    const shown = visibleHistoryEntries(entries, 5);
+    expect(shown).toHaveLength(5);
+    expect(shown[0]?.text).toBe("entry 7");
+    expect(shown.at(-1)?.text).toBe("entry 11");
+  });
+
+  it("does not mutate the buffer", () => {
+    const before = entries.length;
+    visibleHistoryEntries(entries, 5);
+    expect(entries).toHaveLength(before);
   });
 });

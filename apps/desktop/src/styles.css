@@ -2095,24 +2095,48 @@ input[type="range"]::-moz-range-thumb {
   align-content: stretch;
 }
 
+/* A fixed row count (5 or 10) sizes the panel to its content instead of
+   stretching to the window — the transcript hugs the bottom like a chat. */
+.overlay-shell[data-history][data-rows="5"],
+.overlay-shell[data-history][data-rows="10"] {
+  align-content: end;
+}
+
 .overlay-history {
   overflow: hidden auto;
   max-height: 100vh;
   padding: 14px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius-lg);
-  background: rgba(16, 16, 20, 0.86);
+  background: rgba(16, 16, 20, var(--history-opacity, 0.86));
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-  /* No scrollbar on the overlay: the history is capped at 10 entries and
-     the panel is sized to fit. */
+  /* The overlay never shows scrollbars: rows are capped and overflow is
+     reachable by wheel/touch only. */
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
 .overlay-history::-webkit-scrollbar {
   display: none;
+}
+
+/* The overlay document must never scroll and must never draw a scrollbar,
+   whatever the content (edit toolbar, caption lane, history panel). */
+.overlay-root {
+  overflow: hidden;
+}
+
+.overlay-root::-webkit-scrollbar,
+.overlay-body::-webkit-scrollbar {
+  display: none;
+}
+
+.overlay-body {
+  overflow: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .overlay-history-empty {
@@ -2125,7 +2149,7 @@ input[type="range"]::-moz-range-thumb {
 
 .overlay-history-list {
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 10px;
   margin: 0;
   padding: 0;

@@ -22,6 +22,7 @@ const BASE_OVERLAY: OverlaySettings = {
   hiddenSourceIds: [],
   simultaneousPolicy: "show-both",
   overlayContent: "captions",
+  historyMaxRows: "auto",
   hotkeys: {
     toggleOverlay: "CommandOrControl+Shift+T",
     toggleTranslation: "CommandOrControl+Shift+Y",

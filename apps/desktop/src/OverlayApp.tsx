@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GripHorizontal } from "lucide-react";
 
-import { type HistoryEntry, loadHistoryState } from "./captions/history";
+import { type HistoryEntry, loadHistoryState, visibleHistoryEntries } from "./captions/history";
 import { CaptionStack } from "./components/CaptionStack";
 import { useT } from "./features/i18n/store";
 import {
@@ -23,8 +23,18 @@ export function OverlayApp() {
 
   // The overlay is always dark-styled: a transparent caption bar over the
   // game (or a dark history panel) must never pick up the app's light theme.
+  // It is also a game-overlay surface: the document must never scroll and no
+  // scrollbar may ever appear inside this window.
   useEffect(() => {
-    document.documentElement.dataset.theme = "dark";
+    const root = document.documentElement;
+    const body = document.body;
+    root.dataset.theme = "dark";
+    root.classList.add("overlay-root");
+    body.classList.add("overlay-body");
+    return () => {
+      root.classList.remove("overlay-root");
+      body.classList.remove("overlay-body");
+    };
   }, []);
 
   useEffect(() => {
@@ -58,7 +68,6 @@ export function OverlayApp() {
   }, []);
 
   const historyFontSize = Math.round(14 * snapshot.settings.fontScale);
-  const historyListRef = useRef<HTMLOListElement>(null);
   // While the user is dragging (or just finished), don't let snapshot syncs
   // re-apply the stored placement — that would fight the drag, especially
   // when captions are arriving mid-move.
@@ -71,13 +80,13 @@ export function OverlayApp() {
     void restoreOverlayPlacement(snapshot.settings);
   }, [snapshot.settings]);
 
-  // Chat order: newest at the bottom — keep the latest entry in view.
-  useEffect(() => {
-    const list = historyListRef.current;
-    if (list !== null && history.length > 0) {
-      list.scrollTop = list.scrollHeight;
-    }
-  }, [history]);
+  // Chat order: entries are stored oldest-first, newest last. The list uses
+  // flex-direction: column-reverse with the array reversed for rendering, so
+  // the newest translation is always pinned to the visual bottom with no
+  // scroll anchoring to keep in sync.
+  const maxRows = snapshot.settings.historyMaxRows;
+  const shownHistory = visibleHistoryEntries(history, maxRows);
+  const reversedHistory = [...shownHistory].reverse();
 
   async function handleDrag() {
     draggingRef.current = true;
@@ -107,6 +116,7 @@ export function OverlayApp() {
       className="overlay-shell"
       data-mode={snapshot.mode}
       data-history={snapshot.historyView || undefined}
+      data-rows={snapshot.settings.historyMaxRows}
       aria-label={t("overlayAriaLabel")}
     >
       {snapshot.mode === "edit" && (
@@ -133,12 +143,19 @@ export function OverlayApp() {
         </div>
       )}
       {snapshot.historyView ? (
-        <div className="overlay-history">
+        <div
+          className="overlay-history"
+          style={
+            {
+              "--history-opacity": snapshot.settings.backgroundOpacity,
+            } as React.CSSProperties
+          }
+        >
           {history.length === 0 ? (
             <p className="overlay-history-empty">{t("overlayHistoryEmpty")}</p>
           ) : (
-            <ol className="overlay-history-list" ref={historyListRef}>
-              {history.map((entry) => (
+            <ol className="overlay-history-list">
+              {reversedHistory.map((entry) => (
                 <li
                   key={entry.id}
                   className="overlay-history-entry"

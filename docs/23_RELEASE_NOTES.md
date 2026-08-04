@@ -1,5 +1,21 @@
 # 23 — Release Notes
 
+## v0.6.5 — Overlay chat fixes, row cap, no scrollbars
+
+- **Chat order is now reliable.** The overlay history list renders newest
+  first with a reversed flex column, so the latest translation is always
+  pinned to the bottom — no more scroll anchoring that could land mid-list.
+- **Background transparency now works in the history panel.** The opacity
+  slider (Live → Customize overlay) previously only affected the caption
+  lane; the history panel was hardcoded to 86% opacity. It now follows the
+  slider.
+- **History row cap.** Choose Default (auto), 10 rows, or 5 rows for the
+  overlay chat; fixed caps size the panel to its content and pin it to the
+  bottom.
+- **Scrollbars removed from the overlay window entirely** — the overlay
+  document cannot scroll and never draws a scrollbar (overflow is reachable
+  by wheel/touch only).
+
 ## v0.6.4 — Fix: new target languages rejected by the sidecar
 
 - **Hotfix for "sidecar connection closed: 1008 invalid message"** — the

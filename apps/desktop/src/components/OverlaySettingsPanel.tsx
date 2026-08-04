@@ -125,6 +125,33 @@ export function OverlaySettingsPanel({
           </label>
 
           <label className="field">
+            <span>{t("settingsHistoryRows")}</span>
+            <Select
+              id="history-rows"
+              label={t("settingsHistoryRows")}
+              value={String(snapshot.settings.historyMaxRows)}
+              onChange={(value) => {
+                onUpdateSettings({
+                  historyMaxRows:
+                    value === "auto"
+                      ? "auto"
+                      : value === "10"
+                        ? 10
+                        : 5,
+                });
+              }}
+              options={[
+                { value: "auto", label: t("settingsHistoryRowsDefault") },
+                { value: "10", label: t("settingsHistoryRows10") },
+                { value: "5", label: t("settingsHistoryRows5") },
+              ]}
+            />
+            <small className="field-note">
+              {t("settingsHistoryRowsNote")}
+            </small>
+          </label>
+
+          <label className="field">
             <span>{t("settingsCaptionAlignment")}</span>
             <Select
               id="caption-alignment"

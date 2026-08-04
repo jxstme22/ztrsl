@@ -113,6 +113,9 @@ export const overlaySettingsSchema = z.object({
   simultaneousPolicy: simultaneousPolicySchema,
   /** Overlay window content: live caption bar or the history panel. */
   overlayContent: overlayContentSchema.default("captions"),
+  /** Cap on chat lines shown in the overlay history panel; "auto" keeps the
+   * full panel (up to the stored 10-entry buffer). */
+  historyMaxRows: z.union([z.literal("auto"), z.literal(5), z.literal(10)]).default("auto"),
   hotkeys: hotkeySettingsSchema,
 });
 
@@ -155,6 +158,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   hiddenSourceIds: [],
   simultaneousPolicy: "show-both",
   overlayContent: "captions",
+  historyMaxRows: "auto",
   hotkeys: DEFAULT_HOTKEYS,
 };
 

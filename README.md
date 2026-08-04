@@ -2,7 +2,8 @@
 
 **Real-time English subtitles for your VALORANT voice chat — 100% local.**
 
-Hear Tagalog, Cebuano, or Chinese callouts, *read* them in English as they happen,
+Hear Tagalog, Cebuano, Chinese, Indonesian, Vietnamese, Thai, or Malay
+callouts, *read* them in English (or your chosen language) as they happen,
 and never send a second of audio to the cloud.
 
 <p align="center">
@@ -23,19 +24,23 @@ and never send a second of audio to the cloud.
 
 - Listens to **your voice-chat mix** — through a virtual audio cable or any
   audio endpoint you pick.
-- Recognizes **Tagalog / Filipino, Cebuano, Chinese, and English**.
-- Translates into **English** (Simplified Chinese optional).
-- Shows a **transparent, click-through overlay** above your game.
+- Recognizes **Tagalog / Filipino, Cebuano, Chinese, Indonesian, Vietnamese,
+  Thai, Malay, and English**.
+- Translates into **English, Filipino, Chinese, Indonesian, Vietnamese, Thai,
+  or Malay** — your pick, per session.
+- Shows a **transparent, click-through overlay** above your game: a live
+  caption bar, or a **chat-history panel** (newest at the bottom, capped at
+  your chosen 5/10/default rows).
 - Handles **multiple channels at once** — `[TEAM]` and `[DISCORD]` lanes, each
   with its own language profile.
 
 It never touches the game: no injection, no memory reads, no automation.
 [Why that matters ↓](#safety-first-by-design)
 
-> **Download:** get the Windows installer from
+> **Download:** get the Windows installer or macOS app from
 > [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
-> **Status:** beta. It works end-to-end; signing + clean-machine tests are the
-> remaining 1.0 work.
+> **Status:** beta. It works end-to-end; code signing + clean-machine tests
+> are the remaining 1.0 work.
 
 ---
 
@@ -57,7 +62,8 @@ It never touches the game: no injection, no memory reads, no automation.
   or have the **CUDA 12 Toolkit** already installed — the app detects both and
   won't re-download.
 - **Voice capture:** VB-CABLE routes VALORANT/Discord voice into the app. The
-  app never bundles the driver.
+  app never bundles the driver. On macOS the equivalent is **BlackHole** (see
+  below).
 
 ### macOS (Apple Silicon)
 
@@ -129,6 +135,27 @@ flowchart TB
 6. The **overlay** shows it on screen — labeled per source.
 
 Everything runs on your machine. No audio ever leaves it.
+
+---
+
+## Languages
+
+The full 7×7 matrix works end to end — each **source mode** pairs with any
+**output language** (output applies to the local NLLB translator; cloud
+translators follow their own target codes):
+
+| Source (recognize) | Codes | Output (translate to) |
+|---|---|---|
+| Filipino / Tagalog | `fil` | English `en` |
+| Chinese / Mandarin | `zh` | Chinese `zh` |
+| English | `en` | Filipino `fil` |
+| Indonesian | `ind` | Indonesian `ind` |
+| Vietnamese | `vie` | Vietnamese `vie` |
+| Thai | `tha` | Thai `tha` |
+| Malay | `zsm` | Malay `zsm` |
+
+Pick a source mode per channel in **Sources**, then choose the translation
+output for the session on the **Live** tab.
 
 ---
 
@@ -339,7 +366,7 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 - [Models & downloads](docs/20_MODELS_AND_DOWNLOADS.md)
 - [Diagnostics & troubleshooting](docs/21_DIAGNOSTICS_TROUBLESHOOTING.md)
 - [FAQ](docs/22_FAQ.md)
-- [v0.3.0 release notes](docs/23_RELEASE_NOTES_V0_3_0.md)
+- [Release notes](docs/23_RELEASE_NOTES.md)
 
 ## For contributors
 
@@ -352,9 +379,15 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## Roadmap to 1.0
 
-Current release: **v0.5.2** (beta — macOS support, full i18n, UI polish). Working toward 1.0:
+Current release: **v0.6.4** (beta — Windows 11 + macOS, 7-language matrix,
+chat-history overlay, full i18n). Working toward 1.0:
 
-- [ ] code signing (Windows SmartScreen)
+- [x] macOS support (Apple Silicon, MLX Metal ASR)
+- [x] full English/Chinese i18n
+- [x] live caption + chat-history overlay with per-source colors
+- [x] 7-language source × output matrix
+- [x] move/customize overlay controls on the Live tab
+- [ ] code signing (Windows SmartScreen, macOS notarization)
 - [ ] clean-machine installer walkthrough (the last hardware gate)
 - [ ] native-speaker accuracy benchmarks (Tagalog/Cebuano)
 - [ ] opt-in API keys → OS keychain
