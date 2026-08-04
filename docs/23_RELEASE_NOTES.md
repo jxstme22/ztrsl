@@ -1,5 +1,14 @@
 # 23 — Release Notes
 
+## v0.6.4 — Fix: new target languages rejected by the sidecar
+
+- **Hotfix for "sidecar connection closed: 1008 invalid message"** — the
+  sidecar's `live.start` payload still restricted `target_language` to
+  `en`/`zh`, so selecting Filipino, Indonesian, Vietnamese, Thai or Malay as
+  the output language failed pydantic validation and the sidecar closed the
+  connection with 1008. The payload now accepts all seven target languages
+  (regression test added; 194 sidecar tests green).
+
 ## v0.6.3 — Move overlay mid-session, 7-language matrix, overlay polish
 
 - **Move the overlay while captions are flowing** — Live → Customize overlay

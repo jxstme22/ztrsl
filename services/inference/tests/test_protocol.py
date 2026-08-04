@@ -226,3 +226,29 @@ def test_caption_rejects_bad_source_id_format() -> None:
     dumped["source_id"] = "not-hex"
     with pytest.raises(ValueError):
         CaptionPayload.model_validate(dumped)
+
+
+def test_live_start_accepts_all_languages() -> None:
+    """Every source mode and target language from the v0.6.3 matrix must
+    validate; a regression here closes the sidecar with 1008 invalid
+    message at live.start."""
+    from local_squad_inference.protocol import LiveStartPayload
+
+    for source_mode in (
+        "filipino",
+        "chinese",
+        "english",
+        "indonesian",
+        "vietnamese",
+        "thai",
+        "malay",
+    ):
+        payload = LiveStartPayload.model_validate(
+            {"source_mode": source_mode, "target_language": "en"}
+        )
+        assert payload.source_mode == source_mode
+    for target_language in ("en", "zh", "fil", "ind", "vie", "tha", "zsm"):
+        payload = LiveStartPayload.model_validate(
+            {"source_mode": "filipino", "target_language": target_language}
+        )
+        assert payload.target_language == target_language
