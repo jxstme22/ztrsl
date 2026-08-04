@@ -17,7 +17,17 @@ AUDIO_MAGIC = b"LSTA"
 CAPABILITY_IPC_V2 = "ipc_v2"
 CAPABILITY_MULTI_SOURCE = "multi_source"
 
-SourceMode = Literal["filipino", "cebuano", "english", "chinese", "mixed"]
+SourceMode = Literal[
+    "filipino",
+    "cebuano",
+    "english",
+    "chinese",
+    "mixed",
+    "indonesian",
+    "vietnamese",
+    "thai",
+    "malay",
+]
 
 LabelStyle = Literal["brackets", "colon", "bullet", "stacked", "hidden"]
 Strictness = Literal["off", "balanced", "strict"]

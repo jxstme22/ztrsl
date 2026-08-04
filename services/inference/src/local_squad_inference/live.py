@@ -87,9 +87,7 @@ class LivePipeline:
         asr: AsrProvider,
         translation: TranslationProvider,
         *,
-        source_mode: Literal[
-            "filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"
-        ] = "filipino",
+        source_mode: SourceMode = "filipino",
         vad_config: VadConfig | None = None,
         use_silero: bool = True,
         phrase_filters: PhraseFilterSet | None = None,
@@ -170,10 +168,7 @@ class LivePipeline:
         self,
         source_id: str,
         *,
-        source_mode: Literal[
-            "filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"
-        ]
-        | None = None,
+        source_mode: SourceMode | None = None,
         use_silero: bool | None = None,
     ) -> bool:
         """Create VAD state for a v2 source. Idempotent: an existing state
