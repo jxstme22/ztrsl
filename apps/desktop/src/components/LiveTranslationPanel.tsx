@@ -485,6 +485,15 @@ export function LiveTranslationPanel({
         </div>
       )}
 
+      {live.warning !== null && live.error === null && (
+        <div className="inline-alert warn" role="status">
+          <div>
+            <strong>{t("liveAudioStalled")}</strong>
+            <p>{live.warning}</p>
+          </div>
+        </div>
+      )}
+
       <div className="live-grid">
         <div className="field span-2">
           <label htmlFor="live-input">{t("liveVoiceChatChannel")}</label>
@@ -685,9 +694,7 @@ export function LiveTranslationPanel({
               changeCaptionMode(value as CaptionMode);
             }}
           />
-          <small className="field-note">
-            {t("liveCaptionModeNote")}
-          </small>
+          <small className="field-note">{t("liveCaptionModeNote")}</small>
         </div>
       </div>
 

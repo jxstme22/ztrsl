@@ -40,6 +40,13 @@ const UI_STRINGS = {
     en: "Toggle captions history on the overlay",
     zh: "在悬浮窗中切换字幕历史",
   },
+  overlayAriaLabel: { en: "Caption overlay", zh: "字幕悬浮窗" },
+  overlayEditModeHint: {
+    en: "Edit mode · drag to position",
+    zh: "编辑模式 · 拖动调整位置",
+  },
+  overlayDragLabel: { en: "Drag caption overlay", zh: "拖动字幕悬浮窗" },
+  overlayHistoryEmpty: { en: "No captions yet", zh: "暂无字幕" },
 
   // Common
   install: { en: "Install", zh: "安装" },
@@ -128,6 +135,7 @@ const UI_STRINGS = {
   settingsAlignCenter: { en: "Center", zh: "居中" },
   settingsAlignRight: { en: "Right", zh: "右对齐" },
   settingsWidth: { en: "Width", zh: "宽度" },
+  settingsHeight: { en: "Height", zh: "高度" },
   settingsTextSize: { en: "Text size", zh: "字号" },
   settingsBackground: { en: "Background", zh: "背景" },
   settingsResetPosition: { en: "Reset position", zh: "重置位置" },
@@ -300,6 +308,10 @@ const UI_STRINGS = {
   liveStart: { en: "Start subtitles", zh: "开始字幕" },
   liveStop: { en: "Stop subtitles", zh: "停止字幕" },
   liveStartListening: { en: "Start listening", zh: "开始聆听" },
+  liveAudioStalled: {
+    en: "Audio paused — waiting for the source",
+    zh: "音频暂停——等待音源",
+  },
   liveCaptionMode: { en: "Translation mode", zh: "翻译模式" },
   liveCaptionModeStreaming: {
     en: "Stream while talking (live preview)",
@@ -487,7 +499,10 @@ const UI_STRINGS = {
   sourcesAlignRight: { en: "Right", zh: "右对齐" },
   modelsImporting: { en: "Importing…", zh: "正在导入…" },
   modelsImportBtn: { en: "Import", zh: "导入" },
-  modelsUrlInstallLabel: { en: "Install model from URL", zh: "从 URL 安装模型" },
+  modelsUrlInstallLabel: {
+    en: "Install model from URL",
+    zh: "从 URL 安装模型",
+  },
   modelsUrlInstallModel: { en: "Model", zh: "模型" },
   modelsUrlInstallKind: { en: "Kind", zh: "类型" },
   modelsUrlInstallRuntime: { en: "Runtime", zh: "运行时" },
@@ -759,7 +774,10 @@ const UI_STRINGS = {
   },
   settingsOverlayContent: { en: "Overlay content", zh: "悬浮窗内容" },
   settingsOverlayCaptions: { en: "Latest caption bar", zh: "最新字幕栏" },
-  settingsOverlayHistory: { en: "Captions history (last 10)", zh: "字幕历史（最近 10 条）" },
+  settingsOverlayHistory: {
+    en: "Captions history (last 10)",
+    zh: "字幕历史（最近 10 条）",
+  },
   settingsOverlayContentNote: {
     en: "The overlay shows exactly one of these: the live caption bar or the history panel. Switch anytime with the titlebar button or the hotkey.",
     zh: "悬浮窗每次只显示其中一种：实时字幕栏或历史面板。可随时通过标题栏按钮或快捷键切换。",

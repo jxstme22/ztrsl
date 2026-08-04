@@ -13,6 +13,7 @@ const BASE_OVERLAY: OverlaySettings = {
   xNormalized: 0.5,
   yNormalized: 0.72,
   widthNormalized: 0.8,
+  heightNormalized: 0.17,
   fontScale: 1,
   backgroundOpacity: 0.45,
   showSource: true,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "yTRSLT",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "identifier": "app.localsquadtranslator.desktop",
   "build": {
     "beforeDevCommand": "pnpm ensure:runner && pnpm dev",
@@ -14,10 +14,10 @@
       {
         "label": "control",
         "title": "yTRSLT",
-        "width": 995,
+        "width": 960,
         "height": 904,
-        "minWidth": 994,
-        "minHeight": 904,
+        "minWidth": 880,
+        "minHeight": 800,
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
@@ -61,6 +61,8 @@
       "signingIdentity": "-",
       "infoPlist": "Info.plist"
     },
-    "resources": ["sidecars/"]
+    "resources": [
+      "sidecars/"
+    ]
   }
 }

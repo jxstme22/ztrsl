@@ -140,7 +140,11 @@ describe("historyReducer", () => {
     const next = historyReducer(empty(), {
       type: "record",
       caption: caption({
-        certainty: { state: "uncertain", uncertaintyReasons: ["low_score"], suppressionReason: null },
+        certainty: {
+          state: "uncertain",
+          uncertaintyReasons: ["low_score"],
+          suppressionReason: null,
+        },
       }),
     });
     expect(next.entries[0]?.uncertain).toBe(true);
@@ -168,7 +172,9 @@ describe("history storage", () => {
   });
 
   it("recovers from corrupted payloads", () => {
-    const storage = new Map<string, string>([["lst.captions.history.v1", "{nope"]]);
+    const storage = new Map<string, string>([
+      ["lst.captions.history.v1", "{nope"],
+    ]);
     const fakeStorage = {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: () => undefined,
@@ -178,7 +184,9 @@ describe("history storage", () => {
   });
 
   it("clear removes the key", () => {
-    const storage = new Map<string, string>([["lst.captions.history.v1", "{}"]]);
+    const storage = new Map<string, string>([
+      ["lst.captions.history.v1", "{}"],
+    ]);
     clearHistoryState({
       removeItem: (key: string) => {
         storage.delete(key);

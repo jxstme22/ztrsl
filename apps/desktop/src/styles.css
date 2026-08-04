@@ -326,8 +326,8 @@ select:disabled {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  flex: 0 0 60px;
-  padding: 12px 8px;
+  flex: 0 0 52px;
+  padding: 12px 4px;
   border-right: 1px solid var(--stroke);
   background: transparent;
 }
@@ -336,18 +336,18 @@ select:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .nav-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 11px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted);
   transition:
@@ -2107,6 +2107,14 @@ input[type="range"]::-moz-range-thumb {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  /* No scrollbar on the overlay: the history is capped at 10 entries and
+     the panel is sized to fit. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.overlay-history::-webkit-scrollbar {
+  display: none;
 }
 
 .overlay-history-empty {

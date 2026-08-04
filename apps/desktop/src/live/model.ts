@@ -23,6 +23,8 @@ export const liveSnapshotSchema = z.object({
   metrics: liveMetricsSchema,
   captions: z.array(captionPayloadSchema).max(64),
   error: z.string().nullable(),
+  /** Non-fatal capture stall warning; null when audio is flowing. */
+  warning: z.string().nullable().default(null),
 });
 
 export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>;
@@ -46,4 +48,5 @@ export const EMPTY_LIVE_SNAPSHOT: LiveSnapshot = {
   },
   captions: [],
   error: null,
+  warning: null,
 };

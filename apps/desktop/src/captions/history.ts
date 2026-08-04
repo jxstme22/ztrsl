@@ -92,7 +92,9 @@ export function historyReducer(
         return state;
       }
       const entries = state.entries.slice();
-      const existing = entries.findIndex((candidate) => candidate.id === entry.id);
+      const existing = entries.findIndex(
+        (candidate) => candidate.id === entry.id,
+      );
       if (existing !== -1) {
         entries[existing] = entry;
         return { ...state, entries };
@@ -104,7 +106,13 @@ export function historyReducer(
         newest?.text === entry.text &&
         entry.timestampMs - newest.timestampMs < DEDUPE_WINDOW_MS
       ) {
-        return { ...state, entries: [{ ...newest, timestampMs: entry.timestampMs }, ...entries.slice(1)] };
+        return {
+          ...state,
+          entries: [
+            { ...newest, timestampMs: entry.timestampMs },
+            ...entries.slice(1),
+          ],
+        };
       }
       entries.unshift(entry);
       return {

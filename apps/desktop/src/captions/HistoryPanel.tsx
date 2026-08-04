@@ -62,7 +62,9 @@ export function HistoryPanel({
                   </span>
                 )}
                 <time>{formatTime(entry.timestampMs)}</time>
-                {entry.uncertain && <span className="history-uncertain">?</span>}
+                {entry.uncertain && (
+                  <span className="history-uncertain">?</span>
+                )}
               </div>
               <p className="history-text">{entry.text}</p>
             </li>

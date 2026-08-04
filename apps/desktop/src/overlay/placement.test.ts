@@ -38,12 +38,23 @@ describe("overlay placement", () => {
       512,
       590,
       1280,
+      240,
     );
 
     expect(settings.monitorId).toBe(PRIMARY.id);
     expect(settings.widthNormalized).toBe(0.5);
     expect(settings.xNormalized).toBe(0.4);
-    expect(settings.yNormalized).toBeCloseTo(590 / (PRIMARY.height - 150), 2);
+    expect(settings.yNormalized).toBeCloseTo(590 / (PRIMARY.height - 240), 2);
+    expect(settings.heightNormalized).toBeCloseTo(240 / PRIMARY.height, 2);
+  });
+
+  it("sizes the overlay from the normalized height", () => {
+    const result = resolvePlacement(
+      { ...DEFAULT_OVERLAY_SETTINGS, heightNormalized: 0.25 },
+      [PRIMARY],
+      PRIMARY.id,
+    );
+    expect(result?.height).toBe(Math.round(1440 * 0.25));
   });
 
   it("clamps unsafe values to supported bounds", () => {
@@ -52,6 +63,7 @@ describe("overlay placement", () => {
       xNormalized: -1,
       yNormalized: 2,
       widthNormalized: 0.99,
+      heightNormalized: 1.5,
       fontScale: 3,
       backgroundOpacity: 0,
     });
@@ -60,6 +72,7 @@ describe("overlay placement", () => {
       xNormalized: 0,
       yNormalized: 1,
       widthNormalized: 0.95,
+      heightNormalized: 0.9,
       fontScale: 1.6,
       backgroundOpacity: 0.35,
     });

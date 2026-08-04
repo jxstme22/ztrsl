@@ -81,11 +81,7 @@ export const hotkeySettingsSchema = z.object({
   decreaseText: z.string().min(3).max(80),
   // Defaulted so pre-v0.6.1 persisted settings (without this key) still
   // parse during migration.
-  toggleHistory: z
-    .string()
-    .min(3)
-    .max(80)
-    .default("CommandOrControl+Shift+H"),
+  toggleHistory: z.string().min(3).max(80).default("CommandOrControl+Shift+H"),
 });
 
 export type HotkeySettings = z.infer<typeof hotkeySettingsSchema>;
@@ -100,6 +96,8 @@ export const overlaySettingsSchema = z.object({
   xNormalized: z.number().min(0).max(1),
   yNormalized: z.number().min(0).max(1),
   widthNormalized: z.number().min(0.3).max(0.95),
+  /** Overlay window height as a fraction of the monitor (history mode). */
+  heightNormalized: z.number().min(0.05).max(0.9).default(0.17),
   fontScale: z.number().min(0.8).max(1.6),
   backgroundOpacity: z.number().min(0.35).max(0.9),
   showSource: z.boolean(),
@@ -148,6 +146,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   xNormalized: 0.5,
   yNormalized: 0.72,
   widthNormalized: 0.8,
+  heightNormalized: 0.17,
   fontScale: 1,
   backgroundOpacity: 0.45,
   showSource: true,

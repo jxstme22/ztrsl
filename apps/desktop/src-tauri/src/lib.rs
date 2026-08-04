@@ -1230,12 +1230,17 @@ struct LiveSnapshot {
     metrics: LiveMetrics,
     captions: Vec<CaptionPayload>,
     error: Option<String>,
+    /// Non-fatal capture stall warning ("" when healthy).
+    warning: Option<String>,
 }
 
 enum LiveWorkerEvent {
     Caption(Box<CaptionPayload>),
     Metrics(LiveMetrics),
     Error(String),
+    /// Non-fatal: the capture endpoint stopped delivering frames but the
+    /// session keeps running and recovers automatically when audio returns.
+    Warning(String),
     Stopped,
 }
 
@@ -1247,6 +1252,8 @@ struct LiveRuntimeState {
     started: Option<LiveStarted>,
     metrics: LiveMetrics,
     error: Option<String>,
+    /// Non-fatal capture stall warning; cleared when audio flows again.
+    warning: Option<String>,
     stopped: bool,
 }
 
@@ -1481,6 +1488,7 @@ fn start_live_translation_blocking(
     state.started = Some(started);
     state.metrics = LiveMetrics::default();
     state.error = None;
+    state.warning = None;
     state.stopped = false;
     // Mark the model artifacts this session loads so deletion is refused
     // while they are on disk in use.
@@ -2267,6 +2275,7 @@ fn run_windows_live_loop(
     // some endpoints take a moment to start producing buffers, so counting
     // silence before the first frame would false-positive on a slow warmup.
     let mut last_frame_at: Option<Instant> = None;
+    let mut stall_warned = false;
     loop {
         if stop.try_recv().is_ok() {
             return Ok(());
@@ -2274,6 +2283,7 @@ fn run_windows_live_loop(
         match capture.try_next().map_err(audio_error_to_string)? {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
+                stall_warned = false;
                 metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                 metrics.capture_drops = capture.dropped_frames();
                 if let Some(playback) = playback.as_mut() {
@@ -2304,16 +2314,22 @@ fn run_windows_live_loop(
         // stalled-capture branch, or the session would hang "listening" with
         // no visible failure.
         drain_live_captions(supervisor, events, &mut metrics)?;
+        // A quiet channel is normal (silence still delivers frames), so no
+        // frames for a while means the device truly stopped — e.g. the game
+        // grabbed the endpoint in exclusive mode, or the device went away.
+        // Warn once instead of killing the session: capture can resume on its
+        // own (exclusive mode is released, device reconnects), and the loop
+        // clears the warning as soon as audio flows again.
         if let Some(since) = last_frame_at {
-            if since.elapsed() >= Duration::from_secs(3) {
-                return Err(format!(
+            if since.elapsed() >= Duration::from_secs(10) && !stall_warned {
+                stall_warned = true;
+                let _ = events.try_send(LiveWorkerEvent::Warning(format!(
                     "audio capture stalled: no frames for {:.1}s. The endpoint may have \
                      been disconnected, disabled, or taken over by another app in \
-                     exclusive mode. A quiet voice channel is normal — this means the \
-                     device itself stopped delivering audio. Try a different capture \
-                     endpoint in Sources.",
+                     exclusive mode. The session keeps listening and recovers \
+                     automatically when audio returns.",
                     since.elapsed().as_secs_f32()
-                ));
+                )));
             }
         }
         if last_metrics.elapsed() >= Duration::from_millis(500) {
@@ -2365,6 +2381,7 @@ fn run_macos_live_loop(
     // some endpoints take a moment to start producing buffers, so counting
     // silence before the first frame would false-positive on a slow warmup.
     let mut last_frame_at: Option<Instant> = None;
+    let mut stall_warned = false;
     loop {
         if stop.try_recv().is_ok() {
             return Ok(());
@@ -2372,6 +2389,7 @@ fn run_macos_live_loop(
         match capture.try_next().map_err(audio_error_to_string)? {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
+                stall_warned = false;
                 metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                 metrics.capture_drops = capture.dropped_frames();
                 if let Some(playback) = playback.as_mut() {
@@ -2399,16 +2417,17 @@ fn run_macos_live_loop(
         // stalled-capture branch, or the session would hang "listening" with
         // no visible failure.
         drain_live_captions(supervisor, events, &mut metrics)?;
+        // Non-fatal stall: warn once, keep listening, recover automatically.
         if let Some(since) = last_frame_at {
-            if since.elapsed() >= Duration::from_secs(3) {
-                return Err(format!(
+            if since.elapsed() >= Duration::from_secs(10) && !stall_warned {
+                stall_warned = true;
+                let _ = events.try_send(LiveWorkerEvent::Warning(format!(
                     "audio capture stalled: no frames for {:.1}s. The endpoint may have \
                      been disconnected, disabled, or taken over by another app in \
-                     exclusive mode. A quiet voice channel is normal — this means the \
-                     device itself stopped delivering audio. Try a different capture \
-                     endpoint in Sources.",
+                     exclusive mode. The session keeps listening and recovers \
+                     automatically when audio returns.",
                     since.elapsed().as_secs_f32()
-                ));
+                )));
             }
         }
         if last_metrics.elapsed() >= Duration::from_millis(500) {
@@ -2480,6 +2499,7 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         match event {
             LiveWorkerEvent::Caption(caption) => captions.push(*caption),
             LiveWorkerEvent::Metrics(metrics) => state.metrics = metrics,
+            LiveWorkerEvent::Warning(warning) => state.warning = Some(warning),
             LiveWorkerEvent::Error(error) => {
                 state.error = Some(error);
                 state.stopped = true;
@@ -2513,6 +2533,7 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         metrics: state.metrics.clone(),
         captions,
         error: state.error.clone(),
+        warning: state.warning.clone(),
     }
 }
 

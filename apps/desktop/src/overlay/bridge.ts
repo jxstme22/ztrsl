@@ -129,9 +129,7 @@ export async function listenForHistory(
   }
 
   return listen<unknown>(HISTORY_EVENT, ({ payload }) => {
-    const parsed = z
-      .array(historyEntrySchema)
-      .safeParse(payload);
+    const parsed = z.array(historyEntrySchema).safeParse(payload);
     if (parsed.success) {
       onHistory(parsed.data);
     }
@@ -203,6 +201,7 @@ export async function persistCurrentOverlayPlacement(
     position.x,
     position.y,
     size.width,
+    size.height,
   );
   await emitTo("control", SETTINGS_EVENT, next);
   return next;

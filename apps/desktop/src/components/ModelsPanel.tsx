@@ -695,7 +695,9 @@ function UrlInstallRow({ models }: { models: ModelUiState }) {
           />
         </div>
         <div className="field">
-          <label htmlFor="model-url-runtime">{t("modelsUrlInstallRuntime")}</label>
+          <label htmlFor="model-url-runtime">
+            {t("modelsUrlInstallRuntime")}
+          </label>
           <Select
             id="model-url-runtime"
             label={t("modelsUrlInstallRuntime")}

@@ -60,7 +60,8 @@ export function useOverlayController() {
   const toggleHistoryView = useCallback(() => {
     setSettings((current) => ({
       ...current,
-      overlayContent: current.overlayContent === "history" ? "captions" : "history",
+      overlayContent:
+        current.overlayContent === "history" ? "captions" : "history",
     }));
     setVisible(true);
   }, []);

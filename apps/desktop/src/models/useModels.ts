@@ -234,7 +234,12 @@ export function useModels(desktopOnly = true): ModelUiState {
     async (modelId: string, url: string, kind: string, runtime: string) => {
       setError(null);
       try {
-        const installedId = await installModelFromUrl(modelId, url, kind, runtime);
+        const installedId = await installModelFromUrl(
+          modelId,
+          url,
+          kind,
+          runtime,
+        );
         await refresh();
         return installedId;
       } catch (cause) {

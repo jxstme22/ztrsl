@@ -25,18 +25,15 @@ export function useCaptionHistory() {
     saveHistoryState(state);
   }, [state]);
 
-  const record = useCallback(
-    (caption: Caption, context?: HistoryContext) => {
-      setState((current) =>
-        historyReducer(current, {
-          type: "record",
-          caption,
-          ...(context === undefined ? {} : { context }),
-        }),
-      );
-    },
-    [],
-  );
+  const record = useCallback((caption: Caption, context?: HistoryContext) => {
+    setState((current) =>
+      historyReducer(current, {
+        type: "record",
+        caption,
+        ...(context === undefined ? {} : { context }),
+      }),
+    );
+  }, []);
 
   const clear = useCallback(() => {
     setState(emptyHistoryState());

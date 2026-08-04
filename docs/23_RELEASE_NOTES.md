@@ -1,5 +1,24 @@
 # 23 — Release Notes
 
+## v0.6.2 — Audio-stall resilience, overlay polish, dark overlay, Chinese UI
+
+- **Audio stall no longer kills the session** — when the capture endpoint
+  stops delivering frames (game grabs exclusive mode, device hiccup), the
+  app now shows a "Audio paused — waiting for the source" warning instead of
+  ending live translation, and recovers automatically the moment audio flows
+  again. Threshold raised to 10s.
+- **Overlay is always dark** — the caption bar and history panel no longer
+  follow the app's light theme (which rendered a white overlay); the overlay
+  is dark-styled in both themes.
+- **Overlay height control** — Settings → Overlay gained a Height slider
+  (5-90% of the screen) alongside width and text size; the history mode now
+  respects the text-size slider, and the overlay never shows a scrollbar.
+- **Sidebar and window** — History moved to right below Live in the sidebar;
+  nav icons and the sidebar are slimmer; the control window defaults to
+  960px wide with an 880px minimum so the layout stays clean when narrowed.
+- **Full Chinese coverage** — every UI string (404 keys) has a Simplified
+  Chinese translation, including the overlay chrome.
+
 ## v0.6.1 — URL model installs for any model, captions history
 
 - **Install models from a URL (any model)** — Models → "Install model from

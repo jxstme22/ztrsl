@@ -55,7 +55,7 @@ type SectionId =
   | "sources"
   | "setup";
 
-const APP_VERSION = "0.6.1";
+const APP_VERSION = "0.6.2";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -70,8 +70,8 @@ function navItems(
 ): readonly { id: SectionId; label: string }[] {
   return [
     { id: "live", label: t("navLive") },
-    { id: "models", label: t("navModels") },
     { id: "history", label: t("navHistory") },
+    { id: "models", label: t("navModels") },
     ...(multiSourceEnabled()
       ? ([
           { id: "setup", label: t("navSetup") },
@@ -231,10 +231,7 @@ export function ControlApp() {
           )}
           {section === "history" && (
             <div className="page-stack">
-              <HistoryPanel
-                entries={history.entries}
-                onClear={history.clear}
-              />
+              <HistoryPanel entries={history.entries} onClear={history.clear} />
             </div>
           )}
           {section === "sources" && (
@@ -655,6 +652,28 @@ function SettingsPage({
                 onChange={(event) => {
                   controller.updateSettings({
                     widthNormalized: Number(event.currentTarget.value),
+                  });
+                }}
+              />
+            </div>
+
+            <div className="range-field">
+              <div className="range-label">
+                <label htmlFor="overlay-height">{t("settingsHeight")}</label>
+                <output htmlFor="overlay-height">
+                  {Math.round(snapshot.settings.heightNormalized * 100)}%
+                </output>
+              </div>
+              <input
+                id="overlay-height"
+                type="range"
+                min="0.05"
+                max="0.9"
+                step="0.01"
+                value={snapshot.settings.heightNormalized}
+                onChange={(event) => {
+                  controller.updateSettings({
+                    heightNormalized: Number(event.currentTarget.value),
                   });
                 }}
               />

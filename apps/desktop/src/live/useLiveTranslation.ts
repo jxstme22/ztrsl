@@ -23,6 +23,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
   const [snapshot, setSnapshot] = useState<LiveSnapshot>(EMPTY_LIVE_SNAPSHOT);
   const [lastCaption, setLastCaption] = useState<CaptionPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [sessionEndpointId, setSessionEndpointId] = useState<string | null>(
     null,
   );
@@ -33,6 +34,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
 
   const applySnapshot = useCallback((next: LiveSnapshot) => {
     setSnapshot(next);
+    setWarning(next.warning);
     if (next.error !== null || next.state === "error") {
       running.current = false;
       setState("error");
@@ -189,5 +191,6 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
     start,
     state,
     stop,
+    warning,
   };
 }
