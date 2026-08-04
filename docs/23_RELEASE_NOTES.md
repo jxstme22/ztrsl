@@ -1,5 +1,28 @@
 # 23 — Release Notes
 
+## v0.6.3 — Move overlay mid-session, 7-language matrix, overlay polish
+
+- **Move the overlay while captions are flowing** — Live → Customize overlay
+  → "Move overlay": drag the overlay anytime during a live session, then
+  click "Done" on the overlay; placement persists and click-through returns.
+  Snapshot syncs no longer fight an in-progress drag.
+- **Overlay settings moved to the Live page** — the overlay appearance
+  controls now live on Live under a "Customize overlay" dropdown (Show/Hide
+  options); the Settings page's overlay card is gone.
+- **Seven-language matrix (both directions)** — source languages: Filipino,
+  Chinese, English, Indonesian (Bahasa), Vietnamese, Thai, Malay; target
+  languages: English, Chinese, Filipino, Indonesian, Vietnamese, Thai,
+  Malay. NLLB tokens, Whisper codes and HTTP provider codes all mapped; the
+  full sidecar suite (193 tests) passes.
+- **History is chat-ordered** — newest captions appear at the bottom of the
+  History page and the overlay history panel (which auto-scrolls to the
+  latest line); per-source accent colors now tint each speaker's badge and
+  edge bar.
+- **Sidebar + window sizing** — sidebar widened to 64px with 44px buttons
+  and 22px icons; the control window defaults to 1000px (min 920).
+- **Clean BETA badge** — plain foreground-colored "BETA" text (white on
+  dark, black on light) instead of the cyan pill.
+
 ## v0.6.2 — Audio-stall resilience, overlay polish, dark overlay, Chinese UI
 
 - **Audio stall no longer kills the session** — when the capture endpoint

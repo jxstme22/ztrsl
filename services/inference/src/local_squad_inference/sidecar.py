@@ -91,7 +91,7 @@ logger = logging.getLogger("local_squad_inference.sidecar")
 
 def profile_source_mode(
     language_profile: str,
-) -> Literal["filipino", "chinese", "english"]:
+) -> Literal["filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"]:
     """Map a registry language profile to the ASR source mode. Only Chinese
     diverges today; Filipino-family profiles (filipino/tagalog/cebuano) all
     use the Filipino ASR mode. Per-source strictness and filters land in a

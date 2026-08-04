@@ -27,10 +27,42 @@ class HttpTranslationError(RuntimeError):
 
 
 HTTP_TARGET_CODES: dict[str, dict[str, str]] = {
-    "libretranslate": {"en": "en", "zh": "zh"},
-    "google-translate": {"en": "en", "zh": "zh-CN"},
-    "mymemory": {"en": "en", "zh": "zh-CN"},
-    "custom-http": {"en": "en", "zh": "zh"},
+    "libretranslate": {
+        "en": "en",
+        "zh": "zh",
+        "fil": "tl",
+        "ind": "id",
+        "vie": "vi",
+        "tha": "th",
+        "zsm": "ms",
+    },
+    "google-translate": {
+        "en": "en",
+        "zh": "zh-CN",
+        "fil": "tl",
+        "ind": "id",
+        "vie": "vi",
+        "tha": "th",
+        "zsm": "ms",
+    },
+    "mymemory": {
+        "en": "en",
+        "zh": "zh-CN",
+        "fil": "tl",
+        "ind": "id",
+        "vie": "vi",
+        "tha": "th",
+        "zsm": "ms",
+    },
+    "custom-http": {
+        "en": "en",
+        "zh": "zh",
+        "fil": "tl",
+        "ind": "id",
+        "vie": "vi",
+        "tha": "th",
+        "zsm": "ms",
+    },
 }
 
 

@@ -41,7 +41,7 @@ describe("historyReducer", () => {
     expect(next.entries).toHaveLength(0);
   });
 
-  it("records final captions with source label and timestamp", () => {
+  it("records final captions with source label, color and timestamp", () => {
     const next = historyReducer(empty(), {
       type: "record",
       caption: caption({
@@ -50,7 +50,7 @@ describe("historyReducer", () => {
           captionTag: "SRC",
           labelStyle: "brackets",
           captionAlignment: "center",
-          color: "#ffffff",
+          color: "#ffcc00",
         },
       }),
       context: {
@@ -65,6 +65,7 @@ describe("historyReducer", () => {
       sourceLabel: "SRC",
       sourceId: "0123456789abcdef0123456789abcdef",
       displayName: "Valorant Team",
+      color: "#ffcc00",
       audioSource: "Headphones (loopback)",
       uncertain: false,
     });
@@ -112,7 +113,25 @@ describe("historyReducer", () => {
     expect(twice.entries).toHaveLength(1);
   });
 
-  it("caps the buffer at 10 entries, newest first", () => {
+  it("keeps chat order: oldest first, newest appended last", () => {
+    let state = empty();
+    for (let index = 0; index < 3; index += 1) {
+      state = historyReducer(state, {
+        type: "record",
+        caption: caption({
+          id: "c" + String(index),
+          englishText: "line " + String(index),
+        }),
+      });
+    }
+    expect(state.entries.map((entry) => entry.text)).toEqual([
+      "line 0",
+      "line 1",
+      "line 2",
+    ]);
+  });
+
+  it("caps the buffer at 10 entries, keeping the newest at the bottom", () => {
     let state = empty();
     for (let index = 0; index < 15; index += 1) {
       state = historyReducer(state, {
@@ -124,8 +143,8 @@ describe("historyReducer", () => {
       });
     }
     expect(state.entries).toHaveLength(CAPTION_HISTORY_LIMIT);
-    expect(state.entries[0]?.text).toBe("line 14");
-    expect(state.entries[9]?.text).toBe("line 5");
+    expect(state.entries[0]?.text).toBe("line 5");
+    expect(state.entries[9]?.text).toBe("line 14");
   });
 
   it("clears", () => {

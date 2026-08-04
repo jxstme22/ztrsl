@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Trash2 } from "lucide-react";
 
 import { type HistoryEntry } from "../captions/history";
@@ -10,6 +11,25 @@ function formatTime(timestampMs: number): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+/** Accent styles for a per-source color: badge tint + left edge bar. */
+function sourceAccent(color: string): {
+  badge: CSSProperties;
+  entry: CSSProperties;
+} {
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+    return { badge: {}, entry: {} };
+  }
+  return {
+    badge: {
+      backgroundColor: `${color}26`,
+      color,
+    },
+    entry: {
+      borderLeft: `3px solid ${color}`,
+    },
+  };
 }
 
 export function HistoryPanel({
@@ -42,33 +62,37 @@ export function HistoryPanel({
         <p className="lst-model-empty">{t("historyEmpty")}</p>
       ) : (
         <ol className="history-list">
-          {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="history-entry"
-              data-uncertain={entry.uncertain || undefined}
-            >
-              <div className="history-entry-meta">
-                <span className="history-who">
-                  {entry.displayName !== ""
-                    ? entry.displayName
-                    : entry.sourceLabel !== ""
-                      ? entry.sourceLabel
-                      : t("historyUnknownSpeaker")}
-                </span>
-                {entry.audioSource !== "" && (
-                  <span className="history-audio-source">
-                    {t("historyAudioSource")}: {entry.audioSource}
+          {entries.map((entry) => {
+            const accent = sourceAccent(entry.color);
+            return (
+              <li
+                key={entry.id}
+                className="history-entry"
+                data-uncertain={entry.uncertain || undefined}
+                style={accent.entry}
+              >
+                <div className="history-entry-meta">
+                  <span className="history-who" style={accent.badge}>
+                    {entry.displayName !== ""
+                      ? entry.displayName
+                      : entry.sourceLabel !== ""
+                        ? entry.sourceLabel
+                        : t("historyUnknownSpeaker")}
                   </span>
-                )}
-                <time>{formatTime(entry.timestampMs)}</time>
-                {entry.uncertain && (
-                  <span className="history-uncertain">?</span>
-                )}
-              </div>
-              <p className="history-text">{entry.text}</p>
-            </li>
-          ))}
+                  {entry.audioSource !== "" && (
+                    <span className="history-audio-source">
+                      {t("historyAudioSource")}: {entry.audioSource}
+                    </span>
+                  )}
+                  <time>{formatTime(entry.timestampMs)}</time>
+                  {entry.uncertain && (
+                    <span className="history-uncertain">?</span>
+                  )}
+                </div>
+                <p className="history-text">{entry.text}</p>
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>

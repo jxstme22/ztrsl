@@ -20,6 +20,8 @@ export const historyEntrySchema = z.object({
   sourceId: z.string().default(""),
   /** Who's talking: the source display name (falls back to the source tag). */
   displayName: z.string().max(48),
+  /** Per-source accent color (#rrggbb) when the source defines one. */
+  color: z.string().default(""),
   /** Which audio input produced this caption (mic / loopback / system). */
   audioSource: z.string().max(64),
   /** Wall-clock finalization time (ms). */
@@ -68,13 +70,16 @@ function entryForCaption(
     sourceLabel: caption.source?.captionTag ?? "",
     sourceId: caption.source?.sourceId ?? "",
     displayName: context.displayName ?? "",
+    color: caption.source?.color ?? "",
     audioSource: context.audioSource ?? "",
     timestampMs: Date.now(),
     uncertain: caption.certainty?.state === "uncertain",
   };
 }
 
-/** Pure reducer: finals only, in-place upsert, consecutive-dup merge, capped. */
+/** Pure reducer: finals only, in-place upsert, consecutive-dup merge, capped.
+ * Entries stay in chat order — oldest first, newest appended last — so the
+ * transcript reads top-to-bottom like a chat log. */
 export function historyReducer(
   state: HistoryState,
   action: HistoryAction,
@@ -101,7 +106,7 @@ export function historyReducer(
       }
       // A repeated final (VAD overlap re-finalizing the same sentence) just
       // refreshes the timestamp instead of duplicating the line.
-      const newest = entries[0];
+      const newest = entries[entries.length - 1];
       if (
         newest?.text === entry.text &&
         entry.timestampMs - newest.timestampMs < DEDUPE_WINDOW_MS
@@ -109,15 +114,15 @@ export function historyReducer(
         return {
           ...state,
           entries: [
+            ...entries.slice(0, -1),
             { ...newest, timestampMs: entry.timestampMs },
-            ...entries.slice(1),
           ],
         };
       }
-      entries.unshift(entry);
+      entries.push(entry);
       return {
         version: 1,
-        entries: entries.slice(0, CAPTION_HISTORY_LIMIT),
+        entries: entries.slice(-CAPTION_HISTORY_LIMIT),
       };
     }
   }

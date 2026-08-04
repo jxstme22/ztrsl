@@ -275,18 +275,16 @@ select:disabled {
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  border: 1px solid rgba(124, 211, 252, 0.3);
   border-radius: 999px;
-  background: rgba(124, 211, 252, 0.08);
   font-size: 10.5px;
   line-height: 1;
   white-space: nowrap;
 }
 
 .titlebar-beta {
-  color: var(--accent);
-  font-weight: 800;
-  letter-spacing: 0.09em;
+  color: var(--fg);
+  font-weight: 700;
+  letter-spacing: 0.14em;
 }
 
 .titlebar-version {
@@ -326,8 +324,8 @@ select:disabled {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  flex: 0 0 52px;
-  padding: 12px 4px;
+  flex: 0 0 64px;
+  padding: 14px 6px;
   border-right: 1px solid var(--stroke);
   background: transparent;
 }
@@ -336,18 +334,18 @@ select:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .nav-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
   color: var(--muted);
   transition:
@@ -2256,10 +2254,20 @@ input[type="range"]::-moz-range-thumb {
   width: 44px;
   height: 42px;
   place-items: center;
-  border-left: 1px solid var(--stroke);
-  color: var(--fg-strong);
+  border: 0;
+  border-radius: 10px;
   background: transparent;
-  cursor: grab;
+  color: var(--fg-strong);
+  cursor: pointer;
+}
+
+.edit-toolbar .edit-toolbar-done {
+  width: auto;
+  padding: 0 14px;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .edit-toolbar button:active {

@@ -132,6 +132,10 @@ WHISPER_LANGUAGE_CODES: dict[str, str] = {
     "mixed": "tl",
     "chinese": "zh",
     "english": "en",
+    "indonesian": "id",
+    "vietnamese": "vi",
+    "thai": "th",
+    "malay": "ms",
 }
 
 
@@ -786,6 +790,11 @@ class NllbCTranslate2Provider:
     TARGET_LANGS: ClassVar[dict[str, str]] = {
         "en": "eng_Latn",
         "zh": "zho_Hans",
+        "fil": "tgl_Latn",
+        "ind": "ind_Latn",
+        "vie": "vie_Latn",
+        "tha": "tha_Thai",
+        "zsm": "zsm_Latn",
     }
 
     # NLLB-200 source language tokens per app source_mode. Mandarin is
@@ -798,6 +807,10 @@ class NllbCTranslate2Provider:
         "mixed": "tgl_Latn",
         "chinese": "zho_Hans",
         "english": "eng_Latn",
+        "indonesian": "ind_Latn",
+        "vietnamese": "vie_Latn",
+        "thai": "tha_Thai",
+        "malay": "zsm_Latn",
     }
 
     def __init__(self, model_dir: Path, target_language: str = "en") -> None:

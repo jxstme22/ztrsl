@@ -46,7 +46,17 @@ const UI_STRINGS = {
     zh: "编辑模式 · 拖动调整位置",
   },
   overlayDragLabel: { en: "Drag caption overlay", zh: "拖动字幕悬浮窗" },
+  overlayDoneEditing: { en: "Done", zh: "完成" },
   overlayHistoryEmpty: { en: "No captions yet", zh: "暂无字幕" },
+  overlayCustomize: { en: "Customize overlay", zh: "自定义悬浮窗" },
+  overlayCustomizeShow: { en: "Show options", zh: "显示选项" },
+  overlayCustomizeHide: { en: "Hide options", zh: "隐藏选项" },
+  overlayMoveOverlay: { en: "Move overlay", zh: "移动悬浮窗" },
+  overlayDoneMoving: { en: "Done moving", zh: "完成移动" },
+  overlayMoveOverlayNote: {
+    en: "While live captions are flowing, click Move overlay, drag the overlay window to the spot you want, then click Done on the overlay. Works during an active session — click-through returns automatically.",
+    zh: "实时字幕播放时，点击“移动悬浮窗”，将悬浮窗拖到目标位置，然后在悬浮窗上点击“完成”。会话进行中同样适用——完成后自动恢复点击穿透。",
+  },
 
   // Common
   install: { en: "Install", zh: "安装" },
@@ -308,6 +318,29 @@ const UI_STRINGS = {
   liveStart: { en: "Start subtitles", zh: "开始字幕" },
   liveStop: { en: "Stop subtitles", zh: "停止字幕" },
   liveStartListening: { en: "Start listening", zh: "开始聆听" },
+  langen: { en: "English", zh: "英语" },
+  langzh: { en: "Chinese (simplified)", zh: "简体中文" },
+  langfil: { en: "Filipino / Tagalog", zh: "菲律宾语 / 他加禄语" },
+  langfilipino: { en: "Filipino / Taglish", zh: "菲律宾语 / 他加禄英语混合" },
+  langchinese: {
+    en: "Chinese (Mandarin/Cantonese)",
+    zh: "中文（普通话/粤语）",
+  },
+  langenglish: { en: "English", zh: "英语" },
+  langindonesian: {
+    en: "Indonesian (Bahasa Indonesia)",
+    zh: "印尼语（Bahasa Indonesia）",
+  },
+  langvietnamese: { en: "Vietnamese", zh: "越南语（Tiếng Việt）" },
+  langthai: { en: "Thai", zh: "泰语（ไทย）" },
+  langmalay: { en: "Malay (Bahasa Melayu)", zh: "马来语（Bahasa Melayu）" },
+  langind: {
+    en: "Indonesian (Bahasa Indonesia)",
+    zh: "印尼语（Bahasa Indonesia）",
+  },
+  langvie: { en: "Vietnamese", zh: "越南语（Tiếng Việt）" },
+  langtha: { en: "Thai", zh: "泰语（ไทย）" },
+  langzsm: { en: "Malay (Bahasa Melayu)", zh: "马来语（Bahasa Melayu）" },
   liveAudioStalled: {
     en: "Audio paused — waiting for the source",
     zh: "音频暂停——等待音源",

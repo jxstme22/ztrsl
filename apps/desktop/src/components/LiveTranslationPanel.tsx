@@ -12,6 +12,7 @@ import type {
 } from "../live/bridge";
 import type { ModelUiState } from "../models/useModels";
 import { useT } from "../features/i18n/store";
+import type { UIKey } from "../features/i18n/strings";
 import { Select } from "./Select";
 import type { SelectOption } from "./Select";
 
@@ -56,17 +57,37 @@ function loadMonitorEnabled(): boolean {
   return window.localStorage.getItem(MONITOR_ENABLED_KEY) === "true";
 }
 
+const SOURCE_MODES: readonly SourceMode[] = [
+  "filipino",
+  "chinese",
+  "english",
+  "indonesian",
+  "vietnamese",
+  "thai",
+  "malay",
+];
+
+const TARGET_LANGUAGES: readonly TargetLanguage[] = [
+  "en",
+  "zh",
+  "fil",
+  "ind",
+  "vie",
+  "tha",
+  "zsm",
+];
+
 function loadSourceMode(): SourceMode {
   const stored = window.localStorage.getItem(SOURCE_MODE_KEY);
-  if (stored === "chinese" || stored === "english") {
-    return stored;
-  }
-  return "filipino";
+  return SOURCE_MODES.includes(stored as SourceMode)
+    ? (stored as SourceMode)
+    : "filipino";
 }
 
 function loadTargetLanguage(): TargetLanguage {
-  return window.localStorage.getItem(TARGET_LANGUAGE_KEY) === "zh"
-    ? "zh"
+  const stored = window.localStorage.getItem(TARGET_LANGUAGE_KEY);
+  return TARGET_LANGUAGES.includes(stored as TargetLanguage)
+    ? (stored as TargetLanguage)
     : "en";
 }
 
@@ -520,11 +541,10 @@ export function LiveTranslationPanel({
             onChange={(value) => {
               changeSourceMode(value as SourceMode);
             }}
-            options={[
-              { value: "filipino", label: "Filipino / Taglish" },
-              { value: "chinese", label: "Chinese (Mandarin/Cantonese)" },
-              { value: "english", label: "English" },
-            ]}
+            options={SOURCE_MODES.map((mode) => ({
+              value: mode,
+              label: t(("lang" + mode) as UIKey),
+            }))}
           />
         </div>
 
@@ -540,10 +560,10 @@ export function LiveTranslationPanel({
             onChange={(value) => {
               changeTargetLanguage(value as TargetLanguage);
             }}
-            options={[
-              { value: "en", label: "English" },
-              { value: "zh", label: "Chinese (simplified)" },
-            ]}
+            options={TARGET_LANGUAGES.map((language) => ({
+              value: language,
+              label: t(("lang" + language) as UIKey),
+            }))}
           />
         </div>
 

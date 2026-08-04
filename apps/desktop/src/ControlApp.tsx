@@ -10,7 +10,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -26,6 +26,7 @@ import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
 import { ModelsPanel } from "./components/ModelsPanel";
+import { OverlaySettingsPanel } from "./components/OverlaySettingsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
 import { Select } from "./components/Select";
 import { SourcesPanel } from "./components/SourcesPanel";
@@ -55,7 +56,7 @@ type SectionId =
   | "sources"
   | "setup";
 
-const APP_VERSION = "0.6.2";
+const APP_VERSION = "0.6.3";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -210,7 +211,7 @@ export function ControlApp() {
                     setSection(item.id);
                   }}
                 >
-                  <Icon aria-hidden="true" size={19} strokeWidth={1.9} />
+                  <Icon aria-hidden="true" size={22} strokeWidth={1.9} />
                 </button>
               );
             })}
@@ -305,6 +306,7 @@ function LivePage({
 }) {
   const { snapshot } = controller;
   const t = useT();
+  const [overlayCustomizeOpen, setOverlayCustomizeOpen] = useState(false);
 
   return (
     <div className="page-stack">
@@ -334,6 +336,35 @@ function LivePage({
       )}
 
       <LiveTranslationPanel audio={audio} live={live} models={models} />
+
+      <section className="card" aria-labelledby="overlay-customize">
+        <div className="card-head">
+          <h2 className="card-title" id="overlay-customize">
+            {t("overlayCustomize")}
+          </h2>
+          <button
+            className="button quiet"
+            type="button"
+            aria-expanded={overlayCustomizeOpen}
+            onClick={() => {
+              setOverlayCustomizeOpen((current) => !current);
+            }}
+          >
+            {overlayCustomizeOpen
+              ? t("overlayCustomizeHide")
+              : t("overlayCustomizeShow")}
+          </button>
+        </div>
+        {overlayCustomizeOpen && (
+          <OverlaySettingsPanel
+            snapshot={snapshot}
+            onUpdateSettings={controller.updateSettings}
+            onSetTranslationEnabled={controller.setTranslationEnabled}
+            onToggleEditMode={controller.toggleEditMode}
+            onResetPlacement={controller.resetPlacement}
+          />
+        )}
+      </section>
 
       <section className="card" aria-labelledby="preview-title">
         <div className="card-head">
@@ -410,7 +441,6 @@ function SettingsPage({
   const { snapshot } = controller;
   const { t, setLanguage } = language;
   const appTheme = useAppThemeValue();
-  const sources = useMemo(() => loadSourceConfigs().sources, []);
 
   return (
     <div className="page-stack">
@@ -461,278 +491,6 @@ function SettingsPage({
               ]}
             />
           </div>
-        </div>
-      </section>
-
-      <section className="card" aria-labelledby="overlay-appearance">
-        <div className="card-head">
-          <h2 className="card-title" id="overlay-appearance">
-            {t("settingsOverlayAppearance")}
-          </h2>
-        </div>
-
-        <div className="settings-block">
-          <div className="toggles-row">
-            <div className="toggle-row">
-              <div>
-                <label htmlFor="translation-enabled">
-                  {t("settingsTranslationPreview")}
-                </label>
-                <p>{t("settingsTranslationPreviewText")}</p>
-              </div>
-              <input
-                id="translation-enabled"
-                className="switch"
-                type="checkbox"
-                checked={snapshot.translationEnabled}
-                onChange={(event) => {
-                  controller.setTranslationEnabled(event.currentTarget.checked);
-                }}
-              />
-            </div>
-            <div className="toggle-row">
-              <div>
-                <label htmlFor="show-source">{t("settingsShowSource")}</label>
-                <p>{t("settingsShowSourceText")}</p>
-              </div>
-              <input
-                id="show-source"
-                className="switch"
-                type="checkbox"
-                checked={snapshot.settings.showSource}
-                onChange={(event) => {
-                  controller.updateSettings({
-                    showSource: event.currentTarget.checked,
-                  });
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="field-grid">
-            <label className="field">
-              <span>{t("settingsSimultaneous")}</span>
-              <Select
-                id="simultaneous-policy"
-                label={t("settingsSimultaneous")}
-                value={snapshot.settings.simultaneousPolicy}
-                onChange={(value) => {
-                  controller.updateSettings({
-                    simultaneousPolicy:
-                      value as OverlaySettings["simultaneousPolicy"],
-                  });
-                }}
-                options={[
-                  { value: "show-both", label: t("settingsShowBoth") },
-                  { value: "newest-wins", label: t("settingsNewestWins") },
-                  { value: "primary-wins", label: t("settingsPrimaryWins") },
-                ]}
-              />
-              <small className="field-note">
-                {t("settingsSimultaneousNote")}
-              </small>
-            </label>
-
-            <label className="field">
-              <span>{t("settingsOverlayContent")}</span>
-              <Select
-                id="overlay-content"
-                label={t("settingsOverlayContent")}
-                value={snapshot.settings.overlayContent}
-                onChange={(value) => {
-                  controller.updateSettings({
-                    overlayContent: value as OverlaySettings["overlayContent"],
-                  });
-                }}
-                options={[
-                  { value: "captions", label: t("settingsOverlayCaptions") },
-                  { value: "history", label: t("settingsOverlayHistory") },
-                ]}
-              />
-              <small className="field-note">
-                {t("settingsOverlayContentNote")}
-              </small>
-            </label>
-
-            <label className="field">
-              <span>{t("settingsCaptionAlignment")}</span>
-              <Select
-                id="caption-alignment"
-                label={t("settingsCaptionAlignment")}
-                value={snapshot.settings.captionAlignment}
-                onChange={(value) => {
-                  controller.updateSettings({
-                    captionAlignment:
-                      value as OverlaySettings["captionAlignment"],
-                  });
-                }}
-                options={[
-                  { value: "left", label: t("settingsAlignLeft") },
-                  { value: "center", label: t("settingsAlignCenter") },
-                  { value: "right", label: t("settingsAlignRight") },
-                ]}
-              />
-              <small className="field-note">
-                {t("settingsCaptionAlignmentNote")}
-              </small>
-            </label>
-
-            <label className="field">
-              <span>{t("settingsPrimarySource")}</span>
-              <Select
-                id="primary-source"
-                label={t("settingsPrimarySource")}
-                value={snapshot.settings.primarySourceId ?? ""}
-                onChange={(value) => {
-                  controller.updateSettings({
-                    primarySourceId: value === "" ? null : value,
-                  });
-                }}
-                options={[
-                  { value: "", label: t("settingsAutoPrimary") },
-                  ...sources.map((source) => ({
-                    value: source.sourceId,
-                    label: source.displayName,
-                  })),
-                ]}
-              />
-              <small className="field-note">
-                {t("settingsPrimarySourceNote")}
-              </small>
-            </label>
-          </div>
-
-          {sources.length > 1 && (
-            <div className="settings-block">
-              <h3>{t("settingsHiddenSources")}</h3>
-              {sources.map((source) => (
-                <div className="toggle-row" key={source.sourceId}>
-                  <div>
-                    <label htmlFor={`hide-${source.sourceId}`}>
-                      {t("settingsHideSource")} {source.displayName}
-                    </label>
-                    <p>{t("settingsHiddenSourcesNote")}</p>
-                  </div>
-                  <input
-                    id={`hide-${source.sourceId}`}
-                    className="switch"
-                    type="checkbox"
-                    checked={snapshot.settings.hiddenSourceIds.includes(
-                      source.sourceId,
-                    )}
-                    onChange={(event) => {
-                      const current = snapshot.settings.hiddenSourceIds;
-                      controller.updateSettings({
-                        hiddenSourceIds: event.currentTarget.checked
-                          ? [...current, source.sourceId]
-                          : current.filter((id) => id !== source.sourceId),
-                      });
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="sliders-grid">
-            <div className="range-field">
-              <div className="range-label">
-                <label htmlFor="overlay-width">{t("settingsWidth")}</label>
-                <output htmlFor="overlay-width">
-                  {Math.round(snapshot.settings.widthNormalized * 100)}%
-                </output>
-              </div>
-              <input
-                id="overlay-width"
-                type="range"
-                min="0.3"
-                max="0.95"
-                step="0.01"
-                value={snapshot.settings.widthNormalized}
-                onChange={(event) => {
-                  controller.updateSettings({
-                    widthNormalized: Number(event.currentTarget.value),
-                  });
-                }}
-              />
-            </div>
-
-            <div className="range-field">
-              <div className="range-label">
-                <label htmlFor="overlay-height">{t("settingsHeight")}</label>
-                <output htmlFor="overlay-height">
-                  {Math.round(snapshot.settings.heightNormalized * 100)}%
-                </output>
-              </div>
-              <input
-                id="overlay-height"
-                type="range"
-                min="0.05"
-                max="0.9"
-                step="0.01"
-                value={snapshot.settings.heightNormalized}
-                onChange={(event) => {
-                  controller.updateSettings({
-                    heightNormalized: Number(event.currentTarget.value),
-                  });
-                }}
-              />
-            </div>
-
-            <div className="range-field">
-              <div className="range-label">
-                <label htmlFor="font-scale">{t("settingsTextSize")}</label>
-                <output htmlFor="font-scale">
-                  {Math.round(snapshot.settings.fontScale * 100)}%
-                </output>
-              </div>
-              <input
-                id="font-scale"
-                type="range"
-                min="0.8"
-                max="1.6"
-                step="0.1"
-                value={snapshot.settings.fontScale}
-                onChange={(event) => {
-                  controller.updateSettings({
-                    fontScale: Number(event.currentTarget.value),
-                  });
-                }}
-              />
-            </div>
-
-            <div className="range-field">
-              <div className="range-label">
-                <label htmlFor="background-opacity">
-                  {t("settingsBackground")}
-                </label>
-                <output htmlFor="background-opacity">
-                  {Math.round(snapshot.settings.backgroundOpacity * 100)}%
-                </output>
-              </div>
-              <input
-                id="background-opacity"
-                type="range"
-                min="0.35"
-                max="0.9"
-                step="0.05"
-                value={snapshot.settings.backgroundOpacity}
-                onChange={(event) => {
-                  controller.updateSettings({
-                    backgroundOpacity: Number(event.currentTarget.value),
-                  });
-                }}
-              />
-            </div>
-          </div>
-
-          <button
-            className="button quiet reset-button"
-            type="button"
-            onClick={controller.resetPlacement}
-          >
-            {t("settingsResetPosition")}
-          </button>
         </div>
       </section>
 

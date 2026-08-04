@@ -38,9 +38,16 @@ export async function setTranslationEnv(
   });
 }
 
-export type SourceMode = "filipino" | "chinese" | "english";
+export type SourceMode =
+  | "filipino"
+  | "chinese"
+  | "english"
+  | "indonesian"
+  | "vietnamese"
+  | "thai"
+  | "malay";
 
-export type TargetLanguage = "en" | "zh";
+export type TargetLanguage = "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
 
 export async function startLiveTranslation(
   endpointId: string,

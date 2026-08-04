@@ -1313,11 +1313,21 @@ async fn start_live_translation(
         monitor_enabled,
         vad_sensitivity,
     } = request;
-    if source_mode != "filipino" && source_mode != "chinese" && source_mode != "english" {
-        return Err("V1 live mode supports Filipino, Chinese or English only".to_owned());
+    if source_mode != "filipino"
+        && source_mode != "chinese"
+        && source_mode != "english"
+        && source_mode != "indonesian"
+        && source_mode != "vietnamese"
+        && source_mode != "thai"
+        && source_mode != "malay"
+    {
+        return Err("V1 live mode supports Filipino, Chinese, English, Indonesian, Vietnamese, Thai or Malay only".to_owned());
     }
-    if target_language != "en" && target_language != "zh" {
-        return Err("target language must be en or zh".to_owned());
+    if !matches!(
+        target_language.as_str(),
+        "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm"
+    ) {
+        return Err("target language must be en, zh, fil, ind, vie, tha or zsm".to_owned());
     }
     if !matches!(provider.as_str(), "demo" | "local" | "http") {
         return Err("live provider must be demo, local, or http".to_string());

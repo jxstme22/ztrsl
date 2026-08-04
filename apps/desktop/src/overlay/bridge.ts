@@ -33,6 +33,7 @@ const SNAPSHOT_EVENT = "overlay:snapshot";
 const RECOVERED_EVENT = "overlay:recovered";
 const SETTINGS_EVENT = "overlay:settings";
 const HISTORY_EVENT = "captions:history";
+const DONE_EDITING_EVENT = "overlay:done-editing";
 
 function monitorId(monitor: Monitor): string {
   return (
@@ -118,6 +119,24 @@ export async function emitHistoryToOverlay(
     return;
   }
   await emitTo("overlay", HISTORY_EVENT, entries);
+}
+
+/** Overlay finished moving: tell the control window to leave edit mode. */
+export async function emitDoneEditing(): Promise<void> {
+  if (!isDesktopRuntime()) {
+    return;
+  }
+  await emitTo("control", DONE_EDITING_EVENT);
+}
+
+/** Control window: react when the overlay's "Done" button is pressed. */
+export async function listenForDoneEditing(
+  onDone: () => void,
+): Promise<UnlistenFn> {
+  if (!isDesktopRuntime()) {
+    return () => undefined;
+  }
+  return listen(DONE_EDITING_EVENT, onDone);
 }
 
 /** Receive live history updates in the overlay window. */

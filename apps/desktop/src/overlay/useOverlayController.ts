@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import {
+  listenForDoneEditing,
   listenForOverlaySettings,
   listenForRecoveredOverlay,
   registerHotkeys,
@@ -100,6 +101,7 @@ export function useOverlayController() {
     let disposed = false;
     let stopRecovered: (() => void) | undefined;
     let stopSettings: (() => void) | undefined;
+    let stopDoneEditing: (() => void) | undefined;
 
     void listenForRecoveredOverlay(() => {
       setRecoveredPlacement(true);
@@ -121,10 +123,23 @@ export function useOverlayController() {
       }
     });
 
+    void listenForDoneEditing(() => {
+      // The overlay's "Done" button: leave edit mode (placement was already
+      // persisted on drag end), so click-through returns even mid-session.
+      setMode("play");
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        stopDoneEditing = unlisten;
+      }
+    });
+
     return () => {
       disposed = true;
       stopRecovered?.();
       stopSettings?.();
+      stopDoneEditing?.();
     };
   }, []);
 

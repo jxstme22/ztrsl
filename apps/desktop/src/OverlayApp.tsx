@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GripHorizontal } from "lucide-react";
 
 import { type HistoryEntry, loadHistoryState } from "./captions/history";
@@ -6,6 +6,7 @@ import { CaptionStack } from "./components/CaptionStack";
 import { useT } from "./features/i18n/store";
 import {
   beginOverlayDrag,
+  emitDoneEditing,
   listenForHistory,
   listenForOverlaySnapshots,
   persistCurrentOverlayPlacement,
@@ -56,17 +57,50 @@ export function OverlayApp() {
     };
   }, []);
 
+  const historyFontSize = Math.round(14 * snapshot.settings.fontScale);
+  const historyListRef = useRef<HTMLOListElement>(null);
+  // While the user is dragging (or just finished), don't let snapshot syncs
+  // re-apply the stored placement — that would fight the drag, especially
+  // when captions are arriving mid-move.
+  const draggingRef = useRef(false);
+
   useEffect(() => {
+    if (draggingRef.current) {
+      return;
+    }
     void restoreOverlayPlacement(snapshot.settings);
   }, [snapshot.settings]);
 
+  // Chat order: newest at the bottom — keep the latest entry in view.
+  useEffect(() => {
+    const list = historyListRef.current;
+    if (list !== null && history.length > 0) {
+      list.scrollTop = list.scrollHeight;
+    }
+  }, [history]);
+
   async function handleDrag() {
+    draggingRef.current = true;
     await beginOverlayDrag();
     const settings = await persistCurrentOverlayPlacement(snapshot.settings);
     setSnapshot((current) => ({ ...current, settings }));
+    window.setTimeout(() => {
+      draggingRef.current = false;
+    }, 600);
   }
 
-  const historyFontSize = Math.round(14 * snapshot.settings.fontScale);
+  async function handleDoneEditing() {
+    await persistCurrentOverlayPlacement(snapshot.settings);
+    await emitDoneEditing();
+  }
+
+  /** Per-source accent for the speaker badge (tinted, colored text). */
+  const badgeStyle = (
+    color: string,
+  ): { color?: string; backgroundColor?: string } =>
+    /^#[0-9a-fA-F]{6}$/.test(color)
+      ? { backgroundColor: `${color}26`, color }
+      : {};
 
   return (
     <main
@@ -87,6 +121,15 @@ export function OverlayApp() {
           >
             <GripHorizontal aria-hidden="true" size={22} />
           </button>
+          <button
+            type="button"
+            className="edit-toolbar-done"
+            onClick={() => {
+              void handleDoneEditing();
+            }}
+          >
+            {t("overlayDoneEditing")}
+          </button>
         </div>
       )}
       {snapshot.historyView ? (
@@ -94,7 +137,7 @@ export function OverlayApp() {
           {history.length === 0 ? (
             <p className="overlay-history-empty">{t("overlayHistoryEmpty")}</p>
           ) : (
-            <ol className="overlay-history-list">
+            <ol className="overlay-history-list" ref={historyListRef}>
               {history.map((entry) => (
                 <li
                   key={entry.id}
@@ -105,6 +148,7 @@ export function OverlayApp() {
                     <span
                       className="overlay-history-source"
                       style={{
+                        ...badgeStyle(entry.color),
                         fontSize:
                           String(Math.round(historyFontSize * 0.78)) + "px",
                       }}
