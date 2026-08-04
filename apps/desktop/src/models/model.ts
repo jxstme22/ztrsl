@@ -111,6 +111,7 @@ export const gpuRuntimeStatusSchema = z.object({
   installedSizeBytes: z.number().nonnegative(),
   downloadSizeBytes: z.number().nonnegative(),
   systemAvailable: z.boolean(),
+  hasArtifacts: z.boolean(),
   wheels: z.array(gpuRuntimeWheelSchema),
 });
 
@@ -122,6 +123,7 @@ export const EMPTY_GPU_RUNTIME_STATUS: GpuRuntimeStatus = {
   installedSizeBytes: 0,
   downloadSizeBytes: 0,
   systemAvailable: false,
+  hasArtifacts: false,
   wheels: [],
 };
 

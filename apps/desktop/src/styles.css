@@ -36,6 +36,7 @@
   --fg-strong: #ffffff;
   --muted: rgba(255, 255, 255, 0.55);
   --faint: rgba(255, 255, 255, 0.34);
+  --text-dim: #9aa3b2;
   /* Dark glass surfaces: the window frame is light liquid glass, so panels,
      buttons, and fields carry a dark translucent tint to keep white text
      readable. */
@@ -47,8 +48,15 @@
   --field: rgba(12, 16, 26, 0.16);
   --danger: #ff9d9d;
   --warn: #ffd28a;
+  --ok: #4ade80;
+  --accent: #7dd3fc;
   --focus-ring: rgba(12, 16, 26, 0.45);
   --primary: #dc4d5e;
+  /* Solid popups (select listbox, color picker) and the modal. */
+  --popup: rgba(22, 22, 26, 0.97);
+  --modal-backdrop: rgba(8, 10, 14, 0.55);
+  --modal: #171a21;
+  --modal-border: rgba(255, 255, 255, 0.1);
   --radius-sm: 10px;
   --radius: 14px;
   --radius-lg: 22px;
@@ -63,6 +71,90 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Light theme: same liquid-glass surfaces (transparent frame, acrylic blur,
+   translucent panels) with a light tint and dark text. Selected in Settings →
+   Appearance and persisted across launches via `data-theme` on <html>. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --fg: rgba(22, 26, 34, 0.9);
+  --fg-strong: #171b23;
+  --muted: rgba(22, 26, 34, 0.58);
+  --faint: rgba(22, 26, 34, 0.36);
+  --text-dim: #5c6470;
+  --glass: rgba(255, 255, 255, 0.28);
+  --glass-strong: rgba(255, 255, 255, 0.42);
+  --glass-hover: rgba(255, 255, 255, 0.58);
+  --stroke: rgba(22, 26, 34, 0.1);
+  --stroke-strong: rgba(22, 26, 34, 0.2);
+  --field: rgba(22, 26, 34, 0.06);
+  --danger: #d64545;
+  --warn: #b45309;
+  --ok: #16a34a;
+  --accent: #0284c7;
+  --focus-ring: rgba(22, 26, 34, 0.28);
+  --primary: #dc4d5e;
+  --popup: rgba(255, 255, 255, 0.97);
+  --modal-backdrop: rgba(10, 12, 18, 0.32);
+  --modal: #f5f6fa;
+  --modal-border: rgba(22, 26, 34, 0.1);
+  --button-primary-fg: #ffffff;
+  --button-primary-hover: #2c3342;
+  --button-secondary-bg: rgba(22, 26, 34, 0.07);
+  --progress-track: rgba(22, 26, 34, 0.08);
+  --card-tint: rgba(255, 255, 255, 0.32);
+  --frame-gradient: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.5),
+    rgba(238, 241, 247, 0.44)
+  );
+  --titlebar-bg: rgba(255, 255, 255, 0.46);
+  --titlebar-border: rgba(22, 26, 34, 0.08);
+}
+
+/* Light theme surfaces: keep the same transparent frame, acrylic blur and
+   translucent panels, just with a light tint instead of a dark one. */
+:root[data-theme="light"] body {
+  background: #e8eaf0;
+}
+
+:root[data-theme="light"] .app-frame {
+  background: var(--frame-gradient);
+}
+
+:root[data-theme="light"] .titlebar {
+  border-bottom-color: var(--titlebar-border);
+  background: var(--titlebar-bg);
+}
+
+:root[data-theme="light"] .card,
+:root[data-theme="light"] .glass-panel {
+  background: var(--card-tint);
+}
+
+:root[data-theme="light"] .lst-progress-track {
+  background: var(--progress-track);
+}
+
+:root[data-theme="light"] .live-monitor-toggle input {
+  accent-color: var(--fg-strong);
+}
+
+:root[data-theme="light"] .lst-model-card:hover {
+  background: rgba(22, 26, 34, 0.03);
+}
+
+:root[data-theme="light"] .lst-welcome-toggle:hover {
+  background: rgba(22, 26, 34, 0.04);
+}
+
+:root[data-theme="light"] .lst-welcome-card {
+  background: rgba(22, 26, 34, 0.04);
+}
+
+:root[data-theme="light"] .clip-dropzone.selected {
+  border-color: var(--stroke-strong);
 }
 
 * {
@@ -192,7 +284,7 @@ select:disabled {
 }
 
 .titlebar-beta {
-  color: #7dd3fc;
+  color: var(--accent);
   font-weight: 800;
   letter-spacing: 0.09em;
 }
@@ -282,6 +374,11 @@ select:disabled {
   flex: 1;
   min-width: 0;
   justify-content: center;
+  /* Size the page to its own content instead of stretching it: a stretched
+     flex item overruns its own padding-bottom when the grid rows are taller
+     than the container, so the last card ends up flush with the bottom edge.
+     With `flex-start` the page's own padding reserves the bottom gap. */
+  align-items: flex-start;
   overflow-y: auto;
   padding: 18px 22px 56px;
   /* Guarantee the last card never touches the bottom border when scrolled to
@@ -294,7 +391,8 @@ select:disabled {
   align-content: start;
   gap: 12px;
   width: min(100%, 900px);
-  padding-bottom: 56px;
+  /* The scroll container below already adds its own bottom padding; a little
+     extra margin keeps the stack clear of the edges in every viewport. */
   margin-bottom: 8px;
 }
 
@@ -372,15 +470,15 @@ select:disabled {
 .button.primary {
   background: var(--fg-strong);
   border-color: transparent;
-  color: #0b0b0d;
+  color: var(--button-primary-fg, #0b0b0d);
 }
 
 .button.primary:hover:not(:disabled) {
-  background: #ffffff;
+  background: var(--button-primary-hover, #ffffff);
 }
 
 .button.secondary {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--button-secondary-bg, rgba(255, 255, 255, 0.12));
 }
 
 .button.quiet {
@@ -560,7 +658,7 @@ select:disabled {
   padding: 4px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  background: rgba(22, 22, 26, 0.97);
+  background: var(--popup);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
@@ -676,7 +774,7 @@ select:disabled {
   padding: 4px;
   border: 1px solid var(--stroke);
   border-radius: var(--radius-sm);
-  background: rgba(22, 22, 26, 0.97);
+  background: var(--popup);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
@@ -892,7 +990,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .lst-chip-active {
-  color: #4ade80;
+  color: var(--ok);
   border-color: rgba(74, 222, 128, 0.3);
 }
 
@@ -904,7 +1002,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .lst-ok-text {
-  color: var(--ok, #4ade80);
+  color: var(--ok);
   font-size: 12px;
   margin: 6px 0 0;
 }
@@ -984,7 +1082,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .diag-source-tag {
-  color: var(--accent, #7dd3fc);
+  color: var(--accent);
 }
 
 .diag-empty {
@@ -999,7 +1097,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .diag-hint.warn {
-  color: #fbbf24;
+  color: var(--warn);
 }
 
 .diag-footnote {
@@ -1016,7 +1114,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .inline-alert.ok strong {
-  color: #4ade80;
+  color: var(--ok);
 }
 
 /* ---------------------------------------------------------------- */
@@ -1631,7 +1729,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .acc-table tr[data-critical] td:first-child {
-  color: #fbbf24;
+  color: var(--warn);
 }
 
 .acc-model {
@@ -1850,7 +1948,7 @@ input[type="range"]::-moz-range-thumb {
 .caption-uncertain-reasons {
   display: block;
   margin-top: 4px;
-  color: #fbbf24;
+  color: var(--warn);
   font-size: 0.68em;
   font-weight: 500;
   letter-spacing: 0.04em;
@@ -2101,7 +2199,7 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: -0.01em;
 }
 .lst-page-description {
-  color: var(--text-dim, #9aa3b2);
+  color: var(--text-dim);
   font-size: 13px;
   line-height: 1.5;
   margin: 0;
@@ -2179,7 +2277,7 @@ input[type="range"]::-moz-range-thumb {
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: #4ade80;
+  background: var(--ok);
 }
 .lst-model-description {
   margin: 0;
@@ -2230,11 +2328,11 @@ input[type="range"]::-moz-range-thumb {
   white-space: nowrap;
 }
 .lst-chip-local {
-  color: #7dd3fc;
+  color: var(--accent);
   border-color: rgba(124, 211, 252, 0.28);
 }
 .lst-chip-warn {
-  color: #f5c07a;
+  color: var(--warn);
   border-color: rgba(255, 190, 90, 0.28);
 }
 .lst-model-card-actions {
@@ -2270,17 +2368,17 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-badge-warn {
   background: rgba(255, 190, 90, 0.12);
-  color: #f5c07a;
+  color: var(--warn);
   border-color: rgba(255, 190, 90, 0.28);
 }
 .lst-badge-local {
   background: rgba(124, 211, 252, 0.1);
-  color: #7dd3fc;
+  color: var(--accent);
   border-color: rgba(124, 211, 252, 0.28);
 }
 .lst-badge-installed {
   background: rgba(74, 222, 128, 0.12);
-  color: #4ade80;
+  color: var(--ok);
   border-color: rgba(74, 222, 128, 0.3);
 }
 .lst-model-local-hint {
@@ -2309,7 +2407,7 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 8px;
   background: rgba(124, 211, 252, 0.1);
   border: 1px solid rgba(124, 211, 252, 0.22);
-  color: #7dd3fc;
+  color: var(--accent);
   margin-right: 8px;
   vertical-align: middle;
 }
@@ -2360,7 +2458,7 @@ input[type="range"]::-moz-range-thumb {
   font-size: 11px;
 }
 .lst-error-text {
-  color: #f2879b;
+  color: var(--danger);
   font-size: 12.5px;
   margin: 8px 0 0;
 }
@@ -2388,7 +2486,7 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-progress-meta {
   font-size: 11.5px;
-  color: var(--text-dim, #9aa3b2);
+  color: var(--text-dim);
 }
 
 /* Confirmation modal */
@@ -2396,7 +2494,7 @@ input[type="range"]::-moz-range-thumb {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: rgba(8, 10, 14, 0.55);
+  background: var(--modal-backdrop);
   display: grid;
   place-items: center;
   backdrop-filter: blur(3px);
@@ -2406,8 +2504,8 @@ input[type="range"]::-moz-range-thumb {
   max-height: calc(100vh - 64px);
   overflow: auto;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #171a21;
+  border: 1px solid var(--modal-border);
+  background: var(--modal);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
@@ -2428,7 +2526,7 @@ input[type="range"]::-moz-range-thumb {
   margin: 0;
   font-size: 13px;
   line-height: 1.55;
-  color: var(--text-dim, #c6cbd6);
+  color: var(--text-dim);
 }
 .lst-modal-details {
   margin: 0;
@@ -2442,14 +2540,14 @@ input[type="range"]::-moz-range-thumb {
   gap: 10px;
 }
 .lst-modal-details dt {
-  color: var(--text-dim, #9aa3b2);
+  color: var(--text-dim);
 }
 .lst-modal-details dd {
   margin: 0;
   word-break: break-word;
 }
 .lst-modal-note {
-  color: var(--text-dim, #9aa3b2);
+  color: var(--text-dim);
 }
 .lst-modal-url {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

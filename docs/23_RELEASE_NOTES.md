@@ -1,5 +1,29 @@
 # 23 — Release Notes
 
+## v0.5.8 — Light theme, CUDA detection fix, delete runtime packs, bottom gap
+
+- **Light theme (Settings → Appearance)** — a new Dark/Light picker on the
+  Settings page. Light keeps the same liquid-glass look (transparent frame,
+  acrylic blur, translucent panels) with a light frost tint and dark text.
+  The choice is saved and restored on the next launch — no dark flash at
+  startup. The overlay caption window is unaffected (captions keep their own
+  game-facing style).
+- **CUDA detection no longer requires cuDNN** — machines with only a CUDA
+  Toolkit (no separate cuDNN install) were shown "Not installed" and offered
+  a ~1.3 GB re-download even though Live already ran on CUDA. The system
+  check now only requires the Toolkit's own DLLs (cuBLAS/cuBLAS LT/cudart for
+  CUDA 12 or 13); the app's own runtime pack still requires cuDNN as before.
+- **Delete button for leftover/partial runtime packs** — a "Remove CUDA
+  runtime" action now appears whenever anything from the pack exists on disk,
+  including a partial download from an interrupted install (previously only a
+  fully-installed pack could be removed, so stale ~1.3 GB downloads were
+  stuck). When the pack is incomplete the remove and install buttons are both
+  shown.
+- **Bottom gap on every page** — the last card no longer touches the bottom
+  edge when a page is scrolled to the end: the content column now sizes each
+  page to its own height so the reserved bottom padding actually applies
+  (previously the stretched layout overran it).
+
 ## v0.5.7 — Models page matches Live, welcome only on fresh install, close really quits
 
 - **Models page redesigned to match the Live page** — the download-server and

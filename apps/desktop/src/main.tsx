@@ -5,6 +5,7 @@ import { isTauri } from "@tauri-apps/api/core";
 
 import { App } from "./App";
 import { RootErrorBoundary } from "./components/RootErrorBoundary";
+import { initAppTheme } from "./features/theme/store";
 import { applyLiquidGlass } from "./windowEffects";
 import "./styles.css";
 
@@ -19,6 +20,10 @@ if (rootElement === null) {
 if (isTauri()) {
   document.documentElement.setAttribute("data-tauri", "");
 }
+
+// Restore the persisted theme before first paint so the app never flashes
+// the default dark look.
+initAppTheme();
 
 createRoot(rootElement).render(
   <StrictMode>

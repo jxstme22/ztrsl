@@ -704,6 +704,9 @@ struct GpuRuntimeStatus {
     /// `true` when a CUDA runtime is already usable on this system (the app's
     /// own pack, or a system CUDA Toolkit) — no download needed.
     system_available: bool,
+    /// `true` when anything exists on disk under the pack dir (complete,
+    /// partial, or leftover) — a "remove" action should be offered.
+    has_artifacts: bool,
     /// Package names + per-wheel sizes shown in the UI.
     wheels: Vec<GpuRuntimeWheelStatus>,
 }
@@ -725,6 +728,7 @@ fn gpu_runtime_status(models: tauri::State<'_, ModelRuntime>) -> Result<GpuRunti
         installed_size_bytes: state.gpu_runtime.installed_size_bytes(),
         download_size_bytes: model_manager::cuda_pack_download_bytes(),
         system_available: installed || model_manager::system_cuda_available(),
+        has_artifacts: state.gpu_runtime.has_artifacts(),
         wheels: model_manager::CUDA_12_RUNTIME_PACK
             .iter()
             .map(|wheel| GpuRuntimeWheelStatus {

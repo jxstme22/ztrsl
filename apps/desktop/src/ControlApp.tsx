@@ -32,6 +32,7 @@ import { useAudioMeter } from "./audio/useAudioMeter";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useT } from "./features/i18n/store";
+import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
@@ -45,7 +46,7 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 type SectionId =
   "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
 
-const APP_VERSION = "0.5.7";
+const APP_VERSION = "0.5.8";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -347,10 +348,36 @@ function SettingsPage({
 }) {
   const { snapshot } = controller;
   const { t, setLanguage } = language;
+  const appTheme = useAppThemeValue();
   const sources = useMemo(() => loadSourceConfigs().sources, []);
 
   return (
     <div className="page-stack">
+      <section className="card" aria-labelledby="appearance-theme">
+        <div className="card-head">
+          <h2 className="card-title" id="appearance-theme">
+            {t("settingsAppearance")}
+          </h2>
+        </div>
+        <div className="settings-block">
+          <div className="field">
+            <span>{t("settingsThemeNote")}</span>
+            <Select
+              id="appearance-theme-picker"
+              label={t("settingsTheme")}
+              value={appTheme}
+              onChange={(value) => {
+                setAppTheme(value as "dark" | "light");
+              }}
+              options={[
+                { value: "dark", label: t("themeDark") },
+                { value: "light", label: t("themeLight") },
+              ]}
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="card" aria-labelledby="interface-language">
         <div className="card-head">
           <h2 className="card-title" id="interface-language">

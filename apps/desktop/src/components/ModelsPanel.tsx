@@ -678,6 +678,27 @@ function GpuRuntimePanel({
           >
             {t("cancel")}
           </button>
+        ) : status.hasArtifacts ? (
+          <>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => void remove()}
+            >
+              <Trash2 aria-hidden="true" size={14} />
+              {t("gpuRemovePartial")}
+            </button>
+            {!status.systemAvailable && (
+              <button
+                type="button"
+                className="button primary"
+                onClick={() => void install()}
+              >
+                <HardDriveDownload aria-hidden="true" size={14} />
+                {t("gpuInstall")}
+              </button>
+            )}
+          </>
         ) : status.systemAvailable ? (
           <span className="lst-model-local-hint">{t("gpuReady")}</span>
         ) : (

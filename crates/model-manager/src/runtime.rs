@@ -70,24 +70,48 @@ pub const CUDA_DLL_DIR: &str = "cuda12";
 
 /// Return true when a CUDA runtime is already usable on this system, either
 /// because the app's own runtime pack is installed or because the user has a
-/// CUDA Toolkit (or redistributable runtime) installed with its DLLs on the
-/// system. On Windows this checks whether `cublas64_12.dll` — the library that
-/// ctranslate2/faster-whisper must load — is reachable on the DLL search path
-/// (`C:\Windows\System32` plus `%PATH%`). On other platforms there is no
-/// system CUDA runtime to detect and this returns `false` (the app pack or
-/// CPU fallback covers those).
+/// CUDA Toolkit installed with its DLLs reachable. On Windows this checks for
+/// a complete CUDA major-version family (`cublas64_<major>.dll` +
+/// `cublasLt64_<major>.dll` + `cudart64_<major>.dll`) in System32, on `PATH`,
+/// or under the standard Toolkit install directory
+/// (`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*`). cuDNN is *not*
+/// required: it is a separate download, and the bundled ctranslate2 loads the
+/// models this app uses without it. On other platforms there is no system CUDA
+/// runtime to detect and this returns `false` (the app pack or CPU fallback
+/// covers those).
 ///
 /// This lets the UI say "GPU already available — no download needed" instead
 /// of asking users who already installed CUDA to download the ~1.3 GB pack.
 pub fn system_cuda_available() -> bool {
-    let required = required_cuda_dlls();
-    !required.is_empty() && required.iter().all(|name| find_windows_dll(name).is_some())
+    let families = required_system_families();
+    !families.is_empty()
+        && families
+            .iter()
+            .any(|family| family.iter().all(|name| find_windows_dll(name).is_some()))
 }
 
-/// DLLs that must be present for ctranslate2 to use CUDA on Windows: cuBLAS
-/// (cublas64_12.dll + cublasLt64_12.dll), the CUDA runtime (cudart64_12.dll),
-/// and cuDNN 9 (cudnn64_9.dll). On non-Windows platforms this is empty so
-/// both the system detector and the pack "installed" check return false.
+/// Core DLL families that make ctranslate2 CUDA work on Windows, one entry per
+/// supported CUDA major version. cuDNN is intentionally absent (optional for
+/// the models this app runs; not shipped with the CUDA Toolkit). On non-Windows
+/// platforms this is empty so both the system detector and the pack "installed"
+/// check return false.
+fn required_system_families() -> Vec<Vec<&'static str>> {
+    if cfg!(target_os = "windows") {
+        vec![
+            vec!["cublas64_12.dll", "cublasLt64_12.dll", "cudart64_12.dll"],
+            vec!["cublas64_13.dll", "cublasLt64_13.dll", "cudart64_13.dll"],
+        ]
+    } else {
+        Vec::new()
+    }
+}
+
+/// DLLs that must be present for the app's *own runtime pack* to count as
+/// installed: cuBLAS (cublas64_12.dll + cublasLt64_12.dll), the CUDA runtime
+/// (cudart64_12.dll), and cuDNN 9 (cudnn64_9.dll). Unlike the system check,
+/// the pack must be complete — it ships cuDNN, so a pack without it is broken.
+/// On non-Windows platforms this is empty so both the system detector and the
+/// pack "installed" check return false.
 fn required_cuda_dlls() -> Vec<&'static str> {
     if cfg!(target_os = "windows") {
         vec![
@@ -103,7 +127,9 @@ fn required_cuda_dlls() -> Vec<&'static str> {
 
 /// Search the Windows DLL search path for `name`: System32 first, then every
 /// `PATH` entry (allowing the common CUDA Toolkit `bin` directory that setup
-/// adds to PATH). Returns the matching path, or `None`.
+/// adds to PATH), then the standard CUDA Toolkit install directory (in case
+/// the installer was told not to touch PATH). Returns the matching path, or
+/// `None`.
 #[cfg(target_os = "windows")]
 fn find_windows_dll(name: &str) -> Option<PathBuf> {
     let system32 = std::env::var_os("SystemRoot")
@@ -115,8 +141,37 @@ fn find_windows_dll(name: &str) -> Option<PathBuf> {
                 .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
                 .unwrap_or_default(),
         )
+        .chain(cuda_toolkit_bin_dirs())
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.is_file())
+}
+
+/// The `bin` directories of every installed CUDA Toolkit
+/// (`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v*`). Empty when the
+/// Toolkit is not installed in the default location.
+#[cfg(target_os = "windows")]
+fn cuda_toolkit_bin_dirs() -> Vec<PathBuf> {
+    let base = std::env::var_os("ProgramFiles")
+        .map(|program_files| {
+            PathBuf::from(program_files)
+                .join("NVIDIA GPU Computing Toolkit")
+                .join("CUDA")
+        })
+        .unwrap_or_else(|| PathBuf::from(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"));
+    let Ok(entries) = std::fs::read_dir(&base) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                Some(path.join("bin"))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Non-Windows placeholder: no system CUDA runtime detection.
@@ -165,6 +220,14 @@ impl GpuRuntimeStore {
                 })
             })
             .unwrap_or(0)
+    }
+
+    /// True when anything exists on disk under the pack directory — including
+    /// a partial or leftover extraction that failed `is_installed()`. Lets the
+    /// UI offer a "remove" action for stale/partial packs instead of only for
+    /// complete ones.
+    pub fn has_artifacts(&self) -> bool {
+        self.installed_size_bytes() > 0
     }
 
     /// Remove the installed pack. Refuses when the directory does not look
@@ -484,6 +547,27 @@ mod tests {
     }
 
     #[test]
+    fn has_artifacts_reports_partial_pack() {
+        let root = std::env::temp_dir().join(format!("lst-gpu-artifacts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let store = GpuRuntimeStore::new(root.clone());
+        assert!(!store.has_artifacts());
+
+        let dir = store.dll_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        // A single leftover DLL from an interrupted install must be reported
+        // as artifacts even though the pack is not "installed".
+        std::fs::write(dir.join("cudart64_12.dll"), vec![0u8; 10]).unwrap();
+        assert!(!store.is_installed());
+        assert!(store.has_artifacts());
+
+        store.delete().unwrap();
+        assert!(!store.has_artifacts());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn delete_refuses_when_not_installed() {
         let root = std::env::temp_dir().join(format!("lst-gpu-delete-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -524,6 +608,40 @@ mod tests {
             let _ = system_cuda_available();
         } else {
             assert!(!system_cuda_available());
+        }
+    }
+
+    #[test]
+    fn system_check_does_not_require_cudnn() {
+        // A Toolkit-only machine (cuBLAS + cuLt + cudart, no separate cuDNN
+        // download) must be reported as CUDA-usable, otherwise the app would
+        // offer the ~1.3 GB pack download on machines where GPU already works.
+        let families = required_system_families();
+        if cfg!(target_os = "windows") {
+            assert!(!families.is_empty());
+            for family in &families {
+                assert_eq!(family.len(), 3, "core CUDA family has 3 DLLs");
+                assert!(
+                    family
+                        .iter()
+                        .all(|name| !name.to_ascii_lowercase().contains("cudnn")),
+                    "system check must not require cuDNN"
+                );
+            }
+        } else {
+            assert!(families.is_empty());
+        }
+    }
+
+    #[test]
+    fn pack_check_still_requires_cudnn() {
+        // The app's own pack ships cuDNN, so a pack without it is broken and
+        // must not be reported installed (the friend's "installed but CPU"
+        // bug came from accepting an incomplete pack).
+        if cfg!(target_os = "windows") {
+            let required = required_cuda_dlls();
+            assert!(required.contains(&"cudnn64_9.dll"));
+            assert!(required.contains(&"cublas64_12.dll"));
         }
     }
 

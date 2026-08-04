@@ -124,6 +124,14 @@ const UI_STRINGS = {
   },
   english: { en: "English", zh: "英语" },
   chineseSimplified: { en: "Chinese (Simplified)", zh: "简体中文" },
+  settingsAppearance: { en: "Appearance", zh: "外观" },
+  settingsTheme: { en: "Theme", zh: "主题" },
+  settingsThemeNote: {
+    en: "Pick how the app looks. The transparent glass effect stays in both themes.",
+    zh: "选择应用的外观。两种主题都保留透明玻璃效果。",
+  },
+  themeDark: { en: "Dark", zh: "深色" },
+  themeLight: { en: "Light", zh: "浅色" },
 
   // Models page
   modelsInstalled: { en: "Installed", zh: "已安装" },
@@ -220,6 +228,10 @@ const UI_STRINGS = {
   gpuInstalled: { en: "Installed", zh: "已安装" },
   gpuNotInstalled: { en: "Not installed", zh: "未安装" },
   gpuRemove: { en: "Remove CUDA runtime", zh: "移除 CUDA 运行时" },
+  gpuRemovePartial: {
+    en: "Remove leftover CUDA files",
+    zh: "移除残留 CUDA 文件",
+  },
   gpuDownloadSize: { en: "Download size", zh: "下载大小" },
   gpuDownloading: { en: "Downloading", zh: "下载中" },
   gpuSystemAvailable: { en: "GPU available", zh: "GPU 可用" },
