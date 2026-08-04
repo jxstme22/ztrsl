@@ -1065,8 +1065,8 @@ mod tests {
         assert_eq!(frame.sample_rate, 48_000);
         assert_eq!(captured_samples, 480);
         assert_eq!(sequence, 1);
-        // Monotonic timestamp advances by the frame duration (10 ms at 48 kHz).
-        assert_eq!(frame.capture_monotonic_ns, 10_000_000);
+        // Start-of-frame timestamp: the first frame begins at 0 ns.
+        assert_eq!(frame.capture_monotonic_ns, 0);
     }
 
     #[test]
@@ -1108,7 +1108,8 @@ mod tests {
         }
         assert_eq!(sequence, 3);
         assert_eq!(captured_samples, 1440);
-        // 30 ms of audio at 48 kHz.
+        // 30 ms of audio at 48 kHz: the fourth frame starts at sample 1440,
+        // which is 1440 * 1e9 / 48000 = 30 ms (start-of-frame timestamps).
         assert_eq!(
             build_loopback_mono_frame(
                 true,
@@ -1120,7 +1121,7 @@ mod tests {
                 &mut sequence
             )
             .capture_monotonic_ns,
-            40_000_000
+            30_000_000
         );
     }
 }
