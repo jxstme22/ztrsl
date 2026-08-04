@@ -183,7 +183,7 @@ fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
     } else {
         app.path()
             .app_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir().join("xTRSNLTR"))
+            .unwrap_or_else(|_| std::env::temp_dir().join("yTRSLT"))
             .join("models")
     }
 }
@@ -2423,6 +2423,17 @@ pub fn run() {
             app.manage(SidecarPaths {
                 bundled: resolve_bundled_paths(app.handle()),
             });
+            // Closing the main window must kill the whole app — sidecar,
+            // overlay window, audio threads — not just hide the window and
+            // leave the process running in the background.
+            if let Some(control) = app.get_webview_window("control") {
+                let handle = app.handle().clone();
+                control.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { .. } = event {
+                        handle.exit(0);
+                    }
+                });
+            }
             Ok(())
         })
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())

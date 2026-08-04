@@ -444,21 +444,44 @@ function DownloadServerRow({ models }: { models: ModelUiState }) {
   const userPicked = downloadEndpoint.userOverride;
   const mirrorInUse = downloadEndpoint.mirror;
   const t = useT();
+  const currentLabel = mirrorInUse
+    ? `hf-mirror.com`
+    : userPicked
+      ? downloadEndpoint.endpoint
+      : "Hugging Face";
   return (
-    <div className="lst-download-server">
-      <div className="lst-download-server-copy">
-        <label htmlFor="model-download-server">
-          {t("modelsDownloadServerLabel")}
-        </label>
-        <p>
-          {mirrorInUse
-            ? `Downloads go through ${downloadEndpoint.endpoint}.`
-            : userPicked
-              ? "Downloads go through Hugging Face directly."
-              : "Downloads go through Hugging Face directly. Set HF_ENDPOINT or LST_HF_ENDPOINT to use a mirror."}
-        </p>
+    <div className="card lst-settings-card">
+      <div className="card-head">
+        <h3 className="card-title">{t("modelsDownloadServerLabel")}</h3>
+        <span className="lst-chip lst-chip-active">{currentLabel}</span>
+      </div>
+      <div className="live-grid">
+        <div className="field span-2">
+          <Select
+            id="model-download-server"
+            label={t("modelsDownloadServer")}
+            value={userPicked ? downloadEndpoint.endpoint : ""}
+            onChange={(endpoint) => {
+              void models.setDownloadEndpoint(endpoint);
+            }}
+            options={[
+              { value: "", label: t("modelsAutomatic") },
+              {
+                value: "https://hf-mirror.com",
+                label: "hf-mirror.com (mainland China)",
+              },
+            ]}
+          />
+          <small className="field-note">
+            {mirrorInUse
+              ? "Downloads go through the selected mirror."
+              : userPicked
+                ? "Downloads go through Hugging Face directly."
+                : "Downloads go through Hugging Face directly. Set HF_ENDPOINT or LST_HF_ENDPOINT to use a mirror."}
+          </small>
+        </div>
         {providerStatus.providers.length > 0 && (
-          <p className="lst-provider-order">
+          <p className="lst-provider-order span-2">
             Provider order:{" "}
             {providerStatus.providers
               .map((provider) =>
@@ -468,21 +491,6 @@ function DownloadServerRow({ models }: { models: ModelUiState }) {
           </p>
         )}
       </div>
-      <Select
-        id="model-download-server"
-        label={t("modelsDownloadServer")}
-        value={userPicked ? downloadEndpoint.endpoint : ""}
-        onChange={(endpoint) => {
-          void models.setDownloadEndpoint(endpoint);
-        }}
-        options={[
-          { value: "", label: t("modelsAutomatic") },
-          {
-            value: "https://hf-mirror.com",
-            label: "hf-mirror.com (mainland China)",
-          },
-        ]}
-      />
     </div>
   );
 }
@@ -509,45 +517,52 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
   };
 
   return (
-    <div className="lst-download-server">
-      <div className="lst-download-server-copy">
-        <label htmlFor="model-offline-pack">
-          {t("modelsOfflinePackLabel")}
-        </label>
-        <p>{t("modelsOfflinePackNote")}</p>
+    <div className="card lst-settings-card">
+      <div className="card-head">
+        <h3 className="card-title">{t("modelsOfflinePackLabel")}</h3>
       </div>
-      <input
-        id="model-offline-pack"
-        ref={inputRef}
-        type="text"
-        value={packDir}
-        placeholder="/path/to/model-pack"
-        onChange={(event) => {
-          setPackDir(event.currentTarget.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            void runImport();
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="button"
-        disabled={packDir.trim() === "" || busy}
-        onClick={() => void runImport()}
-      >
-        <FolderOpen aria-hidden="true" size={14} />
-        {busy ? t("modelsImporting") : t("modelsImportBtn")}
-      </button>
-      {imported !== null && imported.length > 0 && (
-        <p className="lst-ok-text">
-          {t("modelsInstalledSuffix")}: {imported.join(", ")}
-        </p>
-      )}
-      {imported !== null && imported.length === 0 && (
-        <p className="lst-error-text">{t("modelsNothingImported")}</p>
-      )}
+      <div className="live-grid">
+        <div className="field span-2">
+          <label htmlFor="model-offline-pack">
+            {t("modelsOfflinePackLabel")}
+          </label>
+          <input
+            id="model-offline-pack"
+            ref={inputRef}
+            type="text"
+            value={packDir}
+            placeholder="/path/to/model-pack"
+            onChange={(event) => {
+              setPackDir(event.currentTarget.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void runImport();
+              }
+            }}
+          />
+          <small className="field-note">{t("modelsOfflinePackNote")}</small>
+        </div>
+        {imported !== null && imported.length > 0 && (
+          <p className="lst-ok-text span-2">
+            {t("modelsInstalledSuffix")}: {imported.join(", ")}
+          </p>
+        )}
+        {imported !== null && imported.length === 0 && (
+          <p className="lst-error-text span-2">{t("modelsNothingImported")}</p>
+        )}
+        <div className="span-2 lst-import-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={packDir.trim() === "" || busy}
+            onClick={() => void runImport()}
+          >
+            <FolderOpen aria-hidden="true" size={14} />
+            {busy ? t("modelsImporting") : t("modelsImportBtn")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -577,26 +592,29 @@ function GpuRuntimePanel({
     progress?.totalBytesTotal ?? 0,
   );
   return (
-    <section className="lst-gpu-card" aria-label={t("gpuTitle")}>
-      <div className="lst-gpu-head">
-        <div className="lst-gpu-title">
-          <Cpu aria-hidden="true" size={16} />
-          <div>
-            <h3>{t("gpuTitle")}</h3>
-            <p>{t("gpuDescription")}</p>
-          </div>
-        </div>
-        {installed && (
+    <section className="card lst-gpu-card" aria-label={t("gpuTitle")}>
+      <div className="card-head">
+        <h3 className="card-title">
+          <span className="lst-gpu-icon">
+            <Cpu aria-hidden="true" size={15} />
+          </span>
+          {t("gpuTitle")}
+        </h3>
+        {installed ? (
           <span className="lst-badge lst-badge-installed">
             {t("gpuInstalled")}
           </span>
-        )}
-        {!installed && status.systemAvailable && (
+        ) : !isInstalling && status.systemAvailable ? (
           <span className="lst-badge lst-badge-installed">
             {t("gpuSystemAvailable")}
           </span>
+        ) : (
+          <span className="lst-badge lst-badge-warn">
+            {t("gpuNotInstalled")}
+          </span>
         )}
       </div>
+      <p className="lst-gpu-desc">{t("gpuDescription")}</p>
 
       {!installed && !isInstalling && !status.systemAvailable && (
         <div className="lst-gpu-meta">
@@ -642,7 +660,7 @@ function GpuRuntimePanel({
 
       {error !== null && <p className="lst-error-text">{error}</p>}
 
-      <div className="lst-model-card-actions">
+      <div className="lst-gpu-actions">
         {installed ? (
           <button
             type="button"
@@ -729,39 +747,56 @@ export function ModelsPanel({
     );
 
   return (
-    <section className="glass-panel" aria-label={t("modelsPageTitle")}>
-      <div className="card-head">
-        <div className="card-title">
-          <Database aria-hidden="true" size={17} />
-          <h2>{t("modelsPageTitle")}</h2>
+    <>
+      <section className="card lst-models-header" aria-label={t("modelsPageTitle")}>
+        <div className="card-head">
+          <div className="card-title">
+            <Database aria-hidden="true" size={18} />
+            <h2>{t("modelsPageTitle")}</h2>
+          </div>
+          <span className="lst-model-count pill" aria-live="polite">
+            {models.installed.length} {t("modelsInstalledCount")} ·{" "}
+            {models.available.length} {t("modelsAvailableCount")}
+          </span>
         </div>
-        <span className="lst-model-count" aria-live="polite">
-          {models.installed.length} {t("modelsInstalledCount")} ·{" "}
-          {models.available.length} {t("modelsAvailableCount")}
-        </span>
-      </div>
-      <p className="lst-page-description">{t("modelsPageDescription")}</p>
+        <p className="lst-page-description">{t("modelsPageDescription")}</p>
+        {models.error !== null && (
+          <p className="lst-error-text">{models.error}</p>
+        )}
+      </section>
       <DownloadServerRow models={models} />
       <OfflinePackRow models={models} />
       <GpuRuntimePanel gpuRuntime={gpuRuntime} t={t} />
-      {models.error !== null && (
-        <p className="lst-error-text">{models.error}</p>
-      )}
-      <section className="lst-model-section" aria-label={t("modelsInstalled")}>
-        <h3 className="section-heading">{t("modelsInstalled")}</h3>
+      <section className="card lst-section-card" aria-label={t("modelsInstalled")}>
+        <div className="card-head">
+          <h3 className="card-title">{t("modelsInstalled")}</h3>
+          <span className="lst-model-count pill">
+            {models.installed.length}
+          </span>
+        </div>
         {cards(models.installed)}
       </section>
-      <section className="lst-model-section" aria-label={t("modelsAvailable")}>
-        <h3 className="section-heading">{t("modelsAvailable")}</h3>
+      <section className="card lst-section-card" aria-label={t("modelsAvailable")}>
+        <div className="card-head">
+          <h3 className="card-title">{t("modelsAvailable")}</h3>
+          <span className="lst-model-count pill">
+            {models.available.length}
+          </span>
+        </div>
         {cards(models.available)}
       </section>
       {(models.knownInstalled.length > 0 ||
         models.knownAvailable.length > 0) && (
         <section
-          className="lst-model-section"
+          className="card lst-section-card"
           aria-label={t("modelsLocalExports")}
         >
-          <h3 className="section-heading">{t("modelsLocalExports")}</h3>
+          <div className="card-head">
+            <h3 className="card-title">{t("modelsLocalExports")}</h3>
+            <span className="lst-model-count pill">
+              {models.knownInstalled.length + models.knownAvailable.length}
+            </span>
+          </div>
           <p className="lst-page-description">
             {t("modelsLocalExportsDescription")}
             <code> scripts/export_ncspeech_onnx.py</code>. They are not
@@ -801,6 +836,6 @@ export function ModelsPanel({
           t={t}
         />
       )}
-    </section>
+    </>
   );
 }

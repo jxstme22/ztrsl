@@ -73,8 +73,8 @@ function Harness({ language }: { language: "en" | "zh" }) {
         t: (key: Parameters<typeof controller.t>[0]) =>
           key === "welcomeTitle"
             ? language === "zh"
-              ? "欢迎使用 xTRSNLTR"
-              : "Welcome to xTRSNLTR"
+              ? "欢迎使用 yTRSLT"
+              : "Welcome to yTRSLT"
             : controller.t(key),
       }}
     />
@@ -84,7 +84,7 @@ function Harness({ language }: { language: "en" | "zh" }) {
 describe("WelcomeModelsDialog", () => {
   it("renders the English welcome by default", () => {
     render(<Harness language="en" />);
-    expect(screen.getByText("Welcome to xTRSNLTR")).toBeInTheDocument();
+    expect(screen.getByText("Welcome to yTRSLT")).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", { name: "Interface language" }),
     ).toBeInTheDocument();
@@ -92,6 +92,6 @@ describe("WelcomeModelsDialog", () => {
 
   it("renders the Chinese welcome when Chinese is selected", () => {
     render(<Harness language="zh" />);
-    expect(screen.getByText("欢迎使用 xTRSNLTR")).toBeInTheDocument();
+    expect(screen.getByText("欢迎使用 yTRSLT")).toBeInTheDocument();
   });
 });

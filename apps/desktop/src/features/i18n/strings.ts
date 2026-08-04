@@ -36,7 +36,7 @@ const UI_STRINGS = {
   exportBundle: { en: "Export support bundle", zh: "导出支持包" },
 
   // Welcome
-  welcomeTitle: { en: "Welcome to xTRSNLTR", zh: "欢迎使用 xTRSNLTR" },
+  welcomeTitle: { en: "Welcome to yTRSLT", zh: "欢迎使用 yTRSLT" },
   welcomeSub: {
     en: "VALORANT voice chat, captioned in English — on this PC.",
     zh: "在本机为 VALORANT 语音聊天生成英文字幕。",
@@ -218,6 +218,7 @@ const UI_STRINGS = {
     zh: "让本地语音识别与翻译在 NVIDIA GPU 上运行，而不是 CPU。一次性、经校验的下载（约 1.3 GB）；安装包中不包含任何内容。",
   },
   gpuInstalled: { en: "Installed", zh: "已安装" },
+  gpuNotInstalled: { en: "Not installed", zh: "未安装" },
   gpuRemove: { en: "Remove CUDA runtime", zh: "移除 CUDA 运行时" },
   gpuDownloadSize: { en: "Download size", zh: "下载大小" },
   gpuDownloading: { en: "Downloading", zh: "下载中" },

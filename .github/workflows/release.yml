@@ -9,6 +9,15 @@ on:
         description: "Tag to attach the installer to (e.g. v0.2.0)"
         required: true
         default: "v0.2.0"
+      platforms:
+        description: "Platforms to build"
+        required: true
+        default: "windows"
+        type: choice
+        options:
+          - windows
+          - macos
+          - both
 
 permissions:
   contents: write
@@ -17,6 +26,7 @@ jobs:
   build-installer:
     name: Build Windows installer
     runs-on: windows-latest
+    if: ${{ github.event_name == 'push' || contains(github.event.inputs.platforms, 'windows') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +78,7 @@ jobs:
   build-macos:
     name: Build macOS app (Apple Silicon)
     runs-on: macos-latest
+    if: ${{ github.event_name == 'push' || contains(github.event.inputs.platforms, 'macos') }}
     steps:
       - uses: actions/checkout@v4
 

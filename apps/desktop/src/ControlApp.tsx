@@ -45,7 +45,7 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 type SectionId =
   "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
 
-const APP_VERSION = "0.5.6";
+const APP_VERSION = "0.5.7";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -91,13 +91,10 @@ export function ControlApp() {
   const language = useUiLanguage();
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
-  // Show the welcome card when no models are installed, or on the very first
-  // run (dismissible once). On later runs with models present, it stays
-  // hidden so it never blocks the app.
+  // Show the welcome card only on a fresh install — when no models are
+  // installed yet. Once the user has models, the welcome never reappears.
   const [showWelcome, setShowWelcome] = useState(
-    () =>
-      !models.hasInstalledModels ||
-      window.localStorage.getItem("lst.welcome-dismissed") !== "1",
+    () => !models.hasInstalledModels,
   );
 
   const minimize = () => {
@@ -108,6 +105,8 @@ export function ControlApp() {
 
   const close = () => {
     if (!desktop) return;
+    // The Rust side destroys the whole app (sidecar + overlay + window) when
+    // the control window receives a close request, so a plain close is enough.
     getCurrentWindow()
       .close()
       .catch((error: unknown) => {
@@ -118,7 +117,13 @@ export function ControlApp() {
   return (
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
-        <span className="titlebar-title">xTRSNLTR</span>
+        <span className="titlebar-brand">
+          <span className="titlebar-title">yTRSLT</span>
+          <span className="titlebar-badge">
+            <span className="titlebar-beta">BETA</span>
+            <span className="titlebar-version">v{APP_VERSION}</span>
+          </span>
+        </span>
         {desktop && (
           <div className="window-actions">
             <button type="button" aria-label="Minimize" onClick={minimize}>
@@ -202,7 +207,6 @@ export function ControlApp() {
           onInstall={(id) => void models.startInstall(id)}
           onRetry={() => void models.refresh()}
           onDismiss={() => {
-            window.localStorage.setItem("lst.welcome-dismissed", "1");
             setShowWelcome(false);
           }}
           language={language}

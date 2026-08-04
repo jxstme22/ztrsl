@@ -1,5 +1,44 @@
 # 23 — Release Notes
 
+## v0.5.7 — Models page matches Live, welcome only on fresh install, close really quits
+
+- **Models page redesigned to match the Live page** — the download-server and
+  offline-pack rows are now proper full-width cards with a `card-head` title and
+  a comfortable `field` layout (no more cramped rows with the select/input
+  hugging the right edge). The GPU acceleration card got the same treatment:
+  balanced title row with a status badge, description below, and the action
+  button on its own divider line. The Installed / Available / Local exports
+  sections each live inside a titled card with a live count, instead of
+  floating headings.
+- **Welcome card now only appears on a fresh install** — previously it could
+  show on every run until dismissed once, and never reappeared once models
+  were installed. Now it pops up only while no models are on disk; once you
+  have any model installed, the welcome never shows again.
+- **Closing the window now really quits the app** — the close button hid the
+  window but left the app (sidecar, overlay, audio threads) running in the
+  background. The main window now asks Tauri to exit the whole process on
+  close, so nothing keeps running after you close it.
+- **Windows-only releases** — the release workflow gains a `platforms` input
+  (windows / macos / both) so a hotfix can ship the Windows installer without
+  waiting on the macOS build.
+
+## v0.5.6 — Windows clippy fix
+
+- Collapsed a nested `if` in the WASAPI loopback capture path that the Windows
+  clippy build rejected, keeping the Windows CI green.
+
+## v0.5.5 — GPU detection fix
+
+- Removed the broken CUDA probe that constructed a `ctranslate2.Translator`
+  without a model — it always raised and forced CPU on machines that had a
+  working CUDA Toolkit. CUDA is now detected via `get_cuda_device_count()`,
+  with the runtime pack DLLs loaded in every sidecar before model load.
+
+## v0.5.4 — CUDA detection compiles on Windows
+
+- Fixed a Windows-only build error in the CUDA system detection code path
+  (simplified the runtime-pack DLL checks).
+
 ## v0.5.3 — fix live-loopback stall + CUDA detection + full Chinese UI
 
 **Fixed: "audio capture stalled: no frames for 3.0s" on loopback capture.** Root
