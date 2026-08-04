@@ -1,5 +1,17 @@
 # 23 — Release Notes
 
+## v0.5.9 — Show model folders, folder picker for offline packs
+
+- **"Show in folder" for installed models and CUDA runtime** — every installed
+  model card (including NCSpeech local exports) and the CUDA runtime card now
+  have a button that opens the exact folder in Explorer/Finder, so you can see
+  what's on disk or back it up without hunting through `%APPDATA%`. The button
+  only appears when the folder actually exists, and the command refuses paths
+  outside the model directory.
+- **Browse… button for the offline model pack field** — instead of typing a
+  path into the "Install offline model pack" box, pick the pack folder with
+  the native folder dialog.
+
 ## v0.5.8 — Light theme, CUDA detection fix, delete runtime packs, bottom gap
 
 - **Light theme (Settings → Appearance)** — a new Dark/Light picker on the

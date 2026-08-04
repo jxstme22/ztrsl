@@ -53,9 +53,5 @@ export function subscribeAppTheme(listener: () => void): () => void {
 
 /** React hook: re-renders the component whenever the theme changes. */
 export function useAppThemeValue(): AppTheme {
-  return useSyncExternalStore(
-    subscribeAppTheme,
-    getAppTheme,
-    getAppTheme,
-  );
+  return useSyncExternalStore(subscribeAppTheme, getAppTheme, getAppTheme);
 }

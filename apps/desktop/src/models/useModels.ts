@@ -9,6 +9,8 @@ import {
   installModel,
   listModels,
   onInstallProgress,
+  pickFolder,
+  revealPath,
   setDownloadEndpoint,
 } from "./bridge";
 import {
@@ -48,6 +50,10 @@ export type ModelUiState = {
   providerStatus: ProviderStatus;
   /** Import a verified offline model pack; resolves to imported ids. */
   importOfflinePack: (packDir: string) => Promise<string[]>;
+  /** Open a native folder picker; null when the user cancels. */
+  pickFolder: () => Promise<string | null>;
+  /** Open a model folder in the system file manager. */
+  revealPath: (path: string) => Promise<void>;
 };
 
 const SORT_ORDER: Record<string, number> = {
@@ -233,5 +239,7 @@ export function useModels(desktopOnly = true): ModelUiState {
     setDownloadEndpoint: updateDownloadEndpoint,
     providerStatus,
     importOfflinePack: importOffline,
+    pickFolder,
+    revealPath,
   };
 }

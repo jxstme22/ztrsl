@@ -29,6 +29,8 @@ export type CatalogEntry = z.infer<typeof catalogEntrySchema>;
 export const modelInfoSchema = catalogEntrySchema.extend({
   status: z.enum(["installed", "installing", "available"]),
   installedSizeBytes: z.number().nonnegative(),
+  /** Absolute on-disk folder of the installed model; empty when not installed. */
+  modelDir: z.string(),
 });
 
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
@@ -112,6 +114,8 @@ export const gpuRuntimeStatusSchema = z.object({
   downloadSizeBytes: z.number().nonnegative(),
   systemAvailable: z.boolean(),
   hasArtifacts: z.boolean(),
+  /** Absolute on-disk folder of the CUDA runtime; empty when nothing exists. */
+  path: z.string(),
   wheels: z.array(gpuRuntimeWheelSchema),
 });
 
@@ -124,6 +128,7 @@ export const EMPTY_GPU_RUNTIME_STATUS: GpuRuntimeStatus = {
   downloadSizeBytes: 0,
   systemAvailable: false,
   hasArtifacts: false,
+  path: "",
   wheels: [],
 };
 

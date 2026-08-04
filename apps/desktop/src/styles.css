@@ -989,6 +989,17 @@ input[type="range"]::-moz-range-thumb {
   justify-content: flex-end;
 }
 
+.lst-pack-dir-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.lst-pack-dir-row input {
+  flex: 1;
+  min-width: 0;
+}
+
 .lst-chip-active {
   color: var(--ok);
   border-color: rgba(74, 222, 128, 0.3);

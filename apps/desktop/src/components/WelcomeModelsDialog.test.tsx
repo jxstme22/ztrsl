@@ -29,6 +29,7 @@ function modelsState(): ModelUiState {
           },
           status: "available",
           installedSizeBytes: 0,
+          modelDir: "",
         },
       ],
       inUse: [],
@@ -55,6 +56,8 @@ function modelsState(): ModelUiState {
     setDownloadEndpoint: vi.fn(),
     providerStatus: { region: "global", providers: [] },
     importOfflinePack: vi.fn(),
+    pickFolder: vi.fn(),
+    revealPath: vi.fn(),
   };
 }
 

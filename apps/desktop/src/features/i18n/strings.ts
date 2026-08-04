@@ -356,6 +356,11 @@ const UI_STRINGS = {
     en: "Install offline model pack",
     zh: "安装离线模型包",
   },
+  modelsOfflinePackBrowse: {
+    en: "Browse…",
+    zh: "浏览…",
+  },
+  modelsBrowse: { en: "Show in folder", zh: "在文件夹中显示" },
   diagSourceActive: { en: "Active", zh: "活动" },
   diagSourceStopped: { en: "Stopped", zh: "已停止" },
   overlayUnavailable: { en: "Overlay unavailable", zh: "字幕层不可用" },

@@ -270,6 +270,8 @@ struct ModelInfo {
     /// "installed" | "installing" | "available".
     status: String,
     installed_size_bytes: u64,
+    /// Absolute path of the model directory on disk; empty when not installed.
+    model_dir: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -342,6 +344,7 @@ const KNOWN_MODELS: &[(&str, &str, &str, &str, &str)] = &[
 
 /// True when a model directory exists for `id` in either layout (catalog
 /// `model_root/<id>` or the local-export `model_root/artifacts/<id>`).
+#[cfg(test)]
 fn model_dir_exists(root: &std::path::Path, id: &str) -> bool {
     root.join(id).join("manifest.json").is_file()
         || root
@@ -349,6 +352,20 @@ fn model_dir_exists(root: &std::path::Path, id: &str) -> bool {
             .join(id)
             .join("manifest.json")
             .is_file()
+}
+
+/// Resolve the on-disk directory for a model in either layout, preferring
+/// the catalog layout; empty when nothing is installed.
+fn model_dir(root: &std::path::Path, id: &str) -> std::path::PathBuf {
+    let catalog_dir = root.join(id);
+    if catalog_dir.join("manifest.json").is_file() {
+        return catalog_dir;
+    }
+    let export_dir = root.join("artifacts").join(id);
+    if export_dir.join("manifest.json").is_file() {
+        return export_dir;
+    }
+    std::path::PathBuf::new()
 }
 
 #[tauri::command]
@@ -362,6 +379,11 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
     let mut models_info = Vec::new();
     for view in state.catalog.view() {
         let installed_size = installed_sizes.get(view.id.as_str()).copied().unwrap_or(0);
+        let installed_dir = installed
+            .iter()
+            .find(|model| model.id == view.id)
+            .map(|model| model.dir.display().to_string())
+            .unwrap_or_default();
         let status = if state.installs.contains_key(&view.id) {
             "installing".to_owned()
         } else if installed_size > 0 {
@@ -373,6 +395,7 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
             view,
             status,
             installed_size_bytes: installed_size,
+            model_dir: installed_dir,
         });
     }
     // v0.4 known models (NCSpeech local exports): surfaced from disk so the
@@ -380,7 +403,8 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
     let known = KNOWN_MODELS
         .iter()
         .map(|(id, name, kind, runtime, description)| {
-            let installed = model_dir_exists(state.store.root(), id);
+            let dir = model_dir(state.store.root(), id);
+            let installed = dir.is_dir();
             let size = installed_sizes.get(*id).copied().unwrap_or(0);
             ModelInfo {
                 view: model_manager::CatalogEntryView {
@@ -404,6 +428,7 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
                 },
                 status: if installed { "installed" } else { "available" }.to_owned(),
                 installed_size_bytes: size,
+                model_dir: dir.display().to_string(),
             }
         })
         .collect();
@@ -707,6 +732,8 @@ struct GpuRuntimeStatus {
     /// `true` when anything exists on disk under the pack dir (complete,
     /// partial, or leftover) — a "remove" action should be offered.
     has_artifacts: bool,
+    /// Absolute path of the pack directory on disk; empty when nothing exists.
+    path: String,
     /// Package names + per-wheel sizes shown in the UI.
     wheels: Vec<GpuRuntimeWheelStatus>,
 }
@@ -722,13 +749,19 @@ struct GpuRuntimeWheelStatus {
 fn gpu_runtime_status(models: tauri::State<'_, ModelRuntime>) -> Result<GpuRuntimeStatus, String> {
     let state = models.state.lock().map_err(lock_error)?;
     let installed = state.gpu_runtime.is_installed();
+    let has_artifacts = state.gpu_runtime.has_artifacts();
     Ok(GpuRuntimeStatus {
         installed,
         installing: state.gpu_runtime_install.is_some(),
         installed_size_bytes: state.gpu_runtime.installed_size_bytes(),
         download_size_bytes: model_manager::cuda_pack_download_bytes(),
         system_available: installed || model_manager::system_cuda_available(),
-        has_artifacts: state.gpu_runtime.has_artifacts(),
+        has_artifacts,
+        path: if has_artifacts {
+            state.gpu_runtime.dll_dir().display().to_string()
+        } else {
+            String::new()
+        },
         wheels: model_manager::CUDA_12_RUNTIME_PACK
             .iter()
             .map(|wheel| GpuRuntimeWheelStatus {
@@ -882,6 +915,51 @@ fn gpu_runtime_delete(models: tauri::State<'_, ModelRuntime>) -> Result<(), Stri
         .gpu_runtime
         .delete()
         .map_err(|error| error.to_string())
+}
+
+/// Open a folder in the system file manager ("Show in Explorer/Finder").
+/// Only paths under the resolved model root are accepted — the webview never
+/// gets to reveal arbitrary locations.
+#[tauri::command]
+fn reveal_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let root = resolve_models_dir(&app);
+    let requested = std::path::PathBuf::from(&path);
+    let canonical_root = root.canonicalize().unwrap_or(root);
+    let canonical = requested
+        .canonicalize()
+        .map_err(|_| "path not found".to_owned())?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("refusing to reveal a path outside the model directory".to_owned());
+    }
+    if !canonical.is_dir() {
+        return Err("not a directory".to_owned());
+    }
+    reveal_in_file_manager(&canonical)
+}
+
+/// Platform-specific "open this folder in the file manager" without blocking.
+fn reveal_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer.exe")
+            .arg(dir)
+            .spawn()
+            .map_err(|error| format!("failed to open Explorer: {error}"))?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg(dir)
+            .spawn()
+            .map_err(|error| format!("failed to open Finder: {error}"))?;
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = dir;
+        Err("opening folders is only supported on Windows and macOS".to_owned())
+    }
 }
 
 #[derive(Default)]
@@ -2440,6 +2518,7 @@ pub fn run() {
             }
             Ok(())
         })
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             app_status,
@@ -2473,7 +2552,8 @@ pub fn run() {
             gpu_runtime_status,
             gpu_runtime_install,
             gpu_runtime_cancel,
-            gpu_runtime_delete
+            gpu_runtime_delete,
+            reveal_path
         ])
         .run(tauri::generate_context!());
 

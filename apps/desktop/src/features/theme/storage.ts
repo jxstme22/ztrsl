@@ -1,8 +1,4 @@
-import {
-  appThemeSchema,
-  DEFAULT_APP_THEME,
-  type AppTheme,
-} from "./theme";
+import { appThemeSchema, DEFAULT_APP_THEME, type AppTheme } from "./theme";
 
 const THEME_KEY = "local-squad-translator.theme.v1";
 

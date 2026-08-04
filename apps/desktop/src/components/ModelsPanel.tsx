@@ -325,6 +325,7 @@ function ModelCard({
   localOnly = false,
   onInstallClick,
   onDeleteClick,
+  onRevealClick,
   t,
 }: {
   model: ModelInfo;
@@ -335,6 +336,7 @@ function ModelCard({
   localOnly?: boolean;
   onInstallClick: (model: ModelInfo) => void;
   onDeleteClick: (model: ModelInfo) => void;
+  onRevealClick: (model: ModelInfo) => void;
   t: ReturnType<typeof useT>;
 }) {
   const installing = progress !== null && !progress.done;
@@ -394,18 +396,33 @@ function ModelCard({
       {finishedError && <p className="lst-error-text">{progress.error}</p>}
       <div className="lst-model-card-actions">
         {installed ? (
-          <button
-            type="button"
-            className="button secondary"
-            disabled={inUse || installing}
-            title={inUse ? t("modelsInUseTitle") : undefined}
-            onClick={() => {
-              onDeleteClick(model);
-            }}
-          >
-            <Trash2 aria-hidden="true" size={14} />
-            {t("modelsDeleteAction")}
-          </button>
+          <>
+            {model.modelDir !== "" && (
+              <button
+                type="button"
+                className="button secondary"
+                disabled={inUse || installing}
+                onClick={() => {
+                  onRevealClick(model);
+                }}
+              >
+                <FolderOpen aria-hidden="true" size={14} />
+                {t("modelsBrowse")}
+              </button>
+            )}
+            <button
+              type="button"
+              className="button secondary"
+              disabled={inUse || installing}
+              title={inUse ? t("modelsInUseTitle") : undefined}
+              onClick={() => {
+                onDeleteClick(model);
+              }}
+            >
+              <Trash2 aria-hidden="true" size={14} />
+              {t("modelsDeleteAction")}
+            </button>
+          </>
         ) : installing ? (
           <button
             type="button"
@@ -516,6 +533,14 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
     }
   };
 
+  const browse = async () => {
+    const picked = await models.pickFolder();
+    if (picked !== null) {
+      setPackDir(picked);
+      inputRef.current?.focus();
+    }
+  };
+
   return (
     <div className="card lst-settings-card">
       <div className="card-head">
@@ -526,21 +551,32 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
           <label htmlFor="model-offline-pack">
             {t("modelsOfflinePackLabel")}
           </label>
-          <input
-            id="model-offline-pack"
-            ref={inputRef}
-            type="text"
-            value={packDir}
-            placeholder="/path/to/model-pack"
-            onChange={(event) => {
-              setPackDir(event.currentTarget.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void runImport();
-              }
-            }}
-          />
+          <div className="lst-pack-dir-row">
+            <input
+              id="model-offline-pack"
+              ref={inputRef}
+              type="text"
+              value={packDir}
+              placeholder="/path/to/model-pack"
+              onChange={(event) => {
+                setPackDir(event.currentTarget.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void runImport();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="button secondary"
+              disabled={busy}
+              onClick={() => void browse()}
+            >
+              <FolderOpen aria-hidden="true" size={14} />
+              {t("modelsOfflinePackBrowse")}
+            </button>
+          </div>
           <small className="field-note">{t("modelsOfflinePackNote")}</small>
         </div>
         {imported !== null && imported.length > 0 && (
@@ -662,14 +698,26 @@ function GpuRuntimePanel({
 
       <div className="lst-gpu-actions">
         {installed ? (
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => void remove()}
-          >
-            <Trash2 aria-hidden="true" size={14} />
-            {t("gpuRemove")}
-          </button>
+          <>
+            {status.path !== "" && (
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => void gpuRuntime.revealPath()}
+              >
+                <FolderOpen aria-hidden="true" size={14} />
+                {t("modelsBrowse")}
+              </button>
+            )}
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => void remove()}
+            >
+              <Trash2 aria-hidden="true" size={14} />
+              {t("gpuRemove")}
+            </button>
+          </>
         ) : isInstalling ? (
           <button
             type="button"
@@ -680,6 +728,16 @@ function GpuRuntimePanel({
           </button>
         ) : status.hasArtifacts ? (
           <>
+            {status.path !== "" && (
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => void gpuRuntime.revealPath()}
+              >
+                <FolderOpen aria-hidden="true" size={14} />
+                {t("modelsBrowse")}
+              </button>
+            )}
             <button
               type="button"
               className="button secondary"
@@ -761,6 +819,9 @@ export function ModelsPanel({
             onDeleteClick={(clicked) => {
               setAction({ kind: "delete", model: clicked });
             }}
+            onRevealClick={(clicked) => {
+              void models.revealPath(clicked.modelDir);
+            }}
             t={t}
           />
         ))}
@@ -769,7 +830,10 @@ export function ModelsPanel({
 
   return (
     <>
-      <section className="card lst-models-header" aria-label={t("modelsPageTitle")}>
+      <section
+        className="card lst-models-header"
+        aria-label={t("modelsPageTitle")}
+      >
         <div className="card-head">
           <div className="card-title">
             <Database aria-hidden="true" size={18} />
@@ -788,7 +852,10 @@ export function ModelsPanel({
       <DownloadServerRow models={models} />
       <OfflinePackRow models={models} />
       <GpuRuntimePanel gpuRuntime={gpuRuntime} t={t} />
-      <section className="card lst-section-card" aria-label={t("modelsInstalled")}>
+      <section
+        className="card lst-section-card"
+        aria-label={t("modelsInstalled")}
+      >
         <div className="card-head">
           <h3 className="card-title">{t("modelsInstalled")}</h3>
           <span className="lst-model-count pill">
@@ -797,7 +864,10 @@ export function ModelsPanel({
         </div>
         {cards(models.installed)}
       </section>
-      <section className="card lst-section-card" aria-label={t("modelsAvailable")}>
+      <section
+        className="card lst-section-card"
+        aria-label={t("modelsAvailable")}
+      >
         <div className="card-head">
           <h3 className="card-title">{t("modelsAvailable")}</h3>
           <span className="lst-model-count pill">
@@ -835,6 +905,9 @@ export function ModelsPanel({
                   localOnly
                   onInstallClick={() => undefined}
                   onDeleteClick={() => undefined}
+                  onRevealClick={(clicked) => {
+                    void models.revealPath(clicked.modelDir);
+                  }}
                   t={t}
                 />
               ),

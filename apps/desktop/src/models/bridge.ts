@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "@tauri-apps/api/core";
+import { open as pickFolderDialog } from "@tauri-apps/plugin-dialog";
 import { z } from "zod";
 
 import {
@@ -51,6 +52,29 @@ export async function importOfflinePack(packDir: string): Promise<string[]> {
   return z
     .array(z.string())
     .parse(await invoke("models_import_offline_pack", { packDir }));
+}
+
+/**
+ * Ask the user to pick a folder (used for the offline pack import).
+ * Returns the absolute path, or null when the user cancels.
+ */
+export async function pickFolder(): Promise<string | null> {
+  if (!isTauri()) {
+    return null;
+  }
+  const picked = await pickFolderDialog({ directory: true, multiple: false });
+  if (picked == null || Array.isArray(picked)) {
+    return null;
+  }
+  return picked;
+}
+
+/** Open a model/runtime folder in the system file manager. */
+export async function revealPath(path: string): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke("reveal_path", { path });
 }
 
 /** Persist a user-chosen download endpoint; empty string resets to auto. */

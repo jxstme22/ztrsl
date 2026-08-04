@@ -10,6 +10,7 @@ vi.mock("./bridge", () => ({
   cancelGpuRuntimeInstall: vi.fn(),
   deleteGpuRuntime: vi.fn(),
   onGpuRuntimeProgress: vi.fn(),
+  revealPath: vi.fn(),
 }));
 
 const mocked = vi.mocked(bridge);
@@ -21,6 +22,7 @@ const INSTALLED = {
   downloadSizeBytes: 100,
   systemAvailable: true,
   hasArtifacts: true,
+  path: "C:\\cuda\\12",
   wheels: [{ package: "cuBLAS", sizeBytes: 60 }],
 };
 
@@ -31,6 +33,7 @@ const EMPTY = {
   downloadSizeBytes: 0,
   systemAvailable: false,
   hasArtifacts: false,
+  path: "",
   wheels: [],
 };
 

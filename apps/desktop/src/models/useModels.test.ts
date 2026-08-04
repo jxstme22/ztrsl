@@ -12,6 +12,8 @@ vi.mock("./bridge", () => ({
   onInstallProgress: vi.fn(),
   getDownloadEndpoint: vi.fn(),
   setDownloadEndpoint: vi.fn(),
+  pickFolder: vi.fn(),
+  revealPath: vi.fn(),
 }));
 
 const mocked = vi.mocked(bridge);
@@ -40,6 +42,7 @@ const AVAILABLE = {
       capabilities: mockCapabilities,
       status: "available" as const,
       installedSizeBytes: 0,
+      modelDir: "",
     },
     {
       id: "nllb-200-distilled-600M-ct2-int8",
@@ -57,6 +60,7 @@ const AVAILABLE = {
       capabilities: mockCapabilities,
       status: "available" as const,
       installedSizeBytes: 0,
+      modelDir: "",
     },
   ],
   inUse: [],
@@ -165,6 +169,7 @@ describe("useModels", () => {
           capabilities: mockCapabilities,
           status: "installed",
           installedSizeBytes: 10,
+          modelDir: "",
         },
         {
           id: "nllb-200-distilled-600M-ct2-int8",
@@ -182,6 +187,7 @@ describe("useModels", () => {
           capabilities: mockCapabilities,
           status: "available",
           installedSizeBytes: 0,
+          modelDir: "",
         },
       ],
       inUse: [],

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { ModelsPanel, formatBytes } from "../components/ModelsPanel";
-import { modelsListSchema, modelProgressSchema } from "./model";
+import {
+  gpuRuntimeStatusSchema,
+  modelsListSchema,
+  modelProgressSchema,
+} from "./model";
 
 describe("models schemas", () => {
   it("parses the catalog list from the Rust command", () => {
@@ -28,12 +32,15 @@ describe("models schemas", () => {
           },
           status: "installed",
           installedSizeBytes: 1621665983,
+          modelDir:
+            "C:\\Users\\me\\AppData\\Roaming\\app.localsquadtranslator.desktop\\models\\whisper-large-v3-turbo",
         },
       ],
       inUse: ["whisper-large-v3-turbo"],
     });
     expect(result.models[0]?.kind).toBe("asr");
     expect(result.models[0]?.status).toBe("installed");
+    expect(result.models[0]?.modelDir).toMatch(/whisper-large-v3-turbo$/);
     expect(result.inUse).toContain("whisper-large-v3-turbo");
     expect(result.known).toEqual([]);
   });
@@ -63,12 +70,28 @@ describe("models schemas", () => {
           },
           status: "installed",
           installedSizeBytes: 0,
+          modelDir: "",
         },
       ],
     });
     expect(result.known).toHaveLength(1);
     expect(result.known[0]?.capabilities.languageCapability).toBe("forced");
     expect(result.known[0]?.status).toBe("installed");
+  });
+
+  it("parses the CUDA runtime status including its on-disk path", () => {
+    const result = gpuRuntimeStatusSchema.parse({
+      installed: true,
+      installing: false,
+      installedSizeBytes: 42,
+      downloadSizeBytes: 0,
+      systemAvailable: true,
+      hasArtifacts: true,
+      path: "C:\\Users\\me\\AppData\\Roaming\\app.localsquadtranslator.desktop\\cuda\\cu12",
+      wheels: [{ package: "cuBLAS", sizeBytes: 60 }],
+    });
+    expect(result.path).toMatch(/cu12$/);
+    expect(result.hasArtifacts).toBe(true);
   });
 
   it("rejects an unknown status", () => {
@@ -90,6 +113,7 @@ describe("models schemas", () => {
             fileCount: 1,
             status: "broken",
             installedSizeBytes: 0,
+            modelDir: "",
           },
         ],
         inUse: [],

@@ -6,6 +6,7 @@ import {
   getGpuRuntimeStatus,
   installGpuRuntime,
   onGpuRuntimeProgress,
+  revealPath,
 } from "./bridge";
 import {
   EMPTY_GPU_RUNTIME_STATUS,
@@ -23,6 +24,8 @@ export type GpuRuntimeUiState = {
   cancel: () => Promise<void>;
   remove: () => Promise<void>;
   isInstalling: boolean;
+  /** Open the CUDA runtime folder in the system file manager. */
+  revealPath: () => Promise<void>;
 };
 
 /**
@@ -95,6 +98,18 @@ export function useGpuRuntime(desktopOnly = true): GpuRuntimeUiState {
     }
   }, [refresh]);
 
+  const reveal = useCallback(async () => {
+    if (status.path === "") {
+      return;
+    }
+    setError(null);
+    try {
+      await revealPath(status.path);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [status.path]);
+
   return {
     status,
     progress,
@@ -104,5 +119,6 @@ export function useGpuRuntime(desktopOnly = true): GpuRuntimeUiState {
     cancel,
     remove,
     isInstalling: status.installing || (progress !== null && !progress.done),
+    revealPath: reveal,
   };
 }
