@@ -11,7 +11,9 @@ import {
   type Monitor,
 } from "@tauri-apps/api/window";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
+import { z } from "zod";
 
+import { historyEntrySchema, type HistoryEntry } from "../captions/history";
 import {
   HOTKEY_ACTIONS,
   overlaySettingsSchema,
@@ -30,6 +32,7 @@ import {
 const SNAPSHOT_EVENT = "overlay:snapshot";
 const RECOVERED_EVENT = "overlay:recovered";
 const SETTINGS_EVENT = "overlay:settings";
+const HISTORY_EVENT = "captions:history";
 
 function monitorId(monitor: Monitor): string {
   return (
@@ -105,6 +108,34 @@ export async function listenForRecoveredOverlay(
   }
 
   return listen(RECOVERED_EVENT, onRecovered);
+}
+
+/** Push the final-caption history to the overlay window. */
+export async function emitHistoryToOverlay(
+  entries: HistoryEntry[],
+): Promise<void> {
+  if (!isDesktopRuntime()) {
+    return;
+  }
+  await emitTo("overlay", HISTORY_EVENT, entries);
+}
+
+/** Receive live history updates in the overlay window. */
+export async function listenForHistory(
+  onHistory: (entries: HistoryEntry[]) => void,
+): Promise<UnlistenFn> {
+  if (!isDesktopRuntime()) {
+    return () => undefined;
+  }
+
+  return listen<unknown>(HISTORY_EVENT, ({ payload }) => {
+    const parsed = z
+      .array(historyEntrySchema)
+      .safeParse(payload);
+    if (parsed.success) {
+      onHistory(parsed.data);
+    }
+  });
 }
 
 export async function listenForOverlaySettings(

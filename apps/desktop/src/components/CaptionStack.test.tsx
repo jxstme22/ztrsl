@@ -29,6 +29,7 @@ function snapshot(
     translationEnabled: true,
     captions,
     settings: DEFAULT_OVERLAY_SETTINGS,
+    historyView: false,
     ...overrides,
   };
 }

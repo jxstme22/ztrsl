@@ -1,5 +1,41 @@
 # 23 — Release Notes
 
+## v0.6.1 — URL model installs for any model, captions history
+
+- **Install models from a URL (any model)** — Models → "Install model from
+  URL" accepts a zip/tar.bz2 archive or a single model file over http(s).
+  When the archive carries an offline-pack `manifest.json`, the manifest
+  decides the id/kind/runtime and every artifact is SHA-256 verified.
+  Otherwise you supply a model id (known ids like the NCSpeech family, or a
+  custom lowercase/dash id), kind (asr/translation) and runtime
+  (faster-whisper / ctranslate2 / sherpa-onnx / candle). NCSpeech ids install
+  into the sidecar's `artifacts/<id>` layout; custom ids land in the store
+  root and appear in a new "Custom (URL-imported)" section with delete and
+  reveal actions.
+- **Captions history** — the app now keeps the last **10 finalized captions**
+  (provisional/"listening" updates are never saved) in a bounded, persisted
+  buffer. Every entry is rich: **who's talking** (source display name),
+  **what they said** (final translation), **when** (wall-clock time), **which
+  audio input** produced it (mic / loopback / system audio), plus a
+  low-confidence marker. New **History** page in the app shows the transcript
+  with a Clear button; the titlebar's history button toggles the same
+  transcript on the always-on-top **overlay window** (a readable panel
+  instead of the transparent caption lane). Consecutive duplicate finals
+  (VAD overlap) are merged, and the same caption id upserts in place.
+- **Translation mode: stream vs per-utterance** — Live → "Translation mode":
+  *Stream while talking* (default) shows the live preview that improves as
+  the speaker continues; *Wait for utterance end (per chunk)* disables
+  provisional captions entirely and translates each finished utterance once,
+  so the overlay only ever shows completed chunks.
+- **Overlay content mode** — the overlay shows exactly **one** thing at a
+  time: the **latest-caption bar** or the **history panel** (last 10 finals).
+  Switch with the titlebar button, the new *Toggle caption/history view*
+  hotkey (Ctrl+Shift+H by default), or Settings → Overlay content. The
+  choice persists across restarts.
+- **API keys persist** — the Groq key, LingvaTranslate key, custom
+  translation endpoint and key are saved as you type; navigating between
+  pages no longer wipes them.
+
 ## v0.5.9 — Show model folders, folder picker for offline packs
 
 - **"Show in folder" for installed models and CUDA runtime** — every installed

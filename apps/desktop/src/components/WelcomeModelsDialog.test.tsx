@@ -34,6 +34,7 @@ function modelsState(): ModelUiState {
       ],
       inUse: [],
       known: [],
+      custom: [],
     },
     loading: false,
     progress: {},
@@ -48,6 +49,7 @@ function modelsState(): ModelUiState {
     available: [],
     knownInstalled: [],
     knownAvailable: [],
+    custom: [],
     downloadEndpoint: {
       endpoint: "https://huggingface.co",
       mirror: false,
@@ -56,6 +58,7 @@ function modelsState(): ModelUiState {
     setDownloadEndpoint: vi.fn(),
     providerStatus: { region: "global", providers: [] },
     importOfflinePack: vi.fn(),
+    installFromUrl: vi.fn(),
     pickFolder: vi.fn(),
     revealPath: vi.fn(),
   };

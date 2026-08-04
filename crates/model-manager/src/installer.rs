@@ -285,6 +285,148 @@ impl ModelInstaller {
         Ok(())
     }
 
+    /// Download a model from an arbitrary http(s) URL and install it into
+    /// the store. Three shapes are supported:
+    ///
+    /// - a **zip archive with an embedded `manifest.json`** (offline-pack
+    ///   layout): the manifest supplies the id/kind/runtime/license and every
+    ///   artifact is verified (size + SHA-256) against it;
+    /// - a **zip archive without a manifest**: `requested_id`/
+    ///   `requested_kind`/`requested_runtime` are used and every file becomes
+    ///   an artifact;
+    /// - a **single file** (e.g. `model.onnx`): installed under
+    ///   `requested_id` with the caller-supplied kind/runtime.
+    ///
+    /// Artifact roles are inferred from well-known filenames so the runtime
+    /// providers (sherpa-onnx Nemo CTC) can find what they need:
+    /// `model.onnx` → "model", `tokens.txt` → "tokens".
+    ///
+    /// `requested_id` may be empty only when the archive carries a manifest
+    /// (the manifest's id wins). Known NCSpeech ids are installed under the
+    /// local-export layout (`artifacts/<id>`, which the inference sidecar
+    /// resolves); anything else lands in `root/<id>` so the store scan finds
+    /// it.
+    pub async fn install_from_url(
+        &self,
+        url: &str,
+        requested_id: &str,
+        requested_kind: &str,
+        requested_runtime: &str,
+    ) -> Result<String, Error> {
+        let parsed = url::Url::parse(url).map_err(|error| Error::Layout {
+            detail: format!("invalid model URL: {error}"),
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(Error::Layout {
+                detail: "model URL must be http(s)".to_owned(),
+            });
+        }
+        let root = self.store.root();
+        std::fs::create_dir_all(root)?;
+        let staging = root.join(format!(".url-staging-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&staging);
+        std::fs::create_dir_all(&staging)?;
+
+        let result = async {
+            let download = staging.join("download.bin");
+            let cancel = CancelHandle::default();
+            self.fetcher
+                .fetch(url, &download, &cancel, Arc::new(|_| {}))
+                .await?;
+            let model_dir = staging.join("model");
+            std::fs::create_dir_all(&model_dir)?;
+            if is_zip_archive(&download) {
+                extract_zip(&download, &model_dir)?;
+            } else if is_tarbz2_archive(&download) {
+                extract_tarbz2(&download, &model_dir, 0, &[], &cancel)?;
+            } else {
+                let file_name = parsed
+                    .path_segments()
+                    .and_then(|mut segments| segments.next_back())
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("model.onnx");
+                std::fs::rename(
+                    &download,
+                    model_dir.join(sanitize_single_file_name(file_name)),
+                )?;
+            }
+            // Optional nested folder from zip layouts like
+            // "ncspeech-tl-fastconformer-hybrid-large/model.onnx": flatten a
+            // single top-level directory into the model root.
+            flatten_single_subdir(&model_dir)?;
+
+            let (id, kind, runtime, license_spdx) = match read_url_manifest(&model_dir)? {
+                Some(manifest) => {
+                    if !requested_id.is_empty() && requested_id != manifest.id {
+                        return Err(Error::Layout {
+                            detail: format!(
+                                "the URL provides model id '{}' (the requested id '{}' does \
+                                 not match); leave the model id empty to accept it",
+                                manifest.id, requested_id
+                            ),
+                        });
+                    }
+                    (
+                        manifest.id.clone(),
+                        manifest.kind.clone(),
+                        manifest.runtime.clone(),
+                        manifest.license.spdx.clone(),
+                    )
+                }
+                None => {
+                    if requested_id.is_empty() {
+                        return Err(Error::Layout {
+                            detail: "a model id is required when the URL has no manifest"
+                                .to_owned(),
+                        });
+                    }
+                    (
+                        requested_id.to_owned(),
+                        requested_kind.to_owned(),
+                        requested_runtime.to_owned(),
+                        "CC-BY-4.0".to_owned(),
+                    )
+                }
+            };
+
+            if self.store.is_installed(&id) {
+                return Err(Error::AlreadyInstalled { id: id.clone() });
+            }
+
+            if read_url_manifest(&model_dir)?.is_none() {
+                // NCSpeech CTC exports need both halves of the recognizer.
+                if (kind == "asr" && runtime == "sherpa-onnx")
+                    && (!model_dir.join("model.onnx").is_file()
+                        || !model_dir.join("tokens.txt").is_file())
+                {
+                    return Err(Error::Layout {
+                        detail: "downloaded model is missing model.onnx and/or tokens.txt (the \
+                             URL must provide both for sherpa-onnx CTC models)"
+                            .to_owned(),
+                    });
+                }
+            }
+            write_url_manifest(&model_dir, &id, &kind, &runtime, &license_spdx, url)?;
+            let destination = if is_known_ncspeech_id(&id) {
+                // Local-export layout: the inference sidecar resolves NCSpeech
+                // from LST_MODEL_DIR/artifacts/<id>.
+                root.join("artifacts").join(&id)
+            } else {
+                root.join(&id)
+            };
+            if destination.exists() {
+                return Err(Error::AlreadyInstalled { id: id.clone() });
+            }
+            std::fs::create_dir_all(destination.parent().expect("destination has a parent"))?;
+            std::fs::rename(&model_dir, &destination)?;
+            Ok(id)
+        }
+        .await;
+
+        let _ = std::fs::remove_dir_all(&staging);
+        result
+    }
+
     /// Move the staged model directory into place and write its manifest.
     fn commit(&self, entry: &CatalogEntry, staging: &Path) -> Result<(), Error> {
         let staged_model = staging.join(&entry.id);
@@ -330,8 +472,218 @@ fn sanitize_archive_path(raw_path: &str, strip_components: u32) -> Option<String
     Some(relative)
 }
 
-/// Extract a `.tar.bz2` archive, stripping leading components and keeping only
-/// the requested relative paths (or everything when `extract_only` is empty).
+/// True when the file starts with the zip local-file-header magic bytes.
+fn is_zip_archive(path: &Path) -> bool {
+    use std::io::Read;
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    let mut magic = [0_u8; 4];
+    file.read_exact(&mut magic).is_ok() && magic == [0x50, 0x4b, 0x03, 0x04]
+}
+
+/// True when the file starts with the bzip2 magic bytes ("BZh").
+fn is_tarbz2_archive(path: &Path) -> bool {
+    use std::io::Read;
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    let mut magic = [0_u8; 3];
+    file.read_exact(&mut magic).is_ok() && magic == *b"BZh"
+}
+
+/// The known NCSpeech local-export ids, which the inference sidecar resolves
+/// from `LST_MODEL_DIR/artifacts/<id>`.
+pub fn is_known_ncspeech_id(id: &str) -> bool {
+    matches!(
+        id,
+        "ncspeech-tl-fastconformer-hybrid-large"
+            | "ncspeech-zh-citrinet-1024-gamma"
+            | "ncspeech-zh-parakeet-ctc-0.6b"
+    )
+}
+
+/// Read an embedded offline-pack manifest from a staged model directory, when
+/// present. Artifacts are validated (schema, non-empty, safe paths) and each
+/// declared file is verified against its size and SHA-256.
+fn read_url_manifest(
+    model_dir: &Path,
+) -> Result<Option<crate::offline_pack::OfflinePackManifest>, Error> {
+    let manifest_path = model_dir.join("manifest.json");
+    if !manifest_path.is_file() {
+        return Ok(None);
+    }
+    let manifest_bytes = std::fs::read(&manifest_path).map_err(Error::Io)?;
+    let manifest: crate::offline_pack::OfflinePackManifest =
+        serde_json::from_slice(&manifest_bytes).map_err(Error::Serialize)?;
+    if manifest.schema_version != 1 {
+        return Err(Error::Layout {
+            detail: format!(
+                "unsupported model manifest schema {}",
+                manifest.schema_version
+            ),
+        });
+    }
+    if manifest.artifacts.is_empty() {
+        return Err(Error::Layout {
+            detail: format!("model manifest {} declares no artifacts", manifest.id),
+        });
+    }
+    for artifact in &manifest.artifacts {
+        let Some(_) = sanitize_archive_path(&artifact.path, 0) else {
+            return Err(Error::Layout {
+                detail: format!(
+                    "model manifest {} declares an unsafe artifact path '{}'",
+                    manifest.id, artifact.path
+                ),
+            });
+        };
+        let file = model_dir.join(&artifact.path);
+        if !file.is_file() {
+            return Err(Error::Layout {
+                detail: format!(
+                    "model manifest {} is missing artifact {}",
+                    manifest.id, artifact.path
+                ),
+            });
+        }
+        if std::fs::metadata(&file)?.len() != artifact.size_bytes {
+            return Err(Error::Size {
+                path: file.display().to_string(),
+                expected: artifact.size_bytes,
+                actual: std::fs::metadata(&file)?.len(),
+            });
+        }
+        crate::downloader::verify_file_sha256(&file, &artifact.sha256)?;
+    }
+    Ok(Some(manifest))
+}
+
+/// Extract a zip archive into `destination_root`, rejecting path traversal
+/// at every entry and skipping unsafe entries. Directory entries are created;
+/// file entries are written with a bounded name length.
+fn extract_zip(archive_path: &Path, destination_root: &Path) -> Result<(), Error> {
+    let file = std::fs::File::open(archive_path).map_err(Error::Io)?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|error| Error::Archive(error.to_string()))?;
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| Error::Archive(error.to_string()))?;
+        let Some(relative) = sanitize_archive_path(entry.name(), 0) else {
+            continue;
+        };
+        if relative.len() > 512 {
+            return Err(Error::Layout {
+                detail: format!("archive entry path too long: {relative}"),
+            });
+        }
+        let destination = destination_root.join(&relative);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&destination)?;
+            continue;
+        }
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut output = std::fs::File::create(&destination)?;
+        std::io::copy(&mut entry, &mut output)?;
+    }
+    Ok(())
+}
+
+/// Keep only a safe basename for a single-file URL download.
+fn sanitize_single_file_name(name: &str) -> String {
+    let basename = name.split(['/', '\\']).next_back().unwrap_or("model.onnx");
+    if basename
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+    {
+        basename.to_owned()
+    } else {
+        "model.onnx".to_owned()
+    }
+}
+
+/// Flatten a single top-level directory produced by zip layouts like
+/// `ncspeech-tl-fastconformer-hybrid-large/model.onnx` into the model root.
+fn flatten_single_subdir(model_dir: &Path) -> Result<(), Error> {
+    let entries = std::fs::read_dir(model_dir)?;
+    let mut subdirs = Vec::new();
+    let mut files = 0_usize;
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            subdirs.push(entry.path());
+        } else {
+            files += 1;
+        }
+    }
+    if files == 0 && subdirs.len() == 1 {
+        let nested = &subdirs[0];
+        for entry in std::fs::read_dir(nested)? {
+            let entry = entry?;
+            let target = model_dir.join(entry.file_name());
+            let _ = std::fs::remove_file(&target);
+            std::fs::rename(entry.path(), target)?;
+        }
+        std::fs::remove_dir(nested)?;
+    }
+    Ok(())
+}
+
+/// Write the synthesized manifest for a URL-installed model. Artifact roles
+/// are inferred from well-known filenames so the sherpa-onnx Nemo CTC
+/// provider can resolve `model` and `tokens`.
+fn write_url_manifest(
+    model_dir: &Path,
+    id: &str,
+    kind: &str,
+    runtime: &str,
+    license_spdx: &str,
+    source_url: &str,
+) -> Result<(), Error> {
+    let artifacts = std::fs::read_dir(model_dir)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .map(|entry| {
+            let path = entry.path();
+            let file_name = entry.file_name().to_string_lossy().into_owned();
+            let size_bytes = std::fs::metadata(&path).map_err(Error::Io)?.len();
+            let sha256 = crate::downloader::sha256_of(&path)?;
+            let role = match file_name.as_str() {
+                "model.onnx" => Some("model"),
+                "tokens.txt" => Some("tokens"),
+                _ => None,
+            };
+            let mut artifact = serde_json::Map::new();
+            artifact.insert("path".to_owned(), serde_json::json!(file_name));
+            artifact.insert("size_bytes".to_owned(), serde_json::json!(size_bytes));
+            artifact.insert("sha256".to_owned(), serde_json::json!(sha256));
+            if let Some(role) = role {
+                artifact.insert("role".to_owned(), serde_json::json!(role));
+            }
+            Ok(serde_json::Value::Object(artifact))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    let manifest = serde_json::json!({
+        "schema_version": 1,
+        "id": id,
+        "kind": kind,
+        "runtime": runtime,
+        "source": format!("url:{source_url}"),
+        "revision": "url-import",
+        "license": { "spdx": license_spdx },
+        "artifacts": artifacts,
+    });
+    let serialized = serde_json::to_vec_pretty(&manifest).map_err(Error::Serialize)?;
+    std::fs::write(model_dir.join("manifest.json"), serialized).map_err(Error::Io)?;
+    Ok(())
+}
+
+/// Extract a `.tar.bz2` archive, stripping leading components and keeping only/// the requested relative paths (or everything when `extract_only` is empty).
 /// Path traversal is rejected at every entry.
 fn extract_tarbz2(
     archive_path: &Path,
@@ -708,6 +1060,204 @@ mod tests {
             payload
         );
         assert!(!destination.join("tokens.txt").exists());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn zip_pack(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (name, contents) in entries {
+            writer
+                .start_file(*name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(contents).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[tokio::test]
+    async fn install_from_url_accepts_zip_and_writes_roles() {
+        let root = std::env::temp_dir().join(format!("lst-url-zip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let zip = zip_pack(&[
+            (
+                "ncspeech-tl-fastconformer-hybrid-large/model.onnx",
+                b"onnx-bytes",
+            ),
+            (
+                "ncspeech-tl-fastconformer-hybrid-large/tokens.txt",
+                b"tokens-bytes",
+            ),
+        ]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/pack.zip", zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        installer
+            .install_from_url(
+                "https://example.test/pack.zip",
+                "ncspeech-tl-fastconformer-hybrid-large",
+                "asr",
+                "sherpa-onnx",
+            )
+            .await
+            .unwrap();
+        let dir = root
+            .join("artifacts")
+            .join("ncspeech-tl-fastconformer-hybrid-large");
+        assert_eq!(
+            std::fs::read(dir.join("model.onnx")).unwrap(),
+            b"onnx-bytes"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("tokens.txt")).unwrap(),
+            b"tokens-bytes"
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["id"], "ncspeech-tl-fastconformer-hybrid-large");
+        let roles: Vec<&str> = manifest["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|artifact| artifact["role"].as_str().unwrap_or_default())
+            .collect();
+        assert!(roles.contains(&"model"));
+        assert!(roles.contains(&"tokens"));
+        // The nested folder from the zip was flattened away.
+        assert!(!dir.join("ncspeech-tl-fastconformer-hybrid-large").exists());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_from_url_rejects_missing_required_files() {
+        let root = std::env::temp_dir().join(format!("lst-url-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let zip = zip_pack(&[("model.onnx", b"onnx-bytes")]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/pack.zip", zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        let error = installer
+            .install_from_url(
+                "https://example.test/pack.zip",
+                "ncspeech-tl-fastconformer-hybrid-large",
+                "asr",
+                "sherpa-onnx",
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("tokens.txt"));
+        assert!(!root.join("artifacts").exists());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_from_url_accepts_single_onnx_file() {
+        let root = std::env::temp_dir().join(format!("lst-url-single-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let fetcher: Arc<dyn Fetcher> = Arc::new(FakeFetcher::with(
+            "https://example.test/model.bin",
+            b"fake-data".to_vec(),
+        ));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        let installed_id = installer
+            .install_from_url(
+                "https://example.test/model.bin",
+                "custom-whisper-model",
+                "asr",
+                "faster-whisper",
+            )
+            .await
+            .unwrap();
+        assert_eq!(installed_id, "custom-whisper-model");
+        // Custom ids land in the catalog layout (`root/<id>`) so the store
+        // scan finds them.
+        let dir = root.join("custom-whisper-model");
+        assert_eq!(std::fs::read(dir.join("model.bin")).unwrap(), b"fake-data");
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["id"], "custom-whisper-model");
+        assert_eq!(manifest["runtime"], "faster-whisper");
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_from_url_uses_embedded_manifest() {
+        let root = std::env::temp_dir().join(format!("lst-url-manifest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "id": "my-whisper-pack",
+            "kind": "asr",
+            "runtime": "faster-whisper",
+            "source": "https://example.test/pack",
+            "revision": "v1",
+            "license": { "spdx": "MIT" },
+            "artifacts": [
+                { "path": "model.bin", "size_bytes": 9, "sha256": sha256(b"fake-data") }
+            ]
+        });
+        let zip = zip_pack(&[
+            (
+                "my-whisper-pack/manifest.json",
+                serde_json::to_vec(&manifest).unwrap().as_slice(),
+            ),
+            ("my-whisper-pack/model.bin", b"fake-data"),
+        ]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/pack.zip", zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        let installed_id = installer
+            .install_from_url("https://example.test/pack.zip", "", "", "")
+            .await
+            .unwrap();
+        assert_eq!(installed_id, "my-whisper-pack");
+        let dir = root.join("my-whisper-pack");
+        assert_eq!(std::fs::read(dir.join("model.bin")).unwrap(), b"fake-data");
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_from_url_rejects_id_mismatch_with_manifest() {
+        let root = std::env::temp_dir().join(format!("lst-url-mismatch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "id": "my-whisper-pack",
+            "kind": "asr",
+            "runtime": "faster-whisper",
+            "source": "https://example.test/pack",
+            "revision": "v1",
+            "license": { "spdx": "MIT" },
+            "artifacts": [
+                { "path": "model.bin", "size_bytes": 9, "sha256": sha256(b"fake-data") }
+            ]
+        });
+        let zip = zip_pack(&[
+            (
+                "my-whisper-pack/manifest.json",
+                serde_json::to_vec(&manifest).unwrap().as_slice(),
+            ),
+            ("my-whisper-pack/model.bin", b"fake-data"),
+        ]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/pack.zip", zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        let error = installer
+            .install_from_url(
+                "https://example.test/pack.zip",
+                "some-other-id",
+                "asr",
+                "faster-whisper",
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("my-whisper-pack"));
 
         std::fs::remove_dir_all(root).unwrap();
     }

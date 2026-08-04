@@ -1,5 +1,5 @@
 import { LoaderCircle, Play, Square } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
 import { useLiveTranslation } from "../live/useLiveTranslation";
@@ -38,6 +38,15 @@ const LT_ENDPOINT_KEY = "lst.live.lt-endpoint";
 const LT_API_KEY_KEY = "lst.live.lt-api-key";
 const CUSTOM_TX_ENDPOINT_KEY = "lst.live.custom-tx-endpoint";
 const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
+const CAPTION_MODE_KEY = "lst.live.caption-mode";
+
+/** How the pipeline produces captions: streaming preview vs per-utterance. */
+export type CaptionMode = "streaming" | "final-only";
+
+function loadCaptionMode(): CaptionMode {
+  const stored = window.localStorage.getItem(CAPTION_MODE_KEY);
+  return stored === "final-only" ? "final-only" : "streaming";
+}
 
 function loadStored(key: string): string | null {
   return window.localStorage.getItem(key);
@@ -125,9 +134,11 @@ async function pushProviderEnv(
     ltApiKey: string;
     customTxEndpoint: string;
     customTxApiKey: string;
+    captionMode: CaptionMode;
   },
 ): Promise<void> {
   const pairs: [string, string][] = [];
+  pairs.push(["LST_CAPTION_MODE", config.captionMode]);
   if (asrProvider === "groq-whisper") {
     pairs.push(["LST_GROQ_API_KEY", config.groqApiKey]);
   }
@@ -160,6 +171,7 @@ export function LiveTranslationPanel({
   const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
   const [vadSensitivity, setVadSensitivity] =
     useState<number>(loadVadSensitivity);
+  const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
@@ -177,6 +189,24 @@ export function LiveTranslationPanel({
   const [customTxApiKey, setCustomTxApiKey] = useState<string>(
     () => window.localStorage.getItem(CUSTOM_TX_API_KEY_KEY) ?? "",
   );
+  // Persist API keys and custom endpoints on change: the inputs below only
+  // set React state, and navigating away unmounts the panel — without these
+  // effects everything typed would be lost on the next page switch.
+  useEffect(() => {
+    setEnvVar(GROQ_API_KEY_KEY, groqApiKey);
+  }, [groqApiKey]);
+  useEffect(() => {
+    setEnvVar(LT_API_KEY_KEY, ltApiKey);
+  }, [ltApiKey]);
+  useEffect(() => {
+    setEnvVar(LT_ENDPOINT_KEY, ltEndpoint);
+  }, [ltEndpoint]);
+  useEffect(() => {
+    setEnvVar(CUSTOM_TX_ENDPOINT_KEY, customTxEndpoint);
+  }, [customTxEndpoint]);
+  useEffect(() => {
+    setEnvVar(CUSTOM_TX_API_KEY_KEY, customTxApiKey);
+  }, [customTxApiKey]);
   const t = useT();
   const isSimulator = audio.catalog?.platform === "development";
   const busy = live.state === "starting" || live.state === "stopping";
@@ -332,6 +362,11 @@ export function LiveTranslationPanel({
     window.localStorage.setItem(VAD_SENSITIVITY_KEY, String(clamped));
   };
 
+  const changeCaptionMode = (value: CaptionMode) => {
+    setCaptionMode(value);
+    window.localStorage.setItem(CAPTION_MODE_KEY, value);
+  };
+
   const changeTranslationProvider = (value: TranslationProvider) => {
     setTranslationProvider(value);
     window.localStorage.setItem(TRANSLATION_PROVIDER_KEY, value);
@@ -399,6 +434,7 @@ export function LiveTranslationPanel({
                     ltApiKey,
                     customTxEndpoint,
                     customTxApiKey,
+                    captionMode,
                   });
                   await live.start(
                     inputEndpointId,
@@ -627,6 +663,31 @@ export function LiveTranslationPanel({
               );
             }}
           />
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-caption-mode">{t("liveCaptionMode")}</label>
+          <Select
+            id="live-caption-mode"
+            label={t("liveCaptionMode")}
+            value={captionMode}
+            options={[
+              {
+                value: "streaming",
+                label: t("liveCaptionModeStreaming"),
+              },
+              {
+                value: "final-only",
+                label: t("liveCaptionModeFinal"),
+              },
+            ]}
+            onChange={(value) => {
+              changeCaptionMode(value as CaptionMode);
+            }}
+          />
+          <small className="field-note">
+            {t("liveCaptionModeNote")}
+          </small>
         </div>
       </div>
 

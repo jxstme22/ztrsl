@@ -143,8 +143,8 @@ impl Fetcher for ReqwestFetcher {
     }
 }
 
-/// Verify a local file matches an expected SHA-256 without network access.
-pub fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), Error> {
+/// Compute the SHA-256 of a local file.
+pub fn sha256_of(path: &Path) -> Result<String, Error> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).map_err(Error::Io)?;
     let mut hasher = Sha256::new();
@@ -156,7 +156,12 @@ pub fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), Error> {
         }
         hasher.update(&buffer[..read]);
     }
-    let actual = format!("{:x}", hasher.finalize());
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Verify a local file matches an expected SHA-256 without network access.
+pub fn verify_file_sha256(path: &Path, expected: &str) -> Result<(), Error> {
+    let actual = sha256_of(path)?;
     if actual.eq_ignore_ascii_case(expected) {
         Ok(())
     } else {

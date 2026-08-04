@@ -351,6 +351,11 @@ _configure_file_logging()
 PROVISIONAL_MIN_SPEECH_NS = 800_000_000
 PROVISIONAL_CADENCE_NS = 600_000_000
 
+# "final-only" mode (LST_CAPTION_MODE=final-only): wait for the speaker to
+# finish and translate the whole utterance chunk — provisional captions are
+# never emitted. Default "streaming" keeps the live preview cadence.
+FINAL_ONLY_MODE = os.environ.get("LST_CAPTION_MODE", "streaming") == "final-only"
+
 
 @lru_cache(maxsize=64)
 def _model_artifact_dir(model_id: str) -> Path:
@@ -862,7 +867,7 @@ class LivePipelineWorker:
                 self._results.put(error)
                 continue
             now_ns = time.monotonic_ns()
-            if snapshot is not None:
+            if snapshot is not None and not FINAL_ONLY_MODE:
                 speech_elapsed_ns = snapshot.ended_ns - snapshot.started_ns
                 due_ns = next_provisional_at_ns.get(source_key)
                 due = due_ns is None or now_ns >= due_ns

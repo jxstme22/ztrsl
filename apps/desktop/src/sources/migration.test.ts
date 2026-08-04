@@ -20,6 +20,7 @@ const BASE_OVERLAY: OverlaySettings = {
   primarySourceId: null,
   hiddenSourceIds: [],
   simultaneousPolicy: "show-both",
+  overlayContent: "captions",
   hotkeys: {
     toggleOverlay: "CommandOrControl+Shift+T",
     toggleTranslation: "CommandOrControl+Shift+Y",
@@ -27,6 +28,7 @@ const BASE_OVERLAY: OverlaySettings = {
     clearCaptions: "CommandOrControl+Shift+Backspace",
     increaseText: "CommandOrControl+Shift+=",
     decreaseText: "CommandOrControl+Shift+-",
+    toggleHistory: "CommandOrControl+Shift+H",
   },
 };
 

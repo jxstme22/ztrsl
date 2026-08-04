@@ -51,9 +51,19 @@ export function useOverlayController() {
       translationEnabled,
       captions: [...captions],
       settings,
+      historyView: settings.overlayContent === "history",
     }),
     [captions, mode, settings, translationEnabled, visible],
   );
+
+  /** Toggle the overlay between the caption bar and the history panel. */
+  const toggleHistoryView = useCallback(() => {
+    setSettings((current) => ({
+      ...current,
+      overlayContent: current.overlayContent === "history" ? "captions" : "history",
+    }));
+    setVisible(true);
+  }, []);
 
   useEffect(() => {
     saveOverlaySettings(settings);
@@ -147,6 +157,14 @@ export function useOverlayController() {
             fontScale: current.fontScale - 0.1,
           }),
         );
+        break;
+      case "toggleHistory":
+        setSettings((current) => ({
+          ...current,
+          overlayContent:
+            current.overlayContent === "history" ? "captions" : "history",
+        }));
+        setVisible(true);
         break;
     }
   }, []);
@@ -290,6 +308,7 @@ export function useOverlayController() {
     showOverlay,
     hideOverlay,
     toggleEditMode,
+    toggleHistoryView,
     clearCaptions,
     ingestCaption,
     sendFakeCaption,

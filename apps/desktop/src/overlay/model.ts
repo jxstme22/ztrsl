@@ -67,6 +67,7 @@ export const hotkeyActionSchema = z.enum([
   "clearCaptions",
   "increaseText",
   "decreaseText",
+  "toggleHistory",
 ]);
 
 export type HotkeyAction = z.infer<typeof hotkeyActionSchema>;
@@ -78,9 +79,20 @@ export const hotkeySettingsSchema = z.object({
   clearCaptions: z.string().min(3).max(80),
   increaseText: z.string().min(3).max(80),
   decreaseText: z.string().min(3).max(80),
+  // Defaulted so pre-v0.6.1 persisted settings (without this key) still
+  // parse during migration.
+  toggleHistory: z
+    .string()
+    .min(3)
+    .max(80)
+    .default("CommandOrControl+Shift+H"),
 });
 
 export type HotkeySettings = z.infer<typeof hotkeySettingsSchema>;
+
+/** What the overlay window shows: the live caption bar or the history. */
+export const overlayContentSchema = z.enum(["captions", "history"]);
+export type OverlayContent = z.infer<typeof overlayContentSchema>;
 
 export const overlaySettingsSchema = z.object({
   schemaVersion: z.literal(2),
@@ -101,6 +113,8 @@ export const overlaySettingsSchema = z.object({
   /** Source ids (immutable) whose captions are hidden in the overlay. */
   hiddenSourceIds: z.array(z.string().regex(/^[0-9a-f]{32}$/)),
   simultaneousPolicy: simultaneousPolicySchema,
+  /** Overlay window content: live caption bar or the history panel. */
+  overlayContent: overlayContentSchema.default("captions"),
   hotkeys: hotkeySettingsSchema,
 });
 
@@ -112,6 +126,8 @@ export const overlaySnapshotSchema = z.object({
   translationEnabled: z.boolean(),
   captions: z.array(captionSchema).max(2),
   settings: overlaySettingsSchema,
+  /** When true the overlay window renders the captions-history list. */
+  historyView: z.boolean().default(false),
 });
 
 export type OverlaySnapshot = z.infer<typeof overlaySnapshotSchema>;
@@ -123,6 +139,7 @@ export const DEFAULT_HOTKEYS: HotkeySettings = {
   clearCaptions: "CommandOrControl+Shift+Backspace",
   increaseText: "CommandOrControl+Shift+=",
   decreaseText: "CommandOrControl+Shift+-",
+  toggleHistory: "CommandOrControl+Shift+H",
 };
 
 export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
@@ -138,6 +155,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   primarySourceId: null,
   hiddenSourceIds: [],
   simultaneousPolicy: "show-both",
+  overlayContent: "captions",
   hotkeys: DEFAULT_HOTKEYS,
 };
 
@@ -147,6 +165,7 @@ export const DEFAULT_OVERLAY_SNAPSHOT: OverlaySnapshot = {
   translationEnabled: true,
   captions: [],
   settings: DEFAULT_OVERLAY_SETTINGS,
+  historyView: false,
 };
 
 export const HOTKEY_ACTIONS: readonly {
@@ -157,7 +176,8 @@ export const HOTKEY_ACTIONS: readonly {
     | "hotkeyToggleEditMode"
     | "hotkeyClearCaptions"
     | "hotkeyIncreaseText"
-    | "hotkeyDecreaseText";
+    | "hotkeyDecreaseText"
+    | "hotkeyToggleHistory";
 }[] = [
   { action: "toggleOverlay", labelKey: "hotkeyToggleOverlay" },
   { action: "toggleTranslation", labelKey: "hotkeyToggleTranslation" },
@@ -165,4 +185,5 @@ export const HOTKEY_ACTIONS: readonly {
   { action: "clearCaptions", labelKey: "hotkeyClearCaptions" },
   { action: "increaseText", labelKey: "hotkeyIncreaseText" },
   { action: "decreaseText", labelKey: "hotkeyDecreaseText" },
+  { action: "toggleHistory", labelKey: "hotkeyToggleHistory" },
 ];

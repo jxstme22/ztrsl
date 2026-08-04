@@ -108,6 +108,26 @@ export async function installModel(modelId: string): Promise<void> {
   await invoke("models_install", { id: modelId });
 }
 
+/** Download and install a model from an http(s) URL. When the URL serves an
+ * offline-pack archive with a manifest, `id`/`kind`/`runtime` may be empty
+ * (the manifest wins); otherwise all three are required. */
+export async function installModelFromUrl(
+  modelId: string,
+  url: string,
+  kind: string,
+  runtime: string,
+): Promise<string> {
+  if (!isTauri()) {
+    return modelId;
+  }
+  return await invoke("models_install_from_url", {
+    id: modelId,
+    url,
+    kind,
+    runtime,
+  });
+}
+
 export async function cancelInstall(modelId: string): Promise<void> {
   if (!isTauri()) {
     return;

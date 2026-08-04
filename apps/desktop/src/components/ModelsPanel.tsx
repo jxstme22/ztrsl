@@ -603,6 +603,124 @@ function OfflinePackRow({ models }: { models: ModelUiState }) {
   );
 }
 
+function UrlInstallRow({ models }: { models: ModelUiState }) {
+  const [modelId, setModelId] = useState<string>("");
+  const [kind, setKind] = useState("asr");
+  const [runtime, setRuntime] = useState("faster-whisper");
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const t = useT();
+
+  const runInstall = async () => {
+    if (url.trim() === "" || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await models.installFromUrl(modelId, url.trim(), kind, runtime);
+      setUrl("");
+      if (modelId !== "") {
+        setModelId("");
+      }
+    } catch {
+      // error is surfaced through models.error
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const known = [...models.knownAvailable, ...models.knownInstalled];
+  const kindOptions = [
+    { value: "asr", label: "Speech recognition (ASR)" },
+    { value: "translation", label: "Translation (MT)" },
+  ];
+  const runtimeOptions = [
+    { value: "faster-whisper", label: "faster-whisper (Whisper)" },
+    { value: "ctranslate2", label: "ctranslate2 (NLLB)" },
+    { value: "sherpa-onnx", label: "sherpa-onnx (CTC)" },
+    { value: "candle", label: "candle (MADLAD)" },
+  ];
+
+  return (
+    <div className="card lst-settings-card">
+      <div className="card-head">
+        <h3 className="card-title">{t("modelsUrlInstallLabel")}</h3>
+      </div>
+      <div className="live-grid">
+        <div className="field">
+          <label htmlFor="model-url-id">{t("modelsUrlInstallModel")}</label>
+          <input
+            id="model-url-id"
+            type="text"
+            value={modelId}
+            placeholder={
+              known[0] !== undefined
+                ? `${known[0].id} — or a custom id`
+                : "custom id (lowercase, digits, dashes)"
+            }
+            onChange={(event) => {
+              setModelId(event.currentTarget.value.trim());
+            }}
+          />
+          <small className="field-note">{t("modelsUrlInstallIdHint")}</small>
+        </div>
+        <div className="field">
+          <label htmlFor="model-url">{t("modelsUrlInstallUrl")}</label>
+          <input
+            id="model-url"
+            type="url"
+            value={url}
+            placeholder="https://host/path/model-pack.zip"
+            onChange={(event) => {
+              setUrl(event.currentTarget.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void runInstall();
+              }
+            }}
+          />
+          <small className="field-note">{t("modelsUrlInstallNote")}</small>
+        </div>
+        <div className="field">
+          <label htmlFor="model-url-kind">{t("modelsUrlInstallKind")}</label>
+          <Select
+            id="model-url-kind"
+            label={t("modelsUrlInstallKind")}
+            value={kind}
+            options={kindOptions}
+            onChange={(value) => {
+              setKind(value);
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="model-url-runtime">{t("modelsUrlInstallRuntime")}</label>
+          <Select
+            id="model-url-runtime"
+            label={t("modelsUrlInstallRuntime")}
+            value={runtime}
+            options={runtimeOptions}
+            onChange={(value) => {
+              setRuntime(value);
+            }}
+          />
+        </div>
+        <div className="span-2 lst-import-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={url.trim() === "" || busy}
+            onClick={() => void runInstall()}
+          >
+            {busy ? t("modelsImporting") : t("modelsUrlInstallBtn")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GpuRuntimePanel({
   gpuRuntime,
   t,
@@ -850,8 +968,41 @@ export function ModelsPanel({
         )}
       </section>
       <DownloadServerRow models={models} />
+      <UrlInstallRow models={models} />
       <OfflinePackRow models={models} />
       <GpuRuntimePanel gpuRuntime={gpuRuntime} t={t} />
+      {models.custom.length > 0 && (
+        <section
+          className="card lst-section-card"
+          aria-label={t("modelsCustom")}
+        >
+          <div className="card-head">
+            <h3 className="card-title">{t("modelsCustom")}</h3>
+            <span className="lst-model-count pill">{models.custom.length}</span>
+          </div>
+          <p className="lst-page-description">{t("modelsCustomDescription")}</p>
+          <div className="lst-model-grid">
+            {models.custom.map((model) => (
+              <ModelCard
+                key={model.id}
+                model={model}
+                progress={models.progress[model.id] ?? null}
+                inUse={models.list.inUse.includes(model.id)}
+                instantiating={instantiating === model.id}
+                localOnly
+                onInstallClick={() => undefined}
+                onDeleteClick={(clicked) => {
+                  setAction({ kind: "delete", model: clicked });
+                }}
+                onRevealClick={(clicked) => {
+                  void models.revealPath(clicked.modelDir);
+                }}
+                t={t}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       <section
         className="card lst-section-card"
         aria-label={t("modelsInstalled")}

@@ -4,15 +4,18 @@ import {
   Gauge,
   Mic,
   Minus,
+  ScrollText,
   Settings,
   Wand2,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { HistoryPanel } from "./captions/HistoryPanel";
+import { useCaptionHistory } from "./captions/useCaptionHistory";
 import { AudioDevicePanel } from "./components/AudioDevicePanel";
 import { AccuracyLabPanel } from "./components/AccuracyLabPanel";
 import { CaptionStack } from "./components/CaptionStack";
@@ -36,17 +39,23 @@ import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
-import { isDesktopRuntime } from "./overlay/bridge";
-import type { OverlaySettings } from "./overlay/model";
+import { isDesktopRuntime, emitHistoryToOverlay } from "./overlay/bridge";
+import type { Caption, OverlaySettings } from "./overlay/model";
 import { useOverlayController } from "./overlay/useOverlayController";
 import { loadSourceConfigs } from "./sources/storage";
 import { captionTrustEnabled } from "./sources/captionTrustFlag";
 import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
-  "live" | "models" | "settings" | "diagnostics" | "sources" | "setup";
+  | "live"
+  | "models"
+  | "history"
+  | "settings"
+  | "diagnostics"
+  | "sources"
+  | "setup";
 
-const APP_VERSION = "0.5.9";
+const APP_VERSION = "0.6.1";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -62,6 +71,7 @@ function navItems(
   return [
     { id: "live", label: t("navLive") },
     { id: "models", label: t("navModels") },
+    { id: "history", label: t("navHistory") },
     ...(multiSourceEnabled()
       ? ([
           { id: "setup", label: t("navSetup") },
@@ -76,6 +86,7 @@ function navItems(
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
   models: Boxes,
+  history: ScrollText,
   setup: Wand2,
   sources: Mic,
   settings: Settings,
@@ -85,7 +96,36 @@ const NAV_ICONS: Record<SectionId, LucideIcon> = {
 export function ControlApp() {
   const controller = useOverlayController();
   const audio = useAudioMeter();
-  const live = useLiveTranslation(controller.ingestCaption);
+  const history = useCaptionHistory();
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const liveRef = useRef<ReturnType<typeof useLiveTranslation> | null>(null);
+  // Every caption flows through here: history records finals (and ignores
+  // provisional listening updates), the overlay controller renders the live
+  // caption lane. Session context is stamped at finalization: who's talking
+  // (source display name) and which audio input the session captures.
+  const ingestCaption = useCallback(
+    (caption: Caption) => {
+      const endpoint = audio.catalog?.endpoints.find(
+        (candidate) => candidate.id === liveRef.current?.sessionEndpointId,
+      );
+      let displayName = "";
+      if (caption.source !== undefined) {
+        displayName =
+          loadSourceConfigs().sources.find(
+            (config) => config.sourceId === caption.source?.sourceId,
+          )?.displayName ?? caption.source.captionTag;
+      }
+      historyRef.current.record(caption, {
+        displayName,
+        audioSource: endpoint?.friendlyName ?? "",
+      });
+      controller.ingestCaption(caption);
+    },
+    [audio.catalog, controller],
+  );
+  const live = useLiveTranslation(ingestCaption);
+  liveRef.current = live;
   const models = useModels();
   const gpuRuntime = useGpuRuntime();
   const diagnostics = useDiagnostics();
@@ -97,6 +137,14 @@ export function ControlApp() {
   const [showWelcome, setShowWelcome] = useState(
     () => !models.hasInstalledModels,
   );
+
+  // Keep the overlay window's history view in sync (it also boots from the
+  // same localStorage, so this only needs to run when entries change).
+  useEffect(() => {
+    if (desktop) {
+      void emitHistoryToOverlay(history.entries);
+    }
+  }, [desktop, history.entries]);
 
   const minimize = () => {
     if (desktop) {
@@ -127,6 +175,14 @@ export function ControlApp() {
         </span>
         {desktop && (
           <div className="window-actions">
+            <button
+              type="button"
+              aria-label={language.t("overlayToggleHistory")}
+              title={language.t("overlayToggleHistory")}
+              onClick={controller.toggleHistoryView}
+            >
+              <ScrollText aria-hidden="true" size={15} />
+            </button>
             <button type="button" aria-label="Minimize" onClick={minimize}>
               <Minus aria-hidden="true" size={15} />
             </button>
@@ -173,6 +229,14 @@ export function ControlApp() {
           {section === "models" && (
             <ModelsPage models={models} gpuRuntime={gpuRuntime} />
           )}
+          {section === "history" && (
+            <div className="page-stack">
+              <HistoryPanel
+                entries={history.entries}
+                onClear={history.clear}
+              />
+            </div>
+          )}
           {section === "sources" && (
             <div className="page-stack">
               <SourcesPanel />
@@ -193,7 +257,7 @@ export function ControlApp() {
           {section === "diagnostics" && (
             <DiagnosticsPage
               audio={audio}
-              onCaption={controller.ingestCaption}
+              onCaption={ingestCaption}
               diagnostics={diagnostics}
               overlaySettings={controller.snapshot.settings}
             />
@@ -469,6 +533,27 @@ function SettingsPage({
               />
               <small className="field-note">
                 {t("settingsSimultaneousNote")}
+              </small>
+            </label>
+
+            <label className="field">
+              <span>{t("settingsOverlayContent")}</span>
+              <Select
+                id="overlay-content"
+                label={t("settingsOverlayContent")}
+                value={snapshot.settings.overlayContent}
+                onChange={(value) => {
+                  controller.updateSettings({
+                    overlayContent: value as OverlaySettings["overlayContent"],
+                  });
+                }}
+                options={[
+                  { value: "captions", label: t("settingsOverlayCaptions") },
+                  { value: "history", label: t("settingsOverlayHistory") },
+                ]}
+              />
+              <small className="field-note">
+                {t("settingsOverlayContentNote")}
               </small>
             </label>
 

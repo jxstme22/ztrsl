@@ -7,6 +7,7 @@ import {
   getProviderStatus,
   importOfflinePack,
   installModel,
+  installModelFromUrl,
   listModels,
   onInstallProgress,
   pickFolder,
@@ -42,6 +43,8 @@ export type ModelUiState = {
   /** v0.4: locally-exported models (NCSpeech) detected on disk. */
   knownInstalled: ModelInfo[];
   knownAvailable: ModelInfo[];
+  /** v0.6.1: URL-imported models under custom ids. */
+  custom: ModelInfo[];
   /** Effective Hugging Face download endpoint (mirror-aware). */
   downloadEndpoint: DownloadEndpointInfo;
   /** Persist a user-chosen download endpoint; "" resets to auto. */
@@ -50,6 +53,13 @@ export type ModelUiState = {
   providerStatus: ProviderStatus;
   /** Import a verified offline model pack; resolves to imported ids. */
   importOfflinePack: (packDir: string) => Promise<string[]>;
+  /** Download a known local-export model from an http(s) URL. */
+  installFromUrl: (
+    modelId: string,
+    url: string,
+    kind: string,
+    runtime: string,
+  ) => Promise<string>;
   /** Open a native folder picker; null when the user cancels. */
   pickFolder: () => Promise<string | null>;
   /** Open a model folder in the system file manager. */
@@ -220,6 +230,21 @@ export function useModels(desktopOnly = true): ModelUiState {
     [refresh],
   );
 
+  const installFromUrl = useCallback(
+    async (modelId: string, url: string, kind: string, runtime: string) => {
+      setError(null);
+      try {
+        const installedId = await installModelFromUrl(modelId, url, kind, runtime);
+        await refresh();
+        return installedId;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        throw cause;
+      }
+    },
+    [refresh],
+  );
+
   return {
     list,
     loading,
@@ -235,10 +260,12 @@ export function useModels(desktopOnly = true): ModelUiState {
     available,
     knownInstalled,
     knownAvailable,
+    custom: list.custom,
     downloadEndpoint,
     setDownloadEndpoint: updateDownloadEndpoint,
     providerStatus,
     importOfflinePack: importOffline,
+    installFromUrl,
     pickFolder,
     revealPath,
   };

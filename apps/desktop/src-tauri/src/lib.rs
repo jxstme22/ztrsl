@@ -260,6 +260,9 @@ struct ModelsList {
     /// are generated locally via scripts/export_ncspeech_onnx.py rather than
     /// downloaded). `available` means "exported on disk", not "downloadable".
     known: Vec<ModelInfo>,
+    /// v0.6.1: installed models that are neither in the catalog nor known —
+    /// imported by URL (zip/onnx/manifest pack) under a custom id.
+    custom: Vec<ModelInfo>,
 }
 
 #[derive(Debug, Serialize)]
@@ -432,10 +435,58 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
             }
         })
         .collect();
+    // v0.6.1 custom URL imports: installed manifests that are neither in the
+    // catalog nor KNOWN_MODELS. Surfaced by their manifest metadata so the
+    // user can see and delete them even though no provider selection exists
+    // yet for an arbitrary id.
+    let catalog_ids: HashSet<String> = state
+        .catalog
+        .view()
+        .iter()
+        .map(|entry| entry.id.clone())
+        .collect();
+    let known_ids: HashSet<&str> = KNOWN_MODELS.iter().map(|(id, ..)| *id).collect();
+    let custom = installed
+        .iter()
+        .filter(|model| {
+            !catalog_ids.contains(&model.id)
+                && !known_ids.contains(model.id.as_str())
+                && model_dir(state.store.root(), &model.id).is_dir()
+        })
+        .map(|model| {
+            let dir = model_dir(state.store.root(), &model.id);
+            let size = model.total_size_bytes;
+            ModelInfo {
+                view: model_manager::CatalogEntryView {
+                    id: model.id.clone(),
+                    name: model.id.clone(),
+                    kind: model.kind.clone(),
+                    runtime: "custom".to_owned(),
+                    recommended: false,
+                    description: "installed from URL".to_owned(),
+                    license_spdx: "unknown".to_owned(),
+                    license_notice: String::new(),
+                    download_size_bytes: size,
+                    source: model.source.clone(),
+                    revision: model.revision.clone(),
+                    file_count: 0,
+                    capabilities: model_manager::CapabilitiesView {
+                        language_capability: "unknown".to_owned(),
+                        recommended_profiles: Vec::new(),
+                        vram_class: "low".to_owned(),
+                    },
+                },
+                status: "installed".to_owned(),
+                installed_size_bytes: size,
+                model_dir: dir.display().to_string(),
+            }
+        })
+        .collect();
     Ok(ModelsList {
         models: models_info,
         in_use: state.in_use.iter().cloned().collect(),
         known,
+        custom,
     })
 }
 
@@ -690,6 +741,58 @@ async fn models_install(
         emit(&app, &payload);
     });
     Ok(())
+}
+
+/// Install a model from an arbitrary http(s) URL. When the download is a zip
+/// (or tar.bz2) containing an offline-pack `manifest.json`, the manifest
+/// supplies the id/kind/runtime and every artifact is verified against it;
+/// `id`, `kind` and `runtime` may then be left empty. Otherwise the caller
+/// must supply them, and a manifest is synthesized from the downloaded files.
+/// Known NCSpeech ids install into `artifacts/<id>` (sidecar layout);
+/// anything else lands in `root/<id>`.
+#[tauri::command]
+async fn models_install_from_url(
+    models: tauri::State<'_, ModelRuntime>,
+    url: String,
+    id: String,
+    kind: String,
+    runtime: String,
+) -> Result<String, String> {
+    let id = id.trim().to_owned();
+    if !id.is_empty()
+        && !id.chars().all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+        })
+    {
+        return Err("model id may only contain lowercase letters, digits and dashes".to_owned());
+    }
+    if id.len() > 64 {
+        return Err("model id is too long (max 64 characters)".to_owned());
+    }
+    if !kind.is_empty() && !matches!(kind.as_str(), "asr" | "translation") {
+        return Err("kind must be asr or translation".to_owned());
+    }
+    if !runtime.is_empty()
+        && !matches!(
+            runtime.as_str(),
+            "faster-whisper" | "ctranslate2" | "sherpa-onnx" | "candle" | "mlx"
+        )
+    {
+        return Err(format!("unsupported runtime: {runtime}"));
+    }
+    let root = {
+        let state = models.state.lock().map_err(lock_error)?;
+        state.store.root().to_owned()
+    };
+    let fetcher = model_manager::ReqwestFetcher::new().map_err(|error| error.to_string())?;
+    let installer = model_manager::ModelInstaller::new(
+        model_manager::ModelStore::new(root),
+        std::sync::Arc::new(fetcher),
+    );
+    installer
+        .install_from_url(url.trim(), &id, &kind, &runtime)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -2543,6 +2646,7 @@ pub fn run() {
             apply_window_shell,
             models_list,
             models_install,
+            models_install_from_url,
             models_cancel_install,
             models_delete,
             models_download_endpoint,

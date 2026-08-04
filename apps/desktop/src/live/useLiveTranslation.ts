@@ -23,6 +23,9 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
   const [snapshot, setSnapshot] = useState<LiveSnapshot>(EMPTY_LIVE_SNAPSHOT);
   const [lastCaption, setLastCaption] = useState<CaptionPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionEndpointId, setSessionEndpointId] = useState<string | null>(
+    null,
+  );
   const running = useRef(false);
   const polling = useRef(false);
   const onCaptionRef = useRef(onCaption);
@@ -140,6 +143,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       setState("starting");
       setError(null);
       setLastCaption(null);
+      setSessionEndpointId(endpointId);
       try {
         applySnapshot(
           await startLiveTranslation(
@@ -170,11 +174,20 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       running.current = false;
       setState("idle");
       setError(null);
+      setSessionEndpointId(null);
     } catch (cause) {
       setState("error");
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   }, [applySnapshot]);
 
-  return { error, lastCaption, snapshot, start, state, stop };
+  return {
+    error,
+    lastCaption,
+    sessionEndpointId,
+    snapshot,
+    start,
+    state,
+    stop,
+  };
 }

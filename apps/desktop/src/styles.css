@@ -2091,6 +2091,136 @@ input[type="range"]::-moz-range-thumb {
   width: 100%;
 }
 
+/* Captions-history view inside the overlay window: a readable transcript
+   panel (the live caption lane stays transparent). */
+.overlay-shell[data-history] {
+  align-content: stretch;
+}
+
+.overlay-history {
+  overflow: hidden auto;
+  max-height: 100vh;
+  padding: 14px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-lg);
+  background: rgba(16, 16, 20, 0.86);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.overlay-history-empty {
+  margin: 0;
+  padding: 8px 4px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.overlay-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.overlay-history-entry {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.overlay-history-entry[data-uncertain] .overlay-history-text {
+  opacity: 0.72;
+}
+
+.overlay-history-source {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.overlay-history-audio {
+  flex: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+}
+
+.overlay-history-text {
+  margin: 0;
+  color: var(--fg-strong);
+}
+
+/* History page in the control window. */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-entry {
+  padding: 10px 14px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.history-entry[data-uncertain] .history-text {
+  opacity: 0.72;
+}
+
+.history-entry-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.history-entry-meta time {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-who {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.history-audio-source {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.history-uncertain {
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.history-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .edit-toolbar {
   position: absolute;
   top: 10px;

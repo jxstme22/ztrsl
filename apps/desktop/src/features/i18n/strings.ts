@@ -21,10 +21,25 @@ const UI_STRINGS = {
   // Nav
   navLive: { en: "Live", zh: "实时" },
   navModels: { en: "Models", zh: "模型" },
+  navHistory: { en: "History", zh: "历史" },
   navSetup: { en: "Setup", zh: "设置向导" },
   navSources: { en: "Sources", zh: "音频源" },
   navSettings: { en: "Settings", zh: "设置" },
   navDiagnostics: { en: "Diagnostics", zh: "诊断" },
+
+  // Captions history
+  historyTitle: { en: "Captions history", zh: "字幕历史" },
+  historyClear: { en: "Clear", zh: "清空" },
+  historyEmpty: {
+    en: "No finished captions yet. Start a live session — only finalized captions are saved here.",
+    zh: "暂无已完成字幕。启动实时会话后，只有最终确定的字幕会被保存到这里。",
+  },
+  historyUnknownSpeaker: { en: "Unknown speaker", zh: "未知说话人" },
+  historyAudioSource: { en: "Audio", zh: "音频源" },
+  overlayToggleHistory: {
+    en: "Toggle captions history on the overlay",
+    zh: "在悬浮窗中切换字幕历史",
+  },
 
   // Common
   install: { en: "Install", zh: "安装" },
@@ -285,6 +300,19 @@ const UI_STRINGS = {
   liveStart: { en: "Start subtitles", zh: "开始字幕" },
   liveStop: { en: "Stop subtitles", zh: "停止字幕" },
   liveStartListening: { en: "Start listening", zh: "开始聆听" },
+  liveCaptionMode: { en: "Translation mode", zh: "翻译模式" },
+  liveCaptionModeStreaming: {
+    en: "Stream while talking (live preview)",
+    zh: "边说边译（实时预览）",
+  },
+  liveCaptionModeFinal: {
+    en: "Wait for utterance end (per chunk)",
+    zh: "等说完再译（按语句块）",
+  },
+  liveCaptionModeNote: {
+    en: "Streaming shows a live preview that improves as the speaker continues; final-only waits until the utterance ends and translates the whole chunk once.",
+    zh: "流式模式在说话过程中实时预览并逐步修正；仅最终模式等语句说完后一次性翻译整段。",
+  },
   liveStopListening: { en: "Stop listening", zh: "停止聆听" },
   liveLoadingModels: { en: "Loading models…", zh: "正在加载模型…" },
   liveStopping: { en: "Stopping", zh: "正在停止" },
@@ -459,6 +487,25 @@ const UI_STRINGS = {
   sourcesAlignRight: { en: "Right", zh: "右对齐" },
   modelsImporting: { en: "Importing…", zh: "正在导入…" },
   modelsImportBtn: { en: "Import", zh: "导入" },
+  modelsUrlInstallLabel: { en: "Install model from URL", zh: "从 URL 安装模型" },
+  modelsUrlInstallModel: { en: "Model", zh: "模型" },
+  modelsUrlInstallKind: { en: "Kind", zh: "类型" },
+  modelsUrlInstallRuntime: { en: "Runtime", zh: "运行时" },
+  modelsUrlInstallUrl: { en: "Download URL", zh: "下载地址" },
+  modelsUrlInstallBtn: { en: "Download & install", zh: "下载并安装" },
+  modelsUrlInstallIdHint: {
+    en: "Pick a known model, or leave empty and type a custom id (lowercase, digits, dashes) when the URL has no manifest. If the URL is an offline-pack archive with a manifest, the manifest decides.",
+    zh: "选择已知模型，或在 URL 无清单时留空并填写自定义 id（小写字母、数字、短横线）。如果 URL 是带清单的离线包压缩包，则以清单为准。",
+  },
+  modelsUrlInstallNote: {
+    en: "Point at a zip/tar.bz2 archive (offline-pack layout with manifest.json, or plain model files) or a single model file served over http(s). Every artifact is SHA-256 verified before install; sherpa-onnx CTC imports must contain model.onnx and tokens.txt.",
+    zh: "指向 http(s) 提供的 zip/tar.bz2 压缩包（含 manifest.json 的离线包布局，或普通模型文件）或单个模型文件。安装前会对每个产物进行 SHA-256 校验；sherpa-onnx CTC 导入必须包含 model.onnx 和 tokens.txt。",
+  },
+  modelsCustom: { en: "Custom (URL-imported)", zh: "自定义（URL 导入）" },
+  modelsCustomDescription: {
+    en: "Models installed from a URL under a custom id. The app stores and verifies them; selecting them as an inference provider requires a matching id/runtime.",
+    zh: "通过 URL 以自定义 id 安装的模型。应用会存储并校验它们；要作为推理提供方使用，需要匹配的 id/运行时。",
+  },
   modelsInstalledSuffix: { en: "Installed", zh: "已安装" },
   modelsOfflinePackNote: {
     en: "Point at a directory that already contains a manifest-verified model pack. Artifacts are SHA-256 checked and installed with no network.",
@@ -706,6 +753,17 @@ const UI_STRINGS = {
   hotkeyClearCaptions: { en: "Clear captions", zh: "清除字幕" },
   hotkeyIncreaseText: { en: "Increase text", zh: "增大文字" },
   hotkeyDecreaseText: { en: "Decrease text", zh: "减小文字" },
+  hotkeyToggleHistory: {
+    en: "Toggle caption/history view",
+    zh: "切换字幕/历史视图",
+  },
+  settingsOverlayContent: { en: "Overlay content", zh: "悬浮窗内容" },
+  settingsOverlayCaptions: { en: "Latest caption bar", zh: "最新字幕栏" },
+  settingsOverlayHistory: { en: "Captions history (last 10)", zh: "字幕历史（最近 10 条）" },
+  settingsOverlayContentNote: {
+    en: "The overlay shows exactly one of these: the live caption bar or the history panel. Switch anytime with the titlebar button or the hotkey.",
+    zh: "悬浮窗每次只显示其中一种：实时字幕栏或历史面板。可随时通过标题栏按钮或快捷键切换。",
+  },
   strictnessOff: { en: "Off — process any language", zh: "关闭——处理任何语言" },
   strictnessBalanced: {
     en: "Balanced — prefer selected languages",
