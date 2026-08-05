@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT / "services" / "inference" / "src"))
 
 from local_squad_inference.windows_runtime import align_onnxruntime
 
-align_onnxruntime()
+print(f"onnxruntime alignment: {'ok' if align_onnxruntime() else 'skipped'}")
 
 HF = "https://huggingface.co"
 

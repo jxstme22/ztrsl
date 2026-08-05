@@ -13,33 +13,52 @@ The fix aligns the process on a single onnxruntime: the bundled 1.17.1 copy
 is replaced by the standalone ``onnxruntime`` package's 1.27.0 DLL, which the
 binding actually expects. Every onnxruntime user (Silero VAD, sherpa-onnx)
 then shares the same 1.27.0 build.
+
+CRITICAL: the replacement must happen BEFORE ``sherpa_onnx`` is imported —
+importing the package loads the pyd, and Windows binds its
+``onnxruntime.dll`` reference at load time from the pyd's own directory.
+``importlib.util.find_spec`` locates the packages without executing them.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 
 
-def align_onnxruntime() -> None:
-    """Replace sherpa-onnx's bundled onnxruntime DLL with the standalone
-    package's copy when they differ. No-op on non-Windows and in packaged
-    builds whose DLLs were already aligned by build-sidecar.mjs."""
-    if os.name != "nt":
-        return
-    try:
-        import onnxruntime  # noqa: PLC0415 - lazy, Windows-only
+def _package_dir(name: str) -> Path | None:
+    spec = importlib.util.find_spec(name)
+    if spec is None or spec.submodule_search_locations is None:
+        return None
+    locations = list(spec.submodule_search_locations)
+    if not locations:
+        return None
+    return Path(locations[0])
 
-        import sherpa_onnx  # noqa: PLC0415, F401 - resolves package location
-    except ImportError:
-        return
-    bundled = Path(sherpa_onnx.__file__).parent / "lib" / "onnxruntime.dll"
-    standalone = Path(onnxruntime.__file__).parent / "capi" / "onnxruntime.dll"
-    if not bundled.is_file() or not standalone.is_file():
-        return
+
+def align_onnxruntime() -> bool:
+    """Replace sherpa-onnx's bundled onnxruntime DLL with the standalone
+    package's copy when they differ. Must run before ``import sherpa_onnx``.
+
+    Returns True when a replacement was performed (or the copies already
+    matched); False when nothing could be verified (non-Windows, packages
+    missing, or the replacement failed).
+    """
+    if os.name != "nt":
+        return False
     try:
+        sherpa_dir = _package_dir("sherpa_onnx")
+        ort_dir = _package_dir("onnxruntime")
+        if sherpa_dir is None or ort_dir is None:
+            return False
+        bundled = sherpa_dir / "lib" / "onnxruntime.dll"
+        standalone = ort_dir / "capi" / "onnxruntime.dll"
+        if not bundled.is_file() or not standalone.is_file():
+            return False
         if bundled.read_bytes() == standalone.read_bytes():
-            return
+            return True
         bundled.write_bytes(standalone.read_bytes())
-    except OSError:
-        return
+        return True
+    except (OSError, ValueError):
+        return False
