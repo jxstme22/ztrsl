@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.request
@@ -212,9 +213,115 @@ def smoke_opus(model_dir: Path) -> None:
     print(f"  translated: {result.english_text!r} (model {result.model_id})")
 
 
+PARAFORMER = {
+    "id": "paraformer-zh-streaming",
+    "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2",
+    "revision": "2024-03-10",
+    "archive_size": 1047319737,
+    "archive_sha256": "5462a1fce42693deae572af1e8c4687124b12aa85fe61ff4d3168bb5280e205f",
+    "files": [
+        ("encoder.int8.onnx", 165462184, "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a", "encoder"),
+        ("decoder.int8.onnx", 71664561, "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f", "decoder"),
+        ("tokens.txt", 75756, "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6", "tokens"),
+    ],
+}
+
+
+def prepare_paraformer(workdir: Path) -> Path:
+    print("== paraformer-zh-streaming ==")
+    model_dir = workdir / PARAFORMER["id"]
+    model_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = model_dir / "model.tar.bz2"
+    if not archive_path.is_file() or hashlib.sha256(archive_path.read_bytes()).hexdigest() != PARAFORMER["archive_sha256"]:
+        print(f"  downloading {PARAFORMER['source'].split('/')[-1]} (1 GB)")
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(PARAFORMER["source"], timeout=900) as response:
+                    with archive_path.open("wb") as out:
+                        while True:
+                            chunk = response.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                break
+            except Exception as error:  # noqa: BLE001 - CI diagnostic
+                print(f"  attempt {attempt + 1} failed: {error}")
+                time.sleep(2)
+    digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    if digest != PARAFORMER["archive_sha256"]:
+        raise SystemExit(f"checksum mismatch for archive: {digest}")
+    with tarfile.open(archive_path, "r:bz2") as tar:
+        for name, size, sha, role in PARAFORMER["files"]:
+            member = None
+            for m in tar.getmembers():
+                if m.name.endswith("/" + name):
+                    member = m
+                    break
+            if member is None:
+                raise SystemExit(f"archive member {name} not found")
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                raise SystemExit(f"archive member {name} not extractable")
+            data = extracted.read()
+            if hashlib.sha256(data).hexdigest() != sha:
+                raise SystemExit(f"checksum mismatch for {name}")
+            (model_dir / name).write_bytes(data)
+    artifacts = [
+        {"role": role, "path": name, "size_bytes": size, "sha256": sha}
+        for name, size, sha, role in PARAFORMER["files"]
+    ]
+    (model_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": PARAFORMER["id"],
+                "kind": "asr",
+                "runtime": "sherpa-onnx",
+                "source": "https://github.com/k2-fsa/sherpa-onnx/releases",
+                "revision": PARAFORMER["revision"],
+                "license": {"spdx": "Apache-2.0"},
+                "artifacts": artifacts,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return model_dir
+
+
+def smoke_paraformer(model_dir: Path) -> None:
+    from local_squad_inference.providers import StreamingParaformerProvider
+    from local_squad_inference.vad import AudioUtterance
+
+    provider = StreamingParaformerProvider(model_dir)
+    import math
+
+    samples = tuple(
+        math.sin(2 * math.pi * 220 * i / 16_000) * 0.2 for i in range(8_000)
+    )
+    result = provider.transcribe(
+        AudioUtterance(
+            utterance_id="ci-3",
+            pcm_f32=samples,
+            sample_rate=16_000,
+            started_ns=0,
+            ended_ns=500_000_000,
+            is_final=True,
+            forced_end=True,
+        ),
+        source_mode="chinese",
+    )
+    print(f"  decoded: {result.text!r} (model {result.model_id})")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("target", nargs="?", default="all", choices=["sensevoice", "opus-en-zh", "all"])
+    parser.add_argument(
+        "target",
+        nargs="?",
+        default="all",
+        choices=["sensevoice", "paraformer", "opus-en-zh", "all"],
+    )
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory(prefix="ci-models-") as tmp:
@@ -222,6 +329,9 @@ def main() -> None:
         if args.target in ("sensevoice", "all"):
             model_dir = prepare(SENSEVOICE, workdir)
             smoke_sensevoice(model_dir)
+        if args.target in ("paraformer", "all"):
+            model_dir = prepare_paraformer(workdir)
+            smoke_paraformer(model_dir)
         if args.target in ("opus-en-zh", "all"):
             model_dir = prepare(OPUS_EN_ZH, workdir)
             smoke_opus(model_dir)
