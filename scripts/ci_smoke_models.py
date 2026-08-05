@@ -29,6 +29,10 @@ faulthandler.enable()
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "services" / "inference" / "src"))
 
+from local_squad_inference.windows_runtime import align_onnxruntime
+
+align_onnxruntime()
+
 HF = "https://huggingface.co"
 
 SENSEVOICE = {
@@ -108,7 +112,7 @@ def smoke_sensevoice(model_dir: Path) -> None:
     from local_squad_inference.vad import AudioUtterance
 
     provider = SenseVoiceProvider(model_dir)
-    print(f"  runtime: {provider.runtime_detail()}")
+    print(f"  runtime: {provider.runtime_detail}")
     # 0.5 s of 220 Hz tone at 16 kHz — proves model load + native decode.
     import math
 
@@ -135,7 +139,7 @@ def smoke_opus(model_dir: Path) -> None:
     from local_squad_inference.vad import AudioUtterance
 
     provider = OpusMtEnZhProvider(model_dir)
-    print(f"  runtime: {provider.runtime_detail()}")
+    print(f"  runtime: {provider.runtime_detail}")
     result = provider.translate(
         type(
             "R",

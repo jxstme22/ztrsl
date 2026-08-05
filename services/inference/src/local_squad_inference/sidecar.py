@@ -1826,6 +1826,11 @@ def main() -> None:
     import faulthandler
 
     faulthandler.enable()
+    # Windows: align the onnxruntime copies before any sherpa-onnx model load
+    # (sherpa-onnx-core bundles a 1.17.1 DLL its own binding cannot use).
+    from local_squad_inference.windows_runtime import align_onnxruntime
+
+    align_onnxruntime()
     port = int(os.environ["LST_IPC_PORT"])
     token = os.environ["LST_IPC_TOKEN"]
     if not token:

@@ -111,6 +111,22 @@ const args = [
   ENTRY_POINT,
 ];
 
+// Windows: sherpa-onnx 1.13.4's binding targets onnxruntime API 27 while
+// sherpa-onnx-core bundles a 1.17.1 copy of onnxruntime.dll next to it;
+// loading that pair crashes (access violation -> sidecar 10054). Align the
+// process on the standalone 1.27.0 DLL before PyInstaller collects it.
+if (process.platform === "win32") {
+  const sitePackages = resolve(VENV_PYTHON, "..", "..", "Lib", "site-packages");
+  const bundled = resolve(sitePackages, "sherpa_onnx", "lib", "onnxruntime.dll");
+  const standalone = resolve(sitePackages, "onnxruntime", "capi", "onnxruntime.dll");
+  if (existsSync(bundled) && existsSync(standalone)) {
+    copyFileSync(standalone, bundled);
+    console.log("aligned sherpa_onnx/lib/onnxruntime.dll to the standalone 1.27.0 build");
+  } else {
+    console.warn("onnxruntime alignment skipped: bundled/standalone DLL missing");
+  }
+}
+
 console.log("Building sidecar with PyInstaller...");
 console.log("  python:", PYTHON);
 console.log("  entry :", ENTRY_POINT);
