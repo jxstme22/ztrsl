@@ -246,6 +246,8 @@ class LiveStartPayload(StrictModel):
         "ncspeech",
         "ncspeech-zh",
         "ncspeech-zh-parakeet",
+        "mlx",
+        "mlx-whisper",
         "groq-whisper",
     ] = "local"
     translation_provider: Literal[

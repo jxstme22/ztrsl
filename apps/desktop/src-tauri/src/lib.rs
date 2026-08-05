@@ -1340,6 +1340,8 @@ async fn start_live_translation(
             | "ncspeech"
             | "ncspeech-zh"
             | "ncspeech-zh-parakeet"
+            | "mlx"
+            | "mlx-whisper"
             | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));

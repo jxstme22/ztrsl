@@ -99,6 +99,8 @@ function loadAsrProvider(): AsrProvider {
     stored === "ncspeech" ||
     stored === "ncspeech-zh" ||
     stored === "ncspeech-zh-parakeet" ||
+    stored === "mlx" ||
+    stored === "mlx-whisper" ||
     stored === "groq-whisper"
   ) {
     return stored;
