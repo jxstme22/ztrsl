@@ -502,11 +502,7 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
                     source: model.source.clone(),
                     revision: model.revision.clone(),
                     file_count: 0,
-                    capabilities: model_manager::CapabilitiesView {
-                        language_capability: "unknown".to_owned(),
-                        recommended_profiles: Vec::new(),
-                        vram_class: "low".to_owned(),
-                    },
+                    capabilities: custom_import_capabilities(),
                     user_defined: false,
                 },
                 status: "installed".to_owned(),
@@ -521,6 +517,19 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
         known,
         custom,
     })
+}
+
+/// Conservative capability view for URL-imported models whose language
+/// constraints are unknown. "post-filter" (the ADR-016 default) never
+/// overclaims a decoder lock, and it is one of the three values the
+/// frontend schema accepts (forced/preferred/post-filter) — "unknown"
+/// would break the whole models list at parse time.
+fn custom_import_capabilities() -> model_manager::CapabilitiesView {
+    model_manager::CapabilitiesView {
+        language_capability: "post-filter".to_owned(),
+        recommended_profiles: Vec::new(),
+        vram_class: "low".to_owned(),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -2808,7 +2817,10 @@ pub fn run() {
 mod tests {
     use audio_core::{AudioSource, SYNTHETIC_ENDPOINT_ID};
 
-    use super::{AppStatus, AudioRuntimeState, KNOWN_MODELS, model_dir_exists};
+    use super::{
+        AppStatus, AudioRuntimeState, KNOWN_MODELS, custom_import_capabilities,
+        model_dir_exists,
+    };
 
     #[test]
     fn known_models_are_catalog_free_but_detected_from_disk() {
@@ -2867,6 +2879,16 @@ mod tests {
                 caption_trust: true,
             }
         );
+    }
+
+    #[test]
+    fn custom_import_capabilities_stay_within_frontend_contract() {
+        let view = custom_import_capabilities();
+        assert!(matches!(
+            view.language_capability.as_str(),
+            "forced" | "preferred" | "post-filter"
+        ));
+        assert_eq!(view.language_capability, "post-filter");
     }
 
     #[test]
