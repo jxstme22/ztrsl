@@ -41,3 +41,4 @@ local-squad-sidecar.spec
 # Packaged installers live on the GitHub Releases page, not in the repo
 /xTRSNLTR_*_x64-setup.exe
 /xTRSNLTR_*_x64_en-US.msi
+models/mlx-whisper-large-v3-turbo-q4/
