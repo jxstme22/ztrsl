@@ -17,6 +17,7 @@ models = [
     "sherpa-onnx==1.13.4",
     "faster-whisper==1.2.1",
     "tokenizers>=0.23,<1",
+    "sentencepiece>=0.2,<0.3",
 ]
 # Apple Silicon (macOS): Metal-accelerated Whisper. Windows/CUDA users do not
 # need this; mlx-whisper refuses to import off-Metal.
@@ -60,5 +61,5 @@ files = ["services/inference/src", "services/inference/tests"]
 [[tool.mypy.overrides]]
 # Optional heavyweight model dependencies: absent from the CI dev-only
 # environment and untyped where installed.
-module = ["numpy", "onnxruntime", "faster_whisper", "faster_whisper.*"]
+module = ["numpy", "onnxruntime", "faster_whisper", "faster_whisper.*", "sentencepiece", "sentencepiece.*"]
 ignore_missing_imports = true

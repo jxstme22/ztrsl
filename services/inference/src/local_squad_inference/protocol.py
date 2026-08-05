@@ -236,11 +236,16 @@ class LiveStartPayload(StrictModel):
         "ncspeech",
         "ncspeech-zh",
         "ncspeech-zh-parakeet",
+        "mlx",
+        "mlx-whisper",
+        "paraformer-zh-streaming",
+        "sensevoice-small",
         "groq-whisper",
     ] = "local"
     translation_provider: Literal[
         "nllb",
         "madlad",
+        "opus-mt-en-zh",
         "demo",
         "libretranslate",
         "google-translate",
