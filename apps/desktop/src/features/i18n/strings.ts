@@ -325,6 +325,26 @@ const UI_STRINGS = {
   diagnosticsOldestQueued: { en: "Oldest queued", zh: "最旧排队" },
   diagnosticsAvgDelay: { en: "Avg delay", zh: "平均延迟" },
   diagnosticsMaxDelay: { en: "Max delay", zh: "最大延迟" },
+  diagnosticsScreenRecordingTitle: {
+    en: "Screen Recording permission",
+    zh: "屏幕录制权限",
+  },
+  diagnosticsScreenRecordingHint: {
+    en: "System Audio (all apps) stays silent until this app has Screen Recording permission. Open System Settings and enable yTRSLT, then restart the app.",
+    zh: "在授予此应用屏幕录制权限之前，系统音频源将保持静默。请打开系统设置启用 yTRSLT，然后重新启动应用。",
+  },
+  diagnosticsScreenRecordingOpen: {
+    en: "Open System Settings",
+    zh: "打开系统设置",
+  },
+  diagnosticsMicrophoneTitle: {
+    en: "Microphone permission",
+    zh: "麦克风权限",
+  },
+  diagnosticsMicrophoneHint: {
+    en: "A denied or missing microphone permission makes mic capture deliver silence with no error. Enable yTRSLT under Microphone, then restart the app.",
+    zh: "如果麦克风权限被拒绝或缺失，麦克风采集将静默无声且不报错。请在麦克风设置中启用 yTRSLT，然后重新启动应用。",
+  },
   diagnosticsIsolationOk: { en: "Clean", zh: "干净" },
   diagnosticsIsolationLeak: { en: "Leakage detected", zh: "检测到泄漏" },
 
@@ -472,6 +492,11 @@ const UI_STRINGS = {
   overlayEditPosition: { en: "Edit position", zh: "编辑位置" },
   settingsHideOverlay: { en: "Hide overlay", zh: "隐藏字幕层" },
   settingsShowOverlay: { en: "Show overlay", zh: "显示字幕层" },
+  overlayEnterWindowed: {
+    en: "Overlay mode — window shows captions only",
+    zh: "悬浮模式——窗口只显示字幕",
+  },
+  overlayExitWindowed: { en: "Exit overlay", zh: "退出悬浮模式" },
   settingsClear: { en: "Clear", zh: "清除" },
   clipLabTitle: { en: "Test a friends' comms clip", zh: "测试好友的通话片段" },
   clipDemoProviders: { en: "Demo providers", zh: "演示提供方" },

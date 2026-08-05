@@ -1,5 +1,80 @@
 # 23 — Release Notes
 
+## v0.6.0 — macOS: system-audio source, windowed overlay, sandboxed build
+
+- **New "System Audio (all apps)" source on macOS** — the fix for "I can't
+  find the audio source": the app now taps the whole system output mix
+  (voice chat included) through ScreenCaptureKit. No BlackHole driver to
+  install, no routing to configure — pick the source in the Loopback group
+  and go. The OS shows a screen-recording permission prompt on first use.
+  BlackHole capture still works for per-app separation.
+- **Windowed overlay mode** — the titlebar's picture-in-picture button
+  morphs the app window itself into a compact always-on-top caption strip;
+  hover the strip and press the ✕ to return to the full app. The separate
+  always-on-top overlay window is disabled on macOS, where a transparent
+  webview without a native backdrop renders as a black rectangle.
+- **Glassmorphism now works on macOS** — the control window gets a real
+  native vibrancy layer (`NSVisualEffectView`), so the frosted panels and
+  blur finally render instead of flat black. The status pill on Settings →
+  Diagnostics now reads "vibrancy" on Mac.
+- **Sandboxed macOS build** — the app bundle runs under App Sandbox with
+  network-client, audio-input, and user-selected-file-read capabilities, and
+  declares its microphone and screen-recording usage strings. Built for
+  private use: all processing stays local.
+- **Sandboxed storage fix (EPERM)** — the model store, sidecar logs, and
+  inference caches are written inside the sandbox container
+  (`~/Library/Containers/app.localsquadtranslator.desktop/Data`) instead of
+  the real home directory; the sidecar process receives a container `HOME`
+  plus `HF_HOME`/`XDG_CACHE_HOME`/`TORCH_HOME`/`MPLCONFIGDIR`/
+  `PYTHONPYCACHEPREFIX`. Fixes "I/O error: Operation not permitted" when
+  listing/installing models and "sidecar I/O failed" at live-translation
+  startup on the packaged build.
+- **Loopback IPC entitlement** — the app bundle now also carries
+  `com.apple.security.network.server`: the supervisor binds an ephemeral
+  localhost port to start the sidecar, and the sandbox denied that bind with
+  EPERM. Without this, live translation failed instantly with "sidecar I/O
+  failed: Operation not permitted" regardless of provider.
+- **System Audio silence diagnostics** — if macOS silently blocks screen
+  capture (Screen Recording permission missing), "System Audio (all apps)"
+  starts but delivers no audio and no error. The app now fails after 4
+  seconds with a clear message, and Settings → Diagnostics gained an "Open
+  System Settings" button that jumps straight to the Screen Recording pane.
+- **Personal build runs unsandboxed** — the author's local build ships with
+  an empty entitlements plist (no App Sandbox) so audio, models, and IPC all
+  work like a normal app; the sandbox profile remains documented for an
+  official release build.
+- **Microphones now enumerate on macOS 26** — the CoreAudio device list is
+  queried through `AudioObjectGetPropertyDataSize`; the legacy size-query
+  pattern (property fetch with NULL outData) returns
+  `kAudioHardwareUnsupportedOperationError` on recent macOS, which emptied
+  the endpoint catalog to just "System Audio". Mic/BlackHole/speakers now
+  appear in Sources again.
+- **Stable macOS endpoint ids** — wire ids are now the device friendly name
+  (render endpoints get an "(output)" suffix) instead of raw CoreAudio
+  numeric ids, which shift when virtual devices churn between sessions and
+  made saved sources fail with "audio endpoint was not found". The backend
+  also falls back to matching by name for legacy persisted ids.
+- **API keys now persist** — the Groq key, LingvaTranslate key, custom
+  translation endpoint and key are written to localStorage as you type, so
+  navigating to another page no longer wipes them.
+- **Microphone permission prompt** — on macOS the app now requests mic
+  access once at launch (wry's webview delegate auto-grants the getUserMedia
+  request, which surfaces the real macOS permission prompt; the app declares
+  NSMicrophoneUsageDescription). A denied mic permission otherwise makes
+  cpal capture silently deliver silence. Settings → Diagnostics gained a
+  "Microphone permission" block with a one-click jump to the System
+  Settings pane.
+- **Native microphone permission request** — mic access is now requested
+  through AVFoundation (`AVCaptureDevice requestAccessForMediaType`) at
+  launch, the same TCC gate the capture hits; the status is returned to the
+  UI instead of relying on the webview getUserMedia path.
+- **Install models from a URL** — Models → "Install model from URL" takes an
+  http(s) link to a zip archive (or a single model.onnx), downloads it,
+  verifies it, and installs it into the model store under the known NCSpeech
+  ids. Zip imports must contain `model.onnx` and `tokens.txt`; the manifest
+  gets model/tokens roles so the sherpa-onnx Nemo CTC provider can load the
+  model directly. Supports any of the three NCSpeech family ids.
+
 ## v0.6.7 — Setup wizard removed, audio sources on the Sources page
 
 - **The 11-step setup wizard is gone.** All of its functionality now lives on

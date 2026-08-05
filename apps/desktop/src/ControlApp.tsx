@@ -4,6 +4,7 @@ import {
   Gauge,
   Mic,
   Minus,
+  PictureInPicture2,
   ScrollText,
   Settings,
   X,
@@ -31,6 +32,7 @@ import { Select } from "./components/Select";
 import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
 import { useAudioMeter } from "./audio/useAudioMeter";
+import { requestMicrophonePermission } from "./audio/bridge";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useT } from "./features/i18n/store";
@@ -127,6 +129,17 @@ export function ControlApp() {
     () => !models.hasInstalledModels,
   );
 
+  // On macOS, ask for microphone access once per launch: without a granted
+  // TCC entry, cpal opens the mic but CoreAudio delivers silence (no error,
+  // no prompt). wry's webview delegate auto-grants the getUserMedia request,
+  // so this is what surfaces the real macOS permission prompt.
+  useEffect(() => {
+    if (audio.catalog?.platform !== "macos") {
+      return;
+    }
+    void requestMicrophonePermission();
+  }, [audio.catalog?.platform]);
+
   // Keep the overlay window's history view in sync (it also boots from the
   // same localStorage, so this only needs to run when entries change).
   useEffect(() => {
@@ -152,6 +165,23 @@ export function ControlApp() {
       });
   };
 
+  if (controller.windowedMode) {
+    return (
+      <main className="windowed-overlay">
+        <button
+          type="button"
+          className="windowed-overlay-exit"
+          aria-label={language.t("overlayExitWindowed")}
+          title={language.t("overlayExitWindowed")}
+          onClick={controller.toggleWindowedMode}
+        >
+          <X aria-hidden="true" size={14} />
+        </button>
+        <CaptionStack snapshot={controller.snapshot} mode="latest" />
+      </main>
+    );
+  }
+
   return (
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
@@ -171,6 +201,14 @@ export function ControlApp() {
               onClick={controller.toggleHistoryView}
             >
               <ScrollText aria-hidden="true" size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label={language.t("overlayEnterWindowed")}
+              title={language.t("overlayEnterWindowed")}
+              onClick={controller.toggleWindowedMode}
+            >
+              <PictureInPicture2 aria-hidden="true" size={15} />
             </button>
             <button type="button" aria-label="Minimize" onClick={minimize}>
               <Minus aria-hidden="true" size={15} />
@@ -509,7 +547,7 @@ function DiagnosticsPage({
         sourceConfigs={loadSourceConfigs()}
         overlaySettings={overlaySettings}
         appVersion={APP_VERSION}
-        platform="unknown"
+        platform={audio.catalog?.platform ?? "unknown"}
         onRunLeakage={() => void diagnostics.runLeakage()}
       />
       <AudioDevicePanel audio={audio} />

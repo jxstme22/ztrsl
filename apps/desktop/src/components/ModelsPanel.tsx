@@ -639,6 +639,7 @@ function UrlInstallRow({ models }: { models: ModelUiState }) {
     { value: "ctranslate2", label: "ctranslate2 (NLLB)" },
     { value: "sherpa-onnx", label: "sherpa-onnx (CTC)" },
     { value: "candle", label: "candle (MADLAD)" },
+    { value: "mlx", label: "mlx (Apple Silicon Whisper)" },
   ];
 
   return (

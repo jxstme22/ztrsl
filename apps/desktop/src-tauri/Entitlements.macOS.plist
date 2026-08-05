@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- PERSONAL LOCAL BUILD: intentionally NOT App-Sandboxed.
+       The official release profile keeps App Sandbox; this build is for the
+       author's own use, where the sandbox breaks local IPC (loopback bind),
+       sidecar spawn, and model-store writes with EPERM ("Operation not
+       permitted"). No sandbox keys are set: the app reads/writes the real
+       home directory like any regular app. -->
+</dict>
+</plist>

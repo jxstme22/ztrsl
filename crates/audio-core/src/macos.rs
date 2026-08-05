@@ -29,8 +29,8 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use coreaudio_sys::{
-    AudioDeviceID, AudioObjectGetPropertyData, AudioObjectPropertyAddress,
-    kAudioDevicePropertyDeviceIsAlive, kAudioDevicePropertyDeviceName,
+    AudioDeviceID, AudioObjectGetPropertyData, AudioObjectGetPropertyDataSize,
+    AudioObjectPropertyAddress, kAudioDevicePropertyDeviceIsAlive, kAudioDevicePropertyDeviceName,
     kAudioDevicePropertyDeviceUID, kAudioDevicePropertyStreams,
     kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDefaultOutputDevice,
     kAudioHardwarePropertyDevices, kAudioObjectPropertyElementMaster,
@@ -42,6 +42,7 @@ use cpal::{FromSample, Sample, SampleFormat, SizedSample, Stream, StreamConfig};
 
 use crate::{
     AudioEndpoint, AudioError, AudioFormat, AudioFrame, DefaultRoles, EndpointKind, EndpointState,
+    SYSTEM_AUDIO_ENDPOINT_ID,
 };
 
 /// Raw CoreAudio device id → stable wire id. CoreAudio device ids are numeric
@@ -56,34 +57,33 @@ fn device_name(device_id: AudioDeviceID) -> Option<String> {
 }
 
 /// Read a string-valued CoreAudio device property (UID, name). Returns `None`
-/// when the property is absent or not valid UTF-8.
-fn get_string_property(device_id: AudioDeviceID, selector: u32) -> Option<String> {
-    let address = AudioObjectPropertyAddress {
-        mSelector: selector,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMaster,
-    };
+/// Fetch a CoreAudio object property's raw bytes.
+///
+/// The size query goes through `AudioObjectGetPropertyDataSize`: the older
+/// "AudioObjectGetPropertyData with NULL outData" size-query pattern returns
+/// `kAudioHardwareUnsupportedOperationError` ('nope') for the hardware device
+/// list on recent macOS, which silently empties the endpoint catalog.
+///
+/// # Safety
+/// Callers must hold no conflicting access to the returned buffer's memory.
+unsafe fn property_data(
+    device_id: AudioDeviceID,
+    address: &AudioObjectPropertyAddress,
+) -> Result<Vec<u8>, i32> {
     let mut size: u32 = 0;
-    // SAFETY: We pass the size query first, then a buffer of exactly that
-    // size. CoreAudio fills `size` with the property data length.
+    // SAFETY: `size` is a valid u32 buffer for the returned size.
     let status = unsafe {
-        AudioObjectGetPropertyData(
-            device_id,
-            &address,
-            0,
-            std::ptr::null(),
-            &mut size,
-            std::ptr::null_mut(),
-        )
+        AudioObjectGetPropertyDataSize(device_id, address, 0, std::ptr::null(), &mut size)
     };
     if status != 0 || size == 0 {
-        return None;
+        return Err(status);
     }
     let mut buffer = vec![0_u8; size as usize];
+    // SAFETY: `buffer` is exactly `size` bytes of writable memory.
     let status = unsafe {
         AudioObjectGetPropertyData(
             device_id,
-            &address,
+            address,
             0,
             std::ptr::null(),
             &mut size,
@@ -91,8 +91,21 @@ fn get_string_property(device_id: AudioDeviceID, selector: u32) -> Option<String
         )
     };
     if status != 0 {
-        return None;
+        return Err(status);
     }
+    Ok(buffer)
+}
+
+/// Read a string-valued CoreAudio device property (UID, name). Returns `None`
+/// when the property is absent or not valid UTF-8.
+fn get_string_property(device_id: AudioDeviceID, selector: u32) -> Option<String> {
+    let address = AudioObjectPropertyAddress {
+        mSelector: selector,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMaster,
+    };
+    // SAFETY: `property_data` only touches freshly allocated local memory.
+    let buffer = unsafe { property_data(device_id, &address) }.ok()?;
     // UID/name is a CFStringRef; reading it as UTF-8 bytes works for the
     // common ASCII names (BlackHole, MacBook speakers, etc.).
     let raw = CStr::from_bytes_until_nul(&buffer).ok()?;
@@ -106,20 +119,11 @@ fn device_is_alive(device_id: AudioDeviceID) -> bool {
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMaster,
     };
-    let mut alive: u32 = 0;
-    let mut size: u32 = mem::size_of::<u32>() as u32;
-    // SAFETY: `alive` is a valid u32 sized buffer for the property data.
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            device_id,
-            &address,
-            0,
-            std::ptr::null(),
-            &mut size,
-            &mut alive as *mut u32 as *mut c_void,
-        )
+    // SAFETY: `property_data` only touches freshly allocated local memory.
+    let Ok(buffer) = (unsafe { property_data(device_id, &address) }) else {
+        return false;
     };
-    status == 0 && alive != 0
+    buffer.first().copied().unwrap_or(0) != 0
 }
 
 /// True when the device exposes at least one stream on the given scope.
@@ -129,20 +133,11 @@ fn device_has_scope_streams(device_id: AudioDeviceID, scope: u32) -> bool {
         mScope: scope,
         mElement: kAudioObjectPropertyElementMaster,
     };
-    let mut count: u32 = 0;
-    let mut size: u32 = mem::size_of::<u32>() as u32;
-    // SAFETY: `count` is a valid u32 sized buffer.
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            device_id,
-            &address,
-            0,
-            std::ptr::null(),
-            &mut size,
-            &mut count as *mut u32 as *mut c_void,
-        )
+    // SAFETY: `property_data` only touches freshly allocated local memory.
+    let Ok(buffer) = (unsafe { property_data(device_id, &address) }) else {
+        return false;
     };
-    status == 0 && count > 0
+    buffer.len() / mem::size_of::<AudioDeviceID>() > 0
 }
 
 fn system_default_device(selector: u32) -> Option<AudioDeviceID> {
@@ -151,24 +146,11 @@ fn system_default_device(selector: u32) -> Option<AudioDeviceID> {
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMaster,
     };
-    let mut device: AudioDeviceID = 0;
-    let mut size: u32 = mem::size_of::<AudioDeviceID>() as u32;
-    // SAFETY: `device` is a valid AudioDeviceID sized buffer.
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            kAudioObjectSystemObject,
-            &address,
-            0,
-            std::ptr::null(),
-            &mut size,
-            &mut device as *mut AudioDeviceID as *mut c_void,
-        )
-    };
-    if status == 0 && device != 0 {
-        Some(device)
-    } else {
-        None
-    }
+    // SAFETY: `property_data` only touches freshly allocated local memory.
+    let buffer = unsafe { property_data(kAudioObjectSystemObject, &address) }.ok()?;
+    let bytes: [u8; 4] = buffer.get(..4)?.try_into().ok()?;
+    let device = u32::from_ne_bytes(bytes);
+    if device != 0 { Some(device) } else { None }
 }
 
 fn all_device_ids() -> Vec<AudioDeviceID> {
@@ -177,39 +159,17 @@ fn all_device_ids() -> Vec<AudioDeviceID> {
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMaster,
     };
-    let mut size: u32 = 0;
-    // SAFETY: Size query first.
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            kAudioObjectSystemObject,
-            &address,
-            0,
-            std::ptr::null(),
-            &mut size,
-            std::ptr::null_mut(),
-        )
+    // SAFETY: `property_data` only touches freshly allocated local memory.
+    let Ok(buffer) = (unsafe { property_data(kAudioObjectSystemObject, &address) }) else {
+        return Vec::new();
     };
-    let size_usize = size as usize;
-    if status != 0 || size_usize == 0 || size_usize % mem::size_of::<AudioDeviceID>() != 0 {
+    if buffer.len() % mem::size_of::<AudioDeviceID>() != 0 {
         return Vec::new();
     }
-    let count = size_usize / mem::size_of::<AudioDeviceID>();
-    let mut devices = vec![0_u32; count];
-    // SAFETY: `devices` has exactly `count` AudioDeviceID entries.
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            kAudioObjectSystemObject,
-            &address,
-            0,
-            std::ptr::null(),
-            &mut size,
-            devices.as_mut_ptr() as *mut c_void,
-        )
-    };
-    if status != 0 {
-        return Vec::new();
-    }
-    devices
+    buffer
+        .chunks_exact(mem::size_of::<AudioDeviceID>())
+        .map(|chunk| u32::from_ne_bytes(chunk.try_into().expect("chunk is 4 bytes")))
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -319,7 +279,14 @@ impl MacosEndpointCatalog {
             let Some(name) = device_name(device_id) else {
                 continue;
             };
-            let id = device_uid(device_id).unwrap_or_else(|| device_id.to_string());
+            // Wire id: CoreAudio numeric device ids are NOT stable across
+            // sessions (virtual devices churn the numbering), which made
+            // persisted selections fail with EndpointNotFound. The friendly
+            // name is stable, and cpal resolves capture by name anyway. The
+            // "(output)" suffix keeps capture/render ids distinct (BlackHole
+            // exposes both scopes).
+            let capture_id = name.clone();
+            let render_id = format!("{name} (output)");
             let alive = device_is_alive(device_id);
             let state = if alive {
                 EndpointState::Active
@@ -335,7 +302,7 @@ impl MacosEndpointCatalog {
             let has_output = device_has_scope_streams(device_id, kAudioObjectPropertyScopeOutput);
             if has_input {
                 endpoints.push(AudioEndpoint {
-                    id: id.clone(),
+                    id: capture_id,
                     friendly_name: name.clone(),
                     kind: EndpointKind::Capture,
                     state,
@@ -346,7 +313,7 @@ impl MacosEndpointCatalog {
             }
             if has_output {
                 endpoints.push(AudioEndpoint {
-                    id,
+                    id: render_id,
                     friendly_name: name,
                     kind: EndpointKind::Render,
                     state,
@@ -356,6 +323,23 @@ impl MacosEndpointCatalog {
                 });
             }
         }
+        // ScreenCaptureKit system-audio pseudo-endpoint: taps the system
+        // output mix (voice chat included) with no virtual device to install
+        // and no routing to configure — the fix for "I can't find the audio
+        // source" on macOS. Kind is Capture so the UI groups it with
+        // loopback-style sources; the live loop special-cases it by id.
+        endpoints.push(AudioEndpoint {
+            id: SYSTEM_AUDIO_ENDPOINT_ID.to_owned(),
+            friendly_name: "System Audio (all apps)".to_owned(),
+            kind: EndpointKind::Capture,
+            state: EndpointState::Active,
+            default_roles: DefaultRoles::default(),
+            native_format: Some(AudioFormat {
+                sample_rate: SCK_AUDIO_SAMPLE_RATE,
+                channels: 1,
+            }),
+            is_synthetic: false,
+        });
         endpoints.sort_by(|a, b| {
             a.kind
                 .cmp(&b.kind)
@@ -455,6 +439,212 @@ impl MacosAudioCapture {
     pub fn format(&self) -> AudioFormat {
         self.format
     }
+}
+
+/// Sample rate requested from ScreenCaptureKit. SCK honors the configured
+/// rate for captured system audio; 48 kHz matches the app's inference path.
+const SCK_AUDIO_SAMPLE_RATE: u32 = 48_000;
+
+/// Capture the system audio output mix via ScreenCaptureKit (macOS 13+).
+///
+/// Unlike [`MacosAudioCapture`], no virtual device (BlackHole) and no manual
+/// routing are needed: the OS taps the aggregate output mix, so voice chat
+/// audio is captured regardless of which output device the game uses. The
+/// system shows the screen-recording permission prompt on first start.
+///
+/// The SCStream delivers Float32 audio sample buffers on its own dispatch
+/// queue; we downmix to mono and push into the same bounded-channel surface
+/// as the cpal capture, so the desktop live loop is source-agnostic.
+pub struct MacosSystemAudioCapture {
+    _stream: screencapturekit::stream::SCStream,
+    frames: Receiver<AudioFrame>,
+    dropped_frames: Arc<AtomicU64>,
+    /// Count of audio sample buffers delivered by ScreenCaptureKit. The live
+    /// loop uses this to distinguish "silent but healthy" from "capture
+    /// silently broken" (typically missing Screen Recording permission, which
+    /// makes SCK start without ever delivering audio).
+    frames_received: Arc<AtomicU64>,
+    format: AudioFormat,
+}
+
+impl MacosSystemAudioCapture {
+    pub fn start(queue_capacity: usize) -> Result<Self, AudioError> {
+        if queue_capacity == 0 {
+            return Err(AudioError::InvalidQueueCapacity);
+        }
+        use screencapturekit::prelude::*;
+
+        let content = SCShareableContent::get().map_err(|error| {
+            AudioError::Platform(format!("ScreenCaptureKit content query failed: {error}"))
+        })?;
+        let display =
+            content.displays().first().cloned().ok_or_else(|| {
+                AudioError::Platform("ScreenCaptureKit found no displays".to_owned())
+            })?;
+        // No windows are excluded: the filter exists only to anchor the
+        // stream to a display; we never consume video frames.
+        let filter = SCContentFilter::create()
+            .with_display(&display)
+            .with_excluding_windows(&[])
+            .build();
+        let config = SCStreamConfiguration::new()
+            .with_captures_audio(true)
+            .with_sample_rate(SCK_AUDIO_SAMPLE_RATE as i32)
+            .with_channel_count(2);
+        let (sender, frames) = mpsc::sync_channel(queue_capacity);
+        let dropped_frames = Arc::new(AtomicU64::new(0));
+        let frames_received = Arc::new(AtomicU64::new(0));
+        let callback_drops = Arc::clone(&dropped_frames);
+        let callback_received = Arc::clone(&frames_received);
+        let sequence = Arc::new(AtomicU64::new(0));
+        let captured_samples = Arc::new(AtomicU64::new(0));
+        let mut stream = SCStream::new(&filter, &config);
+        let handler_id = stream.add_output_handler(
+            move |sample: CMSampleBuffer, output_type| {
+                if output_type != SCStreamOutputType::Audio {
+                    return;
+                }
+                callback_received.fetch_add(1, Ordering::Relaxed);
+                let Some(mono) = extract_sck_audio(&sample) else {
+                    return;
+                };
+                if mono.is_empty() {
+                    return;
+                }
+                // First sample index of this buffer → start-of-frame timestamp
+                // in nanoseconds, matching the cpal capture convention.
+                let start = captured_samples.fetch_add(
+                    u64::try_from(mono.len()).unwrap_or(u64::MAX),
+                    Ordering::Relaxed,
+                );
+                let timestamp_ns =
+                    start.saturating_mul(1_000_000_000) / u64::from(SCK_AUDIO_SAMPLE_RATE);
+                let frame = AudioFrame {
+                    sequence: sequence.fetch_add(1, Ordering::Relaxed),
+                    capture_monotonic_ns: timestamp_ns,
+                    sample_rate: SCK_AUDIO_SAMPLE_RATE,
+                    channels: 1,
+                    samples: mono,
+                };
+                if sender.try_send(frame).is_err() {
+                    callback_drops.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+            SCStreamOutputType::Audio,
+        );
+        if handler_id.is_none() {
+            return Err(AudioError::Platform(
+                "ScreenCaptureKit rejected the audio output handler".to_owned(),
+            ));
+        }
+        stream.start_capture().map_err(|error| {
+            AudioError::Platform(format!(
+                "ScreenCaptureKit could not start system audio (grant Screen \
+                 Recording permission to yTRSLT in System Settings > Privacy & \
+                 Security if prompted): {error}"
+            ))
+        })?;
+        Ok(Self {
+            _stream: stream,
+            frames,
+            dropped_frames,
+            frames_received,
+            format: AudioFormat {
+                sample_rate: SCK_AUDIO_SAMPLE_RATE,
+                channels: 1,
+            },
+        })
+    }
+
+    /// Total audio buffers delivered by ScreenCaptureKit since start, whether
+    /// or not they made it into the bounded channel.
+    #[must_use]
+    pub fn frames_received(&self) -> u64 {
+        self.frames_received.load(Ordering::Relaxed)
+    }
+
+    pub fn try_next(&self) -> Result<Option<AudioFrame>, AudioError> {
+        match self.frames.try_recv() {
+            Ok(frame) => Ok(Some(frame)),
+            Err(TryRecvError::Empty) => Ok(None),
+            Err(TryRecvError::Disconnected) => Err(AudioError::EndpointInvalidated),
+        }
+    }
+
+    #[must_use]
+    pub fn dropped_frames(&self) -> u64 {
+        self.dropped_frames.load(Ordering::Relaxed)
+    }
+
+    #[must_use]
+    pub fn format(&self) -> AudioFormat {
+        self.format
+    }
+}
+
+/// Downmix one ScreenCaptureKit audio sample buffer to mono f32.
+///
+/// SCK delivers Float32 PCM. The layout is either a single interleaved
+/// buffer (`AudioBuffer.number_channels > 1`) or one non-interleaved buffer
+/// per channel (`AudioBufferList.num_buffers() == channels`); both shapes
+/// are handled. Returns `None` when the buffer carries no audio.
+fn extract_sck_audio(sample: &screencapturekit::cm::CMSampleBuffer) -> Option<Vec<f32>> {
+    use screencapturekit::prelude::CMSampleBufferExt;
+    let list = sample.audio_buffer_list()?;
+    match list.num_buffers() {
+        0 => None,
+        1 => {
+            let buffer = list.get(0)?;
+            let channels = usize::try_from(buffer.number_channels).unwrap_or(1).max(1);
+            Some(downmix_interleaved(buffer.data(), channels))
+        }
+        _ => {
+            let channel_data = list.iter().map(|buffer| buffer.data()).collect::<Vec<_>>();
+            Some(downmix_separate(&channel_data))
+        }
+    }
+}
+
+/// Decode little-endian f32 PCM bytes and downmix to mono. Handles both
+/// mono (`channels == 1`, passthrough) and interleaved multi-channel data.
+fn downmix_interleaved(data: &[u8], channels: usize) -> Vec<f32> {
+    if channels == 1 {
+        return data
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("4-byte chunk")))
+            .collect();
+    }
+    let mut mono = Vec::with_capacity(data.len() / 4 / channels);
+    for frame in data.chunks_exact(4 * channels).map(|chunk| {
+        chunk
+            .chunks_exact(4)
+            .map(|sample| f32::from_le_bytes(sample.try_into().expect("4-byte chunk")))
+            .sum::<f32>()
+    }) {
+        mono.push(frame / channels as f32);
+    }
+    mono
+}
+
+/// Sum per-channel f32 PCM byte slices position-wise into mono, normalized by
+/// the channel count. Ragged buffers are truncated to the shortest channel.
+fn downmix_separate(channel_data: &[&[u8]]) -> Vec<f32> {
+    let frame_count = channel_data
+        .iter()
+        .map(|data| data.len() / 4)
+        .min()
+        .unwrap_or(0);
+    let mut mono = vec![0.0_f32; frame_count];
+    let channel_count = channel_data.len().max(1) as f32;
+    for data in channel_data {
+        for (index, chunk) in data.chunks_exact(4).take(frame_count).enumerate() {
+            mono[index] += f32::from_le_bytes(chunk.try_into().expect("4-byte chunk"));
+        }
+    }
+    for sample in &mut mono {
+        *sample /= channel_count;
+    }
+    mono
 }
 
 fn build_capture_stream<T>(
@@ -691,5 +881,60 @@ mod tests {
         assert!(watcher.is_ok());
         // Must be droppable without panicking (deterministic shutdown).
         drop(watcher);
+    }
+
+    #[test]
+    fn catalog_includes_system_audio_endpoint() {
+        let endpoints = MacosEndpointCatalog::enumerate().unwrap();
+        let system_audio = endpoints
+            .iter()
+            .find(|endpoint| endpoint.id == SYSTEM_AUDIO_ENDPOINT_ID);
+        assert!(
+            system_audio.is_some(),
+            "system-audio endpoint must be enumerated on macOS"
+        );
+        let endpoint = system_audio.unwrap();
+        assert_eq!(endpoint.kind, EndpointKind::Capture);
+        assert_eq!(endpoint.state, EndpointState::Active);
+        assert_eq!(
+            endpoint.native_format,
+            Some(AudioFormat {
+                sample_rate: SCK_AUDIO_SAMPLE_RATE,
+                channels: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn downmix_mono_bytes_passes_through() {
+        let data = [1.0_f32, -0.5, 0.25].map(f32::to_le_bytes).concat();
+        let mono = downmix_interleaved(&data, 1);
+        assert_eq!(mono, vec![1.0, -0.5, 0.25]);
+    }
+
+    #[test]
+    fn downmix_interleaved_stereo_averages_channels() {
+        let data = [(1.0_f32, 0.0_f32), (-0.5, -0.5), (0.0, 2.0)]
+            .iter()
+            .flat_map(|(left, right)| [left.to_le_bytes(), right.to_le_bytes()].concat())
+            .collect::<Vec<_>>();
+        let mono = downmix_interleaved(&data, 2);
+        assert_eq!(mono, vec![0.5, -0.5, 1.0]);
+    }
+
+    #[test]
+    fn downmix_separate_channels_sums_and_normalizes() {
+        let left = [0.5_f32, -1.0, 0.25].map(f32::to_le_bytes).concat();
+        let right = [0.5_f32, 1.0, 0.25].map(f32::to_le_bytes).concat();
+        let mono = downmix_separate(&[&left, &right]);
+        assert_eq!(mono, vec![0.5, 0.0, 0.25]);
+    }
+
+    #[test]
+    fn downmix_separate_truncates_to_shortest_channel() {
+        let left = [0.5_f32, -1.0, 0.25, 9.0].map(f32::to_le_bytes).concat();
+        let right = [0.5_f32, 1.0].map(f32::to_le_bytes).concat();
+        let mono = downmix_separate(&[&left, &right]);
+        assert_eq!(mono, vec![0.5, 0.0]);
     }
 }

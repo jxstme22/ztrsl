@@ -82,3 +82,18 @@ export async function stopAudioMeter(): Promise<void> {
     await invoke("stop_audio_meter");
   }
 }
+
+/**
+ * Request microphone access through AVFoundation (the same TCC gate the
+ * cpal capture hits). When the status is not yet determined this shows the
+ * real macOS permission prompt. Returns "authorized" | "denied" |
+ * "restricted" | "notDetermined" | "unsupported".
+ */
+export async function requestMicrophonePermission(): Promise<
+  "authorized" | "denied" | "restricted" | "notDetermined" | "unsupported"
+> {
+  if (!isTauri()) {
+    return "unsupported";
+  }
+  return await invoke("request_microphone_permission");
+}

@@ -28,6 +28,7 @@ import {
   resolvePlacement,
   type MonitorGeometry,
 } from "./placement";
+import { isMacos } from "../windowEffects";
 
 const SNAPSHOT_EVENT = "overlay:snapshot";
 const RECOVERED_EVENT = "overlay:recovered";
@@ -67,6 +68,11 @@ export async function syncOverlayWindow(
   snapshot: OverlaySnapshot,
 ): Promise<void> {
   if (!isDesktopRuntime()) {
+    return;
+  }
+  // On macOS the separate overlay window is disabled — the control window
+  // itself becomes the overlay (see `setWindowedOverlay`).
+  if (isMacos()) {
     return;
   }
 

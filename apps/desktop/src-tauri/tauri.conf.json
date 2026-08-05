@@ -45,7 +45,8 @@
     ],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost"
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -59,6 +60,7 @@
     ],
     "macOS": {
       "signingIdentity": "-",
+      "entitlements": "Entitlements.macOS.plist",
       "infoPlist": "Info.plist"
     },
     "resources": ["sidecars/"]

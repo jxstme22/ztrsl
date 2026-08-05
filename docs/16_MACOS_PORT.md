@@ -1,9 +1,11 @@
 # macOS (Apple Silicon M4) Reliability Assessment & Recommended Stack
 
-Status: **partially implemented** (v0.5). CoreAudio capture (mic + BlackHole
-loopback), the device watcher, and the MLX Whisper ASR provider are in; DMG
-packaging, permissions UX, and UI polish remain. Windows stays first-class;
-the macOS backend mirrors the same trait surface.
+Status: **partially implemented** (v0.6). CoreAudio capture (mic + BlackHole
+loopback), ScreenCaptureKit system-audio capture, the device watcher, and the
+MLX Whisper ASR provider are in; the control window runs vibrancy glass and a
+windowed overlay mode on macOS. DMG packaging works (ad-hoc signed); permissions
+UX and further polish remain. Windows stays first-class; the macOS backend
+mirrors the same trait surface.
 
 ## 1. Where the project stands on macOS today
 
@@ -16,9 +18,17 @@ The project targets Windows 11 first. Running on an Apple Silicon Mac today:
 | Model management (catalog, download, install, delete) | **Works** | Pure Rust; the mirror support added in 0.2.0 applies on every platform |
 | Python inference sidecar (VAD, Whisper, NLLB) | **Runs** | `faster-whisper`/`ctranslate2`/`onnxruntime`/`sherpa-onnx` all ship macOS arm64 wheels |
 | Real audio capture (mic / BlackHole loopback) | **Implemented (v0.5)** | `MacosEndpointCatalog`/`MacosDeviceWatcher`/`MacosAudioCapture` in `audio-core`; the live loop uses real capture |
+| System-audio capture (no install) | **Implemented (v0.6)** | `MacosSystemAudioCapture` in `audio-core` taps the whole output mix via ScreenCaptureKit (macOS 13+); surfaced as the "System Audio (all apps)" source — no BlackHole, no routing |
 | Device-change watcher | **Implemented (v0.5)** | Poll-based CoreAudio diff in `audio-core/src/macos.rs` |
 | Apple Silicon ASR (MLX) | **Implemented (v0.5)** | `mlx-whisper-large-v3-turbo-q4` catalog entry; `mlx` ASR provider runs on Metal |
-| Live translation end-to-end | **Works with real capture** | Mic or BlackHole input feeds VAD → MLX Whisper → NLLB |
+| Live translation end-to-end | **Works with real capture** | Mic, BlackHole input, or system audio feeds VAD → MLX Whisper → NLLB |
+| Native window glass (vibrancy) | **Implemented (v0.6)** | `window-vibrancy` behind `apply_window_shell`; transparent webview no longer renders flat black |
+| Windowed overlay mode | **Implemented (v0.6)** | Titlebar button morphs the control window into an always-on-top caption strip; separate overlay window disabled on macOS (renders black without vibrancy) |
+| Sandboxed app bundle | **Implemented (v0.6)** | App Sandbox + network client + audio input + user-selected file read entitlements; `NSScreenCaptureUsageDescription` for system audio |
+| Sandboxed writes | **Implemented (v0.6)** | All user-visible writes (model store, sidecar logs/caches) are redirected into the sandbox container `~/Library/Containers/app.localsquadtranslator.desktop/Data`; the sidecar gets a container `HOME` + `HF_HOME`/`XDG_CACHE_HOME`/`TORCH_HOME`/`MPLCONFIGDIR`/`PYTHONPYCACHEPREFIX`. Without this the sandbox denies real-home writes with EPERM ("Operation not permitted") |
+| Sandboxed loopback IPC | **Implemented (v0.6)** | `com.apple.security.network.server` entitlement added: the supervisor binds an ephemeral 127.0.0.1 port to hand the sidecar its IPC endpoint; without it the bind fails EPERM and live translation dies at startup. The author's personal build runs **unsandboxed** (empty entitlements plist) |
+| System-audio diagnostics | **Implemented (v0.6)** | Silent TCC denial (no Screen Recording permission) makes SCK start without ever delivering audio. The live loop now fails after 4s of zero buffers with guidance, and Settings → Diagnostics has an "Open System Settings" button for the Screen Recording pane |
+| Device enumeration | **Fixed (v0.6)** | macOS 26 rejects the legacy CoreAudio size-query pattern (`AudioObjectGetPropertyData` with NULL outData → 'nope') for `kAudioHardwarePropertyDevices`, emptying the catalog. All property reads now go through `AudioObjectGetPropertyDataSize`; mic/BlackHole/speakers enumerate again |
 
 Two concrete compile-time gaps were found and fixed in 0.2.0:
 
@@ -39,8 +49,8 @@ Windows solves this with WASAPI loopback on any render endpoint (ADRs
 
 | Option | How it works | Cost | Verdict |
 |---|---|---|---|
-| **BlackHole 2ch** (Rogue Amoeba, open source, free) | A signed virtual audio device. User routes VALORANT audio to BlackHole (VALORANT lets you pick an output device); the app captures its input via CoreAudio/CPAL | Install a `.dmg` driver once; `cpal` already supports CoreAudio capture | **Recommended** — matches the project's "ordinary audio endpoints only" boundary (no hooks, no injection) |
-| ScreenCaptureKit (macOS 13.3+) | Captures system audio of the *default* output device | Requires Screen Recording permission; limited to one output | Fallback for zero-install setups; captures the whole system mix, not per-app |
+| **ScreenCaptureKit (macOS 13+)** | Taps the system audio mix of the current output setup; implemented as `MacosSystemAudioCapture` and the "System Audio (all apps)" source | Screen Recording permission prompt on first use; captures the whole system mix, not per-app | **Default (v0.6)** — zero-install, no routing; matches the project's "ordinary endpoints / OS permission" boundary |
+| **BlackHole 2ch** (Rogue Amoeba, open source, free) | A signed virtual audio device. User routes VALORANT audio to BlackHole (VALORANT lets you pick an output device); the app captures its input via CoreAudio/CPAL | Install a `.dmg` driver once; `cpal` already supports CoreAudio capture | Recommended when per-app separation matters — still supported (v0.5 path unchanged) |
 | Soundflower / other virtual drivers | Same idea as BlackHole | Third-party trust burden | Not recommended |
 
 Port plan: a `CoreAudioDeviceWatcher` + `CoreAudioEndpointCatalog` in
@@ -125,5 +135,6 @@ Measured on an M-series Mac (arm64, macOS):
    `mlx-whisper-large-v3-turbo-q4` catalog entry (~440 MB, Metal).
 4. ~~Benchmark NLLB on an M4~~ **Done** (v0.5): ~340 ms/sentence CPU — keep
    CTranslate2; no MLX swap.
-5. **Remaining**: macOS permissions UX (mic prompt + guidance, BlackHole setup
-   hint), DMG packaging/notarization, and UI polish (control app + overlay).
+5. **Remaining**: macOS permissions UX (mic prompt + guidance, first-run Screen
+   Recording hint for system audio), DMG notarization for distribution beyond
+   direct download, and UI polish (windowed overlay placement memory).

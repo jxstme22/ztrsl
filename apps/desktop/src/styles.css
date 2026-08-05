@@ -2067,6 +2067,54 @@ input[type="range"]::-moz-range-thumb {
 /* Overlay window                                                    */
 /* ---------------------------------------------------------------- */
 
+/* Windowed overlay mode: the control window itself becomes the caption
+   strip (macOS). Mirrors .overlay-shell — captions sit at the bottom of
+   the window, hover reveals the exit affordance. */
+.windowed-overlay {
+  display: grid;
+  height: 100vh;
+  align-content: end;
+  padding: 10px 14px;
+  background: transparent;
+  pointer-events: none;
+}
+
+.windowed-overlay-exit {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 3;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  background: rgba(20, 20, 24, 0.7);
+  color: var(--fg-strong);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity 120ms ease;
+  cursor: pointer;
+}
+
+.windowed-overlay:hover .windowed-overlay-exit {
+  opacity: 1;
+}
+
+.windowed-overlay-exit:hover {
+  color: var(--fg-inverse);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.windowed-overlay > .caption-stack {
+  width: 100%;
+}
+
 .overlay-shell {
   display: grid;
   min-height: 100vh;

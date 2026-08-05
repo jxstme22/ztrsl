@@ -14,6 +14,11 @@ thiserror.workspace = true
 coreaudio-rs = "0.11"
 coreaudio-sys = "0.2"
 cpal = "0.15.3"
+# ScreenCaptureKit (macOS 13+) system-audio capture: no virtual device or
+# driver needed to tap the system output mix, unlike the BlackHole route.
+# `macos_13_0` enables audio capture + the sync clock. The crate is a thin
+# safe binding used by macloop and other screen-capture apps.
+screencapturekit = { version = "8", features = ["macos_13_0"] }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -16,6 +16,7 @@ import {
   unregisterHotkeys,
   type HotkeyErrors,
 } from "./bridge";
+import { setWindowedOverlay, isMacos } from "../windowEffects";
 import {
   DEFAULT_OVERLAY_SNAPSHOT,
   type Caption,
@@ -37,6 +38,7 @@ export function useOverlayController() {
   const [captions, dispatch] = useReducer(captionReducer, []);
   const [visible, setVisible] = useState(DEFAULT_OVERLAY_SNAPSHOT.visible);
   const [mode, setMode] = useState<OverlayMode>(DEFAULT_OVERLAY_SNAPSHOT.mode);
+  const [windowedMode, setWindowedMode] = useState(false);
   const [translationEnabled, setTranslationEnabled] = useState(true);
   const [settings, setSettings] = useState(loadOverlaySettings);
   const [hotkeyErrors, setHotkeyErrors] = useState<HotkeyErrors>({});
@@ -143,47 +145,70 @@ export function useOverlayController() {
     };
   }, []);
 
-  const handleHotkey = useCallback((action: HotkeyAction) => {
-    switch (action) {
-      case "toggleOverlay":
-        setVisible((current) => !current);
-        break;
-      case "toggleTranslation":
-        setTranslationEnabled((current) => !current);
-        break;
-      case "toggleEditMode":
-        setVisible(true);
-        setMode((current) => (current === "edit" ? "play" : "edit"));
-        break;
-      case "clearCaptions":
-        dispatch({ type: "clear" });
-        break;
-      case "increaseText":
-        setSettings((current) =>
-          normalizeSettings({
-            ...current,
-            fontScale: current.fontScale + 0.1,
-          }),
-        );
-        break;
-      case "decreaseText":
-        setSettings((current) =>
-          normalizeSettings({
-            ...current,
-            fontScale: current.fontScale - 0.1,
-          }),
-        );
-        break;
-      case "toggleHistory":
-        setSettings((current) => ({
-          ...current,
-          overlayContent:
-            current.overlayContent === "history" ? "captions" : "history",
-        }));
-        setVisible(true);
-        break;
-    }
+  const toggleWindowedMode = useCallback(() => {
+    setWindowedMode((current) => !current);
+    setVisible(false);
+    setMode("play");
   }, []);
+
+  useEffect(() => {
+    void setWindowedOverlay(windowedMode).catch((error: unknown) => {
+      setWindowError(
+        typeof error === "string"
+          ? error
+          : "Windowed overlay mode failed to switch.",
+      );
+    });
+  }, [windowedMode]);
+
+  const handleHotkey = useCallback(
+    (action: HotkeyAction) => {
+      switch (action) {
+        case "toggleOverlay":
+          if (isMacos()) {
+            toggleWindowedMode();
+          } else {
+            setVisible((current) => !current);
+          }
+          break;
+        case "toggleTranslation":
+          setTranslationEnabled((current) => !current);
+          break;
+        case "toggleEditMode":
+          setVisible(true);
+          setMode((current) => (current === "edit" ? "play" : "edit"));
+          break;
+        case "clearCaptions":
+          dispatch({ type: "clear" });
+          break;
+        case "increaseText":
+          setSettings((current) =>
+            normalizeSettings({
+              ...current,
+              fontScale: current.fontScale + 0.1,
+            }),
+          );
+          break;
+        case "decreaseText":
+          setSettings((current) =>
+            normalizeSettings({
+              ...current,
+              fontScale: current.fontScale - 0.1,
+            }),
+          );
+          break;
+        case "toggleHistory":
+          setSettings((current) => ({
+            ...current,
+            overlayContent:
+              current.overlayContent === "history" ? "captions" : "history",
+          }));
+          setVisible(true);
+          break;
+      }
+    },
+    [toggleWindowedMode],
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -321,8 +346,10 @@ export function useOverlayController() {
     hotkeyErrors,
     windowError,
     recoveredPlacement,
+    windowedMode,
     showOverlay,
     hideOverlay,
+    toggleWindowedMode,
     toggleEditMode,
     toggleHistoryView,
     clearCaptions,
