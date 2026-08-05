@@ -29,9 +29,61 @@ faulthandler.enable()
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "services" / "inference" / "src"))
 
+def log(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def dll_sha(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    except OSError:
+        return "<missing>"
+
+
 from local_squad_inference.windows_runtime import align_onnxruntime
 
-print(f"onnxruntime alignment: {'ok' if align_onnxruntime() else 'skipped'}")
+import importlib.util
+
+for pkg in ("onnxruntime", "sherpa_onnx"):
+    spec = importlib.util.find_spec(pkg)
+    if spec is None:
+        log(f"[diag] {pkg}: spec not found")
+        continue
+    locations = list(spec.submodule_search_locations or [])
+    log(f"[diag] {pkg}: {locations}")
+    if locations:
+        base = Path(locations[0])
+        if pkg == "sherpa_onnx":
+            lib_dir = base / "lib"
+            for dll in sorted(lib_dir.glob("*.dll")) if lib_dir.is_dir() else []:
+                log(f"[diag]   {dll.name} {dll.stat().st_size} {dll_sha(dll)}")
+        else:
+            capi = base / "capi" / "onnxruntime.dll"
+            log(f"[diag]   capi/onnxruntime.dll {dll_sha(capi)}")
+
+import onnxruntime as _ort
+
+log(f"[diag] onnxruntime module version: {_ort.__version__}")
+aligned = align_onnxruntime()
+log(f"[diag] alignment ran: {aligned}")
+
+spec = importlib.util.find_spec("sherpa_onnx")
+if spec is not None and spec.submodule_search_locations:
+    lib_dir = Path(next(iter(spec.submodule_search_locations))) / "lib"
+    if lib_dir.is_dir():
+        for dll in sorted(lib_dir.glob("*.dll")):
+            log(f"[diag] post-alignment {dll.name} {dll.stat().st_size} {dll_sha(dll)}")
+
+import ctypes
+
+loaded = ctypes.WinDLL("onnxruntime.dll") if os.name == "nt" else None
+if loaded is not None:
+    buf = ctypes.create_unicode_buffer(1024)
+    ctypes.windll.kernel32.GetModuleFileNameW(
+        ctypes.c_void_p(loaded._handle), buf, len(buf)
+    )
+    log(f"[diag] loaded onnxruntime.dll: {buf.value}")
+    ctypes.windll.kernel32.FreeLibrary(ctypes.c_void_p(loaded._handle))
 
 HF = "https://huggingface.co"
 
