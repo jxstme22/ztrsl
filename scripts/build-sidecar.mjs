@@ -79,6 +79,8 @@ const args = [
   "--hidden-import",
   "sherpa_onnx",
   "--hidden-import",
+  "sentencepiece",
+  "--hidden-import",
   "av",
   "--hidden-import",
   "websockets",

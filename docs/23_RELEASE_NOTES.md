@@ -1,5 +1,28 @@
 # 23 — Release Notes
 
+## v0.6.8 — Three new downloadable models, two-column Models page
+
+- **FunASR Paraformer zh (streaming)** — a new downloadable STT model on the
+  Models page: streaming Paraformer (Mandarin/English) via sherpa-onnx
+  (`paraformer-zh-streaming`, Apache-2.0, ~1 GB archive, int8). Pins the
+  sherpa-onnx ONNX export of the FunASR weights.
+- **SenseVoice Small** — multilingual ASR (zh/en/ja/ko/yue) with auto
+  language detection and inverse text normalization via sherpa-onnx
+  (`sensevoice-small`, Apache-2.0, ~239 MB int8). ONNX export of the
+  FunAudioLLM/SenseVoiceSmall weights, revision-pinned and SHA-256 verified.
+- **Helsinki opus-mt (en→zh)** — a new local English→Chinese translation
+  model (`opus-mt-en-zh-ct2-int8`, Apache-2.0, ~158 MB, commercially usable;
+  NLLB is CC-BY-NC). Official CTranslate2 int8 conversion of the Helsinki
+  model. English source + Chinese output only, enforced in the UI and the
+  sidecar.
+- **Models page now uses a two-column grid** for installed, available,
+  custom, and local-export sections (single column on narrow windows).
+- New provider entries in the Live panel for the three models; the sidecar
+  accepts them end-to-end.
+- Sidecar packaging includes the `sentencepiece` dependency; the main window
+  no longer requests transparency; overlay hotkey dismiss behavior fixed
+  (hiding the overlay with the hotkey stops captions from re-showing it).
+
 ## v0.6.7 — Setup wizard removed, audio sources on the Sources page
 
 - **The 11-step setup wizard is gone.** All of its functionality now lives on
