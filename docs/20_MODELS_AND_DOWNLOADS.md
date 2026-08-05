@@ -10,8 +10,9 @@ with SHA-256 verification.
   Runs on CUDA when available, CPU fallback otherwise.
 
 Alternatives: **Whisper large-v3** (full, ~3.1 GB), **MADLAD-400 3B**
-(slower CPU translation, selectable), and **Omni CTC** / **NCSpeech** CTC
-exports for fixed-language recognition.
+(slower CPU translation, selectable), **SenseVoice Small** (multilingual
+zh/en/ja/ko/yue ASR via sherpa-onnx, ~239 MB int8, auto language detection),
+and **Omni CTC** / **NCSpeech** CTC exports for fixed-language recognition.
 
 ## Capabilities and VRAM
 

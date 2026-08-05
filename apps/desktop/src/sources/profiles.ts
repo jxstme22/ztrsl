@@ -127,6 +127,7 @@ export const ASR_PROVIDER_CAPABILITY: Record<string, ProviderCapability> = {
   "whisper-turbo": "preferred",
   "whisper-full": "preferred",
   "groq-whisper": "preferred",
+  "sensevoice-small": "post-filter",
   demo: "post-filter",
 };
 

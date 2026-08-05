@@ -73,6 +73,9 @@ from local_squad_inference.providers import (
     MlxWhisperProvider,
     NemoCtcProvider,
     NllbCTranslate2Provider,
+    OpusMtEnZhProvider,
+    SenseVoiceProvider,
+    StreamingParaformerProvider,
     TranslationProvider,
     provider_readiness,
 )
@@ -426,6 +429,21 @@ def local_ncspeech_provider(name: str) -> NemoCtcProvider:
     return NemoCtcProvider(_model_artifact_dir(NCSpeech_MODEL_DIRS[name]))
 
 
+@lru_cache(maxsize=1)
+def local_paraformer_provider() -> StreamingParaformerProvider:
+    return StreamingParaformerProvider(_model_artifact_dir("paraformer-zh-streaming"))
+
+
+@lru_cache(maxsize=1)
+def sensevoice_provider() -> SenseVoiceProvider:
+    return SenseVoiceProvider(_model_artifact_dir("sensevoice-small"))
+
+
+@lru_cache(maxsize=1)
+def opus_mt_en_zh_provider() -> OpusMtEnZhProvider:
+    return OpusMtEnZhProvider(_model_artifact_dir("opus-mt-en-zh-ct2-int8"))
+
+
 def build_translation_provider(name: str, target_language: str = "en") -> TranslationProvider:
     """Return the configured translation provider. Defaults to local NLLB.
 
@@ -441,6 +459,12 @@ def build_translation_provider(name: str, target_language: str = "en") -> Transl
         return local_translation_provider(target_language)
     if name in {"madlad"}:
         return madlad_translation_provider()
+    if name in {"opus-mt-en-zh"}:
+        if target_language != "zh":
+            raise HttpTranslationError(
+                "opus-mt-en-zh outputs Chinese; set the live output language to Chinese"
+            )
+        return opus_mt_en_zh_provider()
     if name in {"demo"}:
         return DemoTranslationProvider()
     factory = HTTP_PROVIDER_FACTORIES.get(name)
@@ -473,6 +497,10 @@ def build_asr_provider(name: str) -> AsrProvider:
         return local_whisper_provider("whisper-large-v3")
     if name in {"ncspeech", "ncspeech-zh", "ncspeech-zh-parakeet"}:
         return local_ncspeech_provider(name)
+    if name in {"paraformer-zh-streaming"}:
+        return local_paraformer_provider()
+    if name in {"sensevoice-small", "sense-voice"}:
+        return sensevoice_provider()
     if name == "groq-whisper":
         return GroqWhisperProvider()
     if name in {"demo"}:

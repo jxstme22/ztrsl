@@ -16,10 +16,15 @@ def test_build_asr_provider_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
         def __init__(self, model_dir: object, **kwargs: object) -> None:
             pass
 
+    class FakeSenseVoice:
+        def __init__(self, model_dir: object, **kwargs: object) -> None:
+            pass
+
     import local_squad_inference.sidecar as sidecar
 
     monkeypatch.setattr(sidecar, "FasterWhisperProvider", FakeWhisper)
     monkeypatch.setattr(sidecar, "NemoCtcProvider", FakeNemo)
+    monkeypatch.setattr(sidecar, "SenseVoiceProvider", FakeSenseVoice)
     monkeypatch.setenv("LST_GROQ_API_KEY", "gsk_test")
 
     assert isinstance(build_asr_provider("local"), FakeWhisper)
@@ -29,6 +34,8 @@ def test_build_asr_provider_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(build_asr_provider("ncspeech"), FakeNemo)
     assert isinstance(build_asr_provider("ncspeech-zh"), FakeNemo)
     assert isinstance(build_asr_provider("ncspeech-zh-parakeet"), FakeNemo)
+    assert isinstance(build_asr_provider("sensevoice-small"), FakeSenseVoice)
+    assert isinstance(build_asr_provider("sense-voice"), FakeSenseVoice)
     assert isinstance(build_asr_provider("demo"), DemoAsrProvider)
     assert isinstance(build_asr_provider("groq-whisper"), GroqWhisperProvider)
 
