@@ -20,7 +20,9 @@ use audio_core::{
 };
 use ipc_protocol::{CaptionPayload, ClipResultPayload, Envelope};
 use serde::{Deserialize, Serialize};
-use sidecar_supervisor::{SidecarConfig, SidecarSupervisor, workspace_root_from_manifest};
+use sidecar_supervisor::{
+    SidecarConfig, SidecarSupervisor, SupervisorError, workspace_root_from_manifest,
+};
 use tauri::{Emitter, Manager};
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -325,10 +327,10 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
 }
 
 /// v0.4 known-but-not-cataloged models: locally exported CTC ASR models
-/// (NCSpeech family) generated via `scripts/export_ncspeech_onnx.py` and the
-/// opus-mt English→Chinese translation export generated via
-/// `scripts/export_opus_mt_ct2.py`. They are NOT downloadable through the
-/// catalog — the UI must show them without a download action.
+/// (NCSpeech family) generated via `scripts/export_ncspeech_onnx.py`. They are
+/// NOT downloadable through the catalog — the UI must show them without a
+/// download action. (opus-mt-en-zh-ct2-int8 moved into the catalog, so its
+/// local-export layout is resolved through `model_dir` instead.)
 const KNOWN_MODELS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "ncspeech-tl-fastconformer-hybrid-large",
@@ -350,13 +352,6 @@ const KNOWN_MODELS: &[(&str, &str, &str, &str, &str)] = &[
         "asr",
         "sherpa-onnx",
         "Fixed-language Mandarin speech recognition (local NeMo export, CC-BY-4.0)",
-    ),
-    (
-        "opus-mt-en-zh-ct2-int8",
-        "Helsinki opus-mt (en→zh)",
-        "translation",
-        "ctranslate2",
-        "English-to-Chinese local translation (Apache-2.0; run scripts/export_opus_mt_ct2.py)",
     ),
 ];
 
@@ -386,6 +381,38 @@ fn model_dir(root: &std::path::Path, id: &str) -> std::path::PathBuf {
     std::path::PathBuf::new()
 }
 
+/// Total verified size of an installed model in either layout (catalog
+/// `root/<id>` or the local-export `root/artifacts/<id>`); 0 when nothing
+/// is installed. Lets catalog entries that predate the download pipeline
+/// (e.g. opus-mt exported with `scripts/export_opus_mt_ct2.py`) still show
+/// as installed instead of dangling as downloadable.
+fn installed_model_size(root: &std::path::Path, id: &str) -> u64 {
+    let dir = model_dir(root, id);
+    if !dir.is_dir() {
+        return 0;
+    }
+    let Ok(raw) = std::fs::read(dir.join("manifest.json")) else {
+        return 0;
+    };
+    let Ok(manifest) = serde_json::from_slice::<model_manager::InstalledManifest>(&raw) else {
+        return 0;
+    };
+    manifest
+        .artifacts
+        .iter()
+        .try_fold(0u64, |acc, artifact| {
+            let path = dir.join(&artifact.path);
+            if path.is_file()
+                && path.metadata().map(|meta| meta.len()).unwrap_or(0) == artifact.size_bytes
+            {
+                Ok(acc + artifact.size_bytes)
+            } else {
+                Err(())
+            }
+        })
+        .unwrap_or(0)
+}
+
 #[tauri::command]
 async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsList, String> {
     let state = models.state.lock().map_err(lock_error)?;
@@ -399,11 +426,17 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
         .map(|model| (model.id.as_str(), model.dir.as_path()))
         .collect();
     let view_to_info = |view: model_manager::CatalogEntryView| {
-        let installed_size = installed_sizes.get(view.id.as_str()).copied().unwrap_or(0);
-        let installed_dir = installed_dirs
-            .get(view.id.as_str())
-            .map(|dir| dir.display().to_string())
-            .unwrap_or_default();
+        let installed_size = match installed_sizes.get(view.id.as_str()).copied() {
+            Some(size) => size,
+            None => installed_model_size(state.store.root(), &view.id),
+        };
+        let installed_dir = match installed_dirs.get(view.id.as_str()) {
+            Some(dir) => dir.display().to_string(),
+            None if installed_size > 0 => {
+                model_dir(state.store.root(), &view.id).display().to_string()
+            }
+            None => String::new(),
+        };
         let status = if state.installs.contains_key(&view.id) {
             "installing".to_owned()
         } else if installed_size > 0 {
@@ -418,7 +451,12 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
             model_dir: installed_dir,
         }
     };
-    let mut models_info: Vec<ModelInfo> = state.catalog.view().into_iter().map(&view_to_info).collect();
+    let mut models_info: Vec<ModelInfo> = state
+        .catalog
+        .view()
+        .into_iter()
+        .map(&view_to_info)
+        .collect();
     // Phase 10 user models: registered definitions install through the same
     // pipeline as built-ins, so they appear in the same list (with
     // `userDefined: true` for an honest "Custom" badge).
@@ -2310,50 +2348,112 @@ fn run_live_worker(
             .and_then(serde_json::Value::as_str)
             .unwrap_or("cpu/int8")
             .to_owned(),
-        source_mode,
-        target_language,
-        resource_profile,
+        source_mode: source_mode.clone(),
+        target_language: target_language.clone(),
+        resource_profile: resource_profile.clone(),
     };
     if ready.send(Ok(started)).is_err() {
         return;
     }
 
-    #[cfg(target_os = "windows")]
-    let result = run_windows_live_loop(
-        endpoint_name,
-        loopback,
-        monitor_enabled,
-        playback_endpoint_name,
-        &stop,
-        &events,
-        &mut supervisor,
-    );
-    #[cfg(target_os = "macos")]
-    let result = run_macos_live_loop(
-        endpoint_name,
-        loopback,
-        monitor_enabled,
-        playback_endpoint_name,
-        &stop,
-        &events,
-        &mut supervisor,
-    );
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let result = run_development_live_loop(&stop, &events, &mut supervisor);
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = endpoint_name;
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = playback_endpoint_name;
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = loopback;
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let _ = monitor_enabled;
+    // Mid-session transport failures (the sidecar crashed — the usual cause
+    // of a Windows "forcibly closed by remote host" 10054 reset — or the
+    // socket was dropped) are recovered exactly once: restart the sidecar,
+    // re-run `live.start`, and resume capture. The UI keeps its "listening"
+    // state; a Warning explains the hiccup. A second transport failure, or
+    // any other error, is fatal.
+    let mut attempts = 0u32;
+    let result = loop {
+        let run_result: Result<(), LiveLoopError> = {
+            #[cfg(target_os = "windows")]
+            {
+                run_windows_live_loop(
+                    endpoint_name.clone(),
+                    loopback,
+                    monitor_enabled,
+                    playback_endpoint_name.clone(),
+                    &stop,
+                    &events,
+                    &mut supervisor,
+                )
+            }
+            #[cfg(target_os = "macos")]
+            {
+                run_macos_live_loop(
+                    endpoint_name.clone(),
+                    loopback,
+                    monitor_enabled,
+                    playback_endpoint_name.clone(),
+                    &stop,
+                    &events,
+                    &mut supervisor,
+                )
+            }
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+            {
+                run_development_live_loop(&stop, &events, &mut supervisor)
+            }
+        };
+        match run_result {
+            Err(LiveLoopError::Supervisor(error))
+                if attempts == 0 && error.is_transport_failure() =>
+            {
+                attempts += 1;
+                let detail = match supervisor.child_exit_status() {
+                    Some(status) => format!("sidecar crashed (exit {status})"),
+                    None => format!("connection dropped: {error}"),
+                };
+                let _ = events.try_send(LiveWorkerEvent::Warning(format!(
+                    "live translation hiccup: {detail}. Restarting the local \
+                     inference session automatically…"
+                )));
+                match supervisor.restart().and_then(|_| {
+                    supervisor.start_live(
+                        &source_mode,
+                        &provider,
+                        &asr_provider,
+                        &translation_provider,
+                        &target_language,
+                        &resource_profile,
+                        vad_sensitivity,
+                    )
+                }) {
+                    Ok(_) => continue,
+                    Err(restart_error) => {
+                        break Err(LiveLoopError::Supervisor(restart_error));
+                    }
+                }
+            }
+            outcome => break outcome,
+        }
+    };
 
     if let Err(error) = result {
-        let _ = events.send(LiveWorkerEvent::Error(error));
+        let _ = events.send(LiveWorkerEvent::Error(error.to_string()));
     }
     let _ = supervisor.stop_live();
     let _ = events.try_send(LiveWorkerEvent::Stopped);
+}
+
+/// Errors from the live capture/supervisor loop. `Supervisor` errors carry
+/// the original `SupervisorError` so the worker can tell transport failures
+/// (restartable) from protocol/live errors (fatal); audio and UI-channel
+/// failures are plain messages.
+enum LiveLoopError {
+    Supervisor(SupervisorError),
+    Audio(String),
+    Endpoint(String),
+}
+
+impl std::fmt::Display for LiveLoopError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LiveLoopError::Supervisor(error) => write!(formatter, "{error}"),
+            LiveLoopError::Audio(detail) | LiveLoopError::Endpoint(detail) => {
+                formatter.write_str(detail)
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -2365,23 +2465,27 @@ fn run_windows_live_loop(
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
-) -> Result<(), String> {
+) -> Result<(), LiveLoopError> {
     let capture = if loopback {
         audio_core::WindowsAudioCapture::start_loopback(&endpoint_name, 32)
-            .map_err(audio_error_to_string)?
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
     } else {
-        audio_core::WindowsAudioCapture::start(&endpoint_name, 32).map_err(audio_error_to_string)?
+        audio_core::WindowsAudioCapture::start(&endpoint_name, 32)
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
     };
     let mut playback = if monitor_enabled {
         let Some(name) = playback_endpoint_name.as_deref() else {
-            return Err("monitoring output endpoint is missing".to_owned());
+            return Err(LiveLoopError::Endpoint(
+                "monitoring output endpoint is missing".to_owned(),
+            ));
         };
-        Some(audio_core::WindowsAudioPlayback::start(name, 32).map_err(audio_error_to_string)?)
+        Some(audio_core::WindowsAudioPlayback::start(name, 32)
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
     } else {
         None
     };
     let mut resampler = StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
-        .map_err(audio_error_to_string)?;
+        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
     let mut monitor_resampler = playback
         .as_ref()
         .map(|playback| {
@@ -2391,7 +2495,7 @@ fn run_windows_live_loop(
             )
         })
         .transpose()
-        .map_err(audio_error_to_string)?;
+        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
     // Stall detection only begins once the first frame has been delivered:
@@ -2403,7 +2507,7 @@ fn run_windows_live_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        match capture.try_next().map_err(audio_error_to_string)? {
+        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
@@ -2426,7 +2530,7 @@ fn run_windows_live_loop(
                 if !samples.is_empty() {
                     supervisor
                         .send_live_audio(frame.capture_monotonic_ns, samples)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(LiveLoopError::Supervisor)?;
                     metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
                 }
             }
@@ -2471,23 +2575,27 @@ fn run_macos_live_loop(
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
-) -> Result<(), String> {
+) -> Result<(), LiveLoopError> {
     let capture = if loopback {
         audio_core::MacosAudioCapture::start_loopback(&endpoint_name, 32)
-            .map_err(audio_error_to_string)?
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
     } else {
-        audio_core::MacosAudioCapture::start(&endpoint_name, 32).map_err(audio_error_to_string)?
+        audio_core::MacosAudioCapture::start(&endpoint_name, 32)
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
     };
     let mut playback = if monitor_enabled {
         let Some(name) = playback_endpoint_name.as_deref() else {
-            return Err("monitoring output endpoint is missing".to_owned());
+            return Err(LiveLoopError::Endpoint(
+                "monitoring output endpoint is missing".to_owned(),
+            ));
         };
-        Some(audio_core::MacosAudioPlayback::start(name, 32).map_err(audio_error_to_string)?)
+        Some(audio_core::MacosAudioPlayback::start(name, 32)
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
     } else {
         None
     };
     let mut resampler = StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
-        .map_err(audio_error_to_string)?;
+        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
     let mut monitor_resampler = playback
         .as_ref()
         .map(|playback| {
@@ -2497,7 +2605,7 @@ fn run_macos_live_loop(
             )
         })
         .transpose()
-        .map_err(audio_error_to_string)?;
+        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
     // Stall detection only begins once the first frame has been delivered:
@@ -2509,7 +2617,7 @@ fn run_macos_live_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        match capture.try_next().map_err(audio_error_to_string)? {
+        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
@@ -2529,7 +2637,7 @@ fn run_macos_live_loop(
                 if !samples.is_empty() {
                     supervisor
                         .send_live_audio(frame.capture_monotonic_ns, samples)
-                        .map_err(|error| error.to_string())?;
+                        .map_err(LiveLoopError::Supervisor)?;
                     metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
                 }
             }
@@ -2565,7 +2673,7 @@ fn run_development_live_loop(
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
-) -> Result<(), String> {
+) -> Result<(), LiveLoopError> {
     let started = Instant::now();
     let mut packet = 0_u64;
     let mut metrics = LiveMetrics::default();
@@ -2580,7 +2688,7 @@ fn run_development_live_loop(
         let capture_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         supervisor
             .send_live_audio(capture_ns, samples)
-            .map_err(|error| error.to_string())?;
+            .map_err(LiveLoopError::Supervisor)?;
         metrics.captured_frames = metrics.captured_frames.saturating_add(1);
         metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
         drain_live_captions(supervisor, events, &mut metrics)?;
@@ -2597,17 +2705,33 @@ fn drain_live_captions(
     supervisor: &mut SidecarSupervisor,
     events: &SyncSender<LiveWorkerEvent>,
     metrics: &mut LiveMetrics,
-) -> Result<(), String> {
-    while let Some(envelope) = supervisor
-        .read_live_caption(Duration::from_millis(1))
-        .map_err(|error| error.to_string())?
-    {
-        metrics.captions_received = metrics.captions_received.saturating_add(1);
-        events
-            .send(LiveWorkerEvent::Caption(Box::new(envelope.payload)))
-            .map_err(|_| "live UI event receiver disconnected".to_owned())?;
+) -> Result<(), LiveLoopError> {
+    loop {
+        match supervisor.read_live_caption(Duration::from_millis(1)) {
+            Ok(Some(envelope)) => {
+                metrics.captions_received = metrics.captions_received.saturating_add(1);
+                events
+                    .send(LiveWorkerEvent::Caption(Box::new(envelope.payload)))
+                    .map_err(|_| {
+                        LiveLoopError::Endpoint("live UI event receiver disconnected".to_owned())
+                    })?;
+            }
+            Ok(None) => return Ok(()),
+            // The sidecar flagged the failure as recoverable: it skipped a
+            // caption but the session is alive. Surface it as a warning and
+            // keep listening instead of tearing the session down.
+            Err(SupervisorError::LiveInferenceRecoverable(message)) => {
+                events
+                    .send(LiveWorkerEvent::Warning(format!(
+                        "live translation hiccup (recoverable): {message}"
+                    )))
+                    .map_err(|_| {
+                        LiveLoopError::Endpoint("live UI event receiver disconnected".to_owned())
+                    })?;
+            }
+            Err(error) => return Err(LiveLoopError::Supervisor(error)),
+        }
     }
-    Ok(())
 }
 
 fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
@@ -2856,7 +2980,7 @@ mod tests {
         assert!(model_dir_exists(&root, "ncspeech-zh-citrinet-1024-gamma"));
 
         // The known set carries the three NCSpeech variants.
-        assert_eq!(KNOWN_MODELS.len(), 4);
+        assert_eq!(KNOWN_MODELS.len(), 3);
         std::fs::remove_dir_all(root).unwrap();
     }
 

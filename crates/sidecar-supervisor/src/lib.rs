@@ -123,98 +123,16 @@ pub struct SidecarSupervisor {
     /// sidecar shares `ipc_v2`, otherwise 1 (v0.2 compatibility).
     negotiated_version: u16,
     stopped: bool,
+    /// Retained spawn config so a crashed sidecar can be restarted in place
+    /// (`restart()`) without the caller re-supplying anything.
+    config: SidecarConfig,
 }
 
 impl SidecarSupervisor {
     pub fn start(config: &SidecarConfig) -> Result<Self, SupervisorError> {
         config.validate()?;
-        let port = reserve_loopback_port()?;
-        let token = random_hex::<32>()?;
-        let session_bytes = random_bytes::<16>()?;
-        let session_id = to_hex(&session_bytes);
-
-        let mut command = Command::new(&config.python_executable);
-        command
-            .arg("-m")
-            .arg("local_squad_inference.sidecar")
-            .env("PYTHONPATH", &config.python_source_root)
-            .env("LST_IPC_PORT", port.to_string())
-            .env("LST_IPC_TOKEN", &token)
-            .env("LST_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
-            .env("LST_MODEL_DIR", &config.model_root)
-            .env("LST_TRANSLATION_RUNNER", &config.translation_runner)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        for (key, value) in &config.extra_env {
-            command.env(key, value);
-        }
-        #[cfg(target_os = "macos")]
-        if let Some(runtime_library_dir) = &config.runtime_library_dir {
-            command.env("DYLD_LIBRARY_PATH", runtime_library_dir);
-        }
-        #[cfg(target_os = "windows")]
-        {
-            // Never show a console window for the sidecar: the app owns its
-            // own GUI, and a visible console (with its own close button)
-            // makes users think the terminal controls the app — closing it
-            // kills the inference sidecar and the whole app with it.
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-        let mut child = command.spawn().map_err(SupervisorError::Spawn)?;
-
-        let stream = match connect_with_retry(port, &mut child) {
-            Ok(stream) => stream,
-            Err(error) => {
-                terminate_child(&mut child);
-                return Err(error);
-            }
-        };
-        stream
-            .set_read_timeout(Some(IO_TIMEOUT))
-            .map_err(SupervisorError::Io)?;
-        stream
-            .set_write_timeout(Some(IO_TIMEOUT))
-            .map_err(SupervisorError::Io)?;
-        let request = format!("ws://127.0.0.1:{port}");
-        let (mut socket, _) = tungstenite::client(request, stream)
-            .map_err(|error| SupervisorError::Handshake(error.to_string()))?;
-        let hello = Envelope {
-            protocol_version: PROTOCOL_VERSION,
-            message_id: "hello-1".to_owned(),
-            session_id: session_id.clone(),
-            message_type: "hello".to_owned(),
-            sent_monotonic_ns: 0,
-            payload: HelloPayload {
-                token,
-                desktop_version: env!("CARGO_PKG_VERSION").to_owned(),
-                protocol_versions: vec![PROTOCOL_V2, PROTOCOL_VERSION],
-                capabilities: vec![
-                    "pcm_f32le".to_owned(),
-                    "caption_revisions".to_owned(),
-                    CAPABILITY_IPC_V2.to_owned(),
-                    CAPABILITY_MULTI_SOURCE.to_owned(),
-                ],
-            },
-        };
-        write_json(&mut socket, &hello)?;
-        let accepted: Envelope<HelloAcceptedPayload> = read_json(&mut socket)?;
-        accepted
-            .validate_version()
-            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
-        if accepted.message_type != "hello.accepted" {
-            terminate_child(&mut child);
-            return Err(SupervisorError::HandshakeRejected);
-        }
-        // The sidecar computes and echoes the negotiated version (freeze §1);
-        // the desktop trusts the echo and requires a version it proposed.
-        let negotiated_version = accepted.payload.protocol_version;
-        if negotiated_version != PROTOCOL_V2 && negotiated_version != PROTOCOL_VERSION {
-            terminate_child(&mut child);
-            return Err(SupervisorError::HandshakeRejected);
-        }
-
+        let (child, socket, session_id, session_bytes, negotiated_version) =
+            spawn_and_handshake(config)?;
         Ok(Self {
             child,
             socket,
@@ -223,7 +141,41 @@ impl SidecarSupervisor {
             next_sequence: 0,
             negotiated_version,
             stopped: false,
+            config: config.clone(),
         })
+    }
+
+    /// Restart the sidecar subprocess and re-establish the authenticated
+    /// WebSocket session in place. The caller is responsible for re-running
+    /// any live session (`start_live`) after a successful restart; in-flight
+    /// captions and VAD state belong to the old process and are lost.
+    pub fn restart(&mut self) -> Result<(), SupervisorError> {
+        if self.stopped {
+            return Err(SupervisorError::SidecarExited("stopped".to_owned()));
+        }
+        let config = self.config.clone();
+        let _ = self.socket.close(None);
+        terminate_child(&mut self.child);
+        let (child, socket, session_id, session_bytes, negotiated_version) =
+            spawn_and_handshake(&config)?;
+        self.child = child;
+        self.socket = socket;
+        self.session_id = session_id;
+        self.session_bytes = session_bytes;
+        self.next_sequence = 0;
+        self.negotiated_version = negotiated_version;
+        Ok(())
+    }
+
+    /// The subprocess's exit status when it is no longer running, else `None`.
+    /// Lets callers distinguish "the sidecar crashed" (the usual cause of a
+    /// mid-session connection reset) from a dropped socket on a live process.
+    pub fn child_exit_status(&mut self) -> Option<String> {
+        self.child
+            .try_wait()
+            .ok()
+            .flatten()
+            .map(|status| status.to_string())
     }
 
     pub fn fake_roundtrip(
@@ -622,10 +574,20 @@ impl SidecarSupervisor {
             .validate_version_in(&[self.negotiated_version])
             .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
         if response.message_type == "live.error" {
-            return Err(SupervisorError::LiveInference(error_message(
-                &response.payload,
-                "live inference failed",
-            )));
+            let message = error_message(&response.payload, "live inference failed");
+            // The sidecar marks mid-session inference failures recoverable
+            // (a skipped caption, a provider hiccup): the session is still
+            // alive and must NOT be torn down. Only non-recoverable errors
+            // end the live session.
+            let recoverable = response
+                .payload
+                .get("recoverable")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            if recoverable {
+                return Err(SupervisorError::LiveInferenceRecoverable(message));
+            }
+            return Err(SupervisorError::LiveInference(message));
         }
         if !matches!(
             response.message_type.as_str(),
@@ -1007,6 +969,8 @@ pub enum SupervisorError {
     ClipProcessing(String),
     #[error("live translation failed: {0}")]
     LiveInference(String),
+    #[error("live translation hiccup (recoverable): {0}")]
+    LiveInferenceRecoverable(String),
 }
 
 fn error_message(payload: &serde_json::Value, fallback: &str) -> String {
@@ -1048,6 +1012,107 @@ fn connect_with_retry(port: u16, child: &mut Child) -> Result<TcpStream, Supervi
             Err(_) => return Err(SupervisorError::StartupTimeout),
         }
     }
+}
+
+/// Spawn the sidecar subprocess and complete the authenticated hello
+/// handshake over a loopback WebSocket. Shared by `start` (first launch) and
+/// `restart` (crash recovery) so both paths behave identically. On any
+/// failure the child is terminated before the error is returned.
+fn spawn_and_handshake(
+    config: &SidecarConfig,
+) -> Result<(Child, WebSocket<TcpStream>, String, [u8; 16], u16), SupervisorError> {
+    let port = reserve_loopback_port()?;
+    let token = random_hex::<32>()?;
+    let session_bytes = random_bytes::<16>()?;
+    let session_id = to_hex(&session_bytes);
+
+    let mut command = Command::new(&config.python_executable);
+    command
+        .arg("-m")
+        .arg("local_squad_inference.sidecar")
+        .env("PYTHONPATH", &config.python_source_root)
+        .env("LST_IPC_PORT", port.to_string())
+        .env("LST_IPC_TOKEN", &token)
+        .env("LST_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
+        .env("LST_MODEL_DIR", &config.model_root)
+        .env("LST_TRANSLATION_RUNNER", &config.translation_runner)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    for (key, value) in &config.extra_env {
+        command.env(key, value);
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(runtime_library_dir) = &config.runtime_library_dir {
+        command.env("DYLD_LIBRARY_PATH", runtime_library_dir);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Never show a console window for the sidecar: the app owns its
+        // own GUI, and a visible console (with its own close button)
+        // makes users think the terminal controls the app — closing it
+        // kills the inference sidecar and the whole app with it.
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = command.spawn().map_err(SupervisorError::Spawn)?;
+
+    let stream = match connect_with_retry(port, &mut child) {
+        Ok(stream) => stream,
+        Err(error) => {
+            terminate_child(&mut child);
+            return Err(error);
+        }
+    };
+    stream
+        .set_read_timeout(Some(IO_TIMEOUT))
+        .map_err(SupervisorError::Io)?;
+    stream
+        .set_write_timeout(Some(IO_TIMEOUT))
+        .map_err(SupervisorError::Io)?;
+    let request = format!("ws://127.0.0.1:{port}");
+    let (mut socket, _) = tungstenite::client(request, stream)
+        .map_err(|error| SupervisorError::Handshake(error.to_string()))?;
+    let hello = Envelope {        protocol_version: PROTOCOL_VERSION,
+        message_id: "hello-1".to_owned(),
+        session_id: session_id.clone(),
+        message_type: "hello".to_owned(),
+        sent_monotonic_ns: 0,
+        payload: HelloPayload {
+            token,
+            desktop_version: env!("CARGO_PKG_VERSION").to_owned(),
+            protocol_versions: vec![PROTOCOL_V2, PROTOCOL_VERSION],
+            capabilities: vec![
+                "pcm_f32le".to_owned(),
+                "caption_revisions".to_owned(),
+                CAPABILITY_IPC_V2.to_owned(),
+                CAPABILITY_MULTI_SOURCE.to_owned(),
+            ],
+        },
+    };
+    write_json(&mut socket, &hello)?;
+    let accepted: Envelope<HelloAcceptedPayload> = read_json(&mut socket)?;
+    accepted
+        .validate_version()
+        .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+    if accepted.message_type != "hello.accepted" {
+        terminate_child(&mut child);
+        return Err(SupervisorError::HandshakeRejected);
+    }
+    // The sidecar computes and echoes the negotiated version (freeze §1);
+    // the desktop trusts the echo and requires a version it proposed.
+    let negotiated_version = accepted.payload.protocol_version;
+    if negotiated_version != PROTOCOL_V2 && negotiated_version != PROTOCOL_VERSION {
+        terminate_child(&mut child);
+        return Err(SupervisorError::HandshakeRejected);
+    }
+    Ok((
+        child,
+        socket,
+        session_id,
+        session_bytes,
+        negotiated_version,
+    ))
 }
 
 fn write_json<T: serde::Serialize>(
@@ -1199,6 +1264,83 @@ mod tests {
         assert!(
             !SupervisorError::ClipProcessing("unsupported media".to_owned()).is_transport_failure()
         );
+        // Mid-session inference failures the sidecar marks recoverable must
+        // never be classified as transport failures: they leave the session
+        // alive and should surface as warnings, not session teardown.
+        assert!(
+            !SupervisorError::LiveInferenceRecoverable("skipped a caption".to_owned())
+                .is_transport_failure()
+        );
+    }
+
+    /// A crashed sidecar (the usual cause of the Windows `os error 10054`
+    /// mid-session drop) must be detectable by exit status and restartable in
+    /// place; a fresh `live.start` then continues the session on a new
+    /// process. Requires the workspace venv (skipped when absent).
+    #[test]
+    fn crashed_sidecar_restarts_in_place_and_recovers_the_session() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        supervisor
+            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .expect("live must start");
+        let first_session = supervisor.session_id().to_owned();
+
+        // Simulate a native crash: the process dies and the socket goes away,
+        // exactly what Windows reports as "forcibly closed" (WSAECONNRESET).
+        supervisor.child.kill().expect("kill must succeed");
+        let _ = supervisor.child.wait();
+
+        let error = supervisor
+            .read_live_caption(Duration::from_millis(10))
+            .expect_err("crashed sidecar must fail the read");
+        assert!(error.is_transport_failure(), "transport failure: {error}");
+        assert!(
+            supervisor.child_exit_status().is_some(),
+            "exit status must be observable after the crash"
+        );
+
+        supervisor
+            .restart()
+            .expect("restart must re-establish the connection");
+        assert_ne!(supervisor.session_id(), first_session);
+        supervisor
+            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .expect("live must restart after the crash");
+        // A restarted live session routes audio through the real VAD
+        // pipeline (not the fake-caption path), so send speech long enough
+        // to open an utterance, then silence to close it.
+        for i in 0..3u64 {
+            supervisor
+                .send_live_audio(1_000_000 + i * 300_000, vec![0.25; 4_800])
+                .expect("speech must be accepted after restart");
+        }
+        for i in 0..3u64 {
+            supervisor
+                .send_live_audio(4_000_000 + i * 300_000, vec![0.0; 4_800])
+                .expect("silence must be accepted after restart");
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut finals = 0;
+        while finals < 1 && std::time::Instant::now() < deadline {
+            if let Some(caption) = supervisor
+                .read_live_caption(Duration::from_millis(500))
+                .expect("caption read must succeed")
+            {
+                if caption.message_type == "caption.final" {
+                    finals += 1;
+                }
+            }
+        }
+        assert_eq!(
+            finals, 1,
+            "the restarted session must finalize an utterance"
+        );
+        supervisor.stop_live().expect("live must stop");
     }
 
     #[cfg(target_os = "macos")]
