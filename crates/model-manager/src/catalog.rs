@@ -291,6 +291,19 @@ mod tests {
         assert!(sensevoice.files.iter().all(|f| f.sha256.len() == 64));
         let capabilities = crate::capabilities::capabilities_for(sensevoice);
         assert_eq!(capabilities.language_capability, crate::capabilities::LanguageCapability::PostFilter);
+        let opus = catalog
+            .entry("opus-mt-en-zh-ct2-int8")
+            .expect("opus-mt-en-zh-ct2-int8");
+        assert_eq!(opus.kind, ModelKind::Translation);
+        assert_eq!(opus.runtime, "ctranslate2");
+        assert_eq!(
+            opus.files.iter().map(|f| f.size_bytes).sum::<u64>(),
+            opus.download_size_bytes
+        );
+        assert!(opus.files.iter().all(|f| f.sha256.len() == 64));
+        assert_eq!(
+            opus.source, "https://huggingface.co/gaudi/opus-mt-en-zh-ctranslate2"
+        );
     }
 
     #[test]

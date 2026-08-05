@@ -39,7 +39,7 @@ pub use runtime::{
     cuda_pack_download_bytes, system_cuda_available,
 };
 pub use signed_catalog::{public_key_for, sign_payload, verify_catalog_signature};
-pub use store::{InstalledModel, ModelStore};
+pub use store::{InstalledManifest, InstalledModel, ModelStore};
 pub use user_catalog::{
     SUPPORTED_RUNTIMES, USER_CATALOG_FILE, UserCatalog, UserFileInput, UserModelEntry,
     build_user_entry, validate_user_entry,
