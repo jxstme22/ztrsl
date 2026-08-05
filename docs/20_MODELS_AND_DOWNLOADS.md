@@ -12,7 +12,19 @@ with SHA-256 verification.
 Alternatives: **Whisper large-v3** (full, ~3.1 GB), **MADLAD-400 3B**
 (slower CPU translation, selectable), **SenseVoice Small** (multilingual
 zh/en/ja/ko/yue ASR via sherpa-onnx, ~239 MB int8, auto language detection),
-and **Omni CTC** / **NCSpeech** CTC exports for fixed-language recognition.
+**FunASR Paraformer zh (streaming)** (Mandarin/English streaming ASR via
+sherpa-onnx, ~230 MB int8), and **Omni CTC** / **NCSpeech** CTC exports for
+fixed-language recognition.
+
+English→Chinese translation adds **Helsinki opus-mt (en→zh)** — an
+Apache-2.0 (commercially usable) Marian model converted to CTranslate2 int8
+(~151 MB, `opus-mt-en-zh-ct2-int8`). It installs from the Models page like
+any other catalog model: a pinned Hugging Face revision
+(`gaudi/opus-mt-en-zh-ctranslate2`, itself an official CTranslate2 conversion
+of the Helsinki model) is downloaded file-by-file and SHA-256 verified. It
+requires the source language set to English and the output language to
+Chinese. `scripts/export_opus_mt_ct2.py` remains available as a manual export
+alternative.
 
 ## Capabilities and VRAM
 

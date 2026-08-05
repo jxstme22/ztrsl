@@ -1,5 +1,38 @@
 # 23 — Release Notes
 
+## v0.7.2 — opus-mt installs from the Models page, live-session auto-recovery
+
+- **Helsinki opus-mt (en→zh) is now a full catalog model** — `opus-mt-en-zh-ct2-int8`
+  installs from the Models page like any other model: a pinned Hugging Face
+  revision (`gaudi/opus-mt-en-zh-ctranslate2`) is downloaded file-by-file
+  (~151 MB) and SHA-256 verified before install. No more export script step.
+- **Live translation survives sidecar hiccups** — when the local inference
+  sidecar crashes mid-session (the usual cause of a Windows
+  "connection forcibly closed by remote host" / error 10054), the desktop
+  worker now detects the transport failure, restarts the sidecar in place,
+  renegotiates the session, and keeps the caption stream running — with a
+  warning banner instead of ending the session. Non-fatal `live.error`
+  messages the sidecar flags as recoverable are also surfaced as warnings
+  while the session keeps listening.
+- **Models page grid** — installed, available, custom, and local-export
+  sections now lay out as a two-column grid (single column on narrow
+  windows).
+
+## v0.6.8 — FunASR Paraformer + opus-mt (en→zh) models, user-defined model catalog
+
+- **FunASR Paraformer zh (streaming)** — a new downloadable STT model on the
+  Models page: streaming Paraformer (Mandarin/English) via sherpa-onnx
+  (`paraformer-zh-streaming`, Apache-2.0, ~230 MB int8).
+- **Helsinki opus-mt (en→zh)** — a new local English→Chinese translation
+  model (Apache-2.0, commercially usable; NLLB is CC-BY-NC). Converts to
+  CTranslate2 int8 (~80 MB) via `scripts/export_opus_mt_ct2.py`. English
+  source + Chinese output only, enforced in the UI and the sidecar; beam
+  search with repetition penalty keeps short game phrases from degenerating.
+- **User-defined model catalog** — register your own ASR/translation models
+  with source URL, license, and file checksums instead of waiting for a
+  catalog release.
+- SenseVoice Small now ships as a catalog entry with its own provider.
+
 ## v0.6.7 — Setup wizard removed, audio sources on the Sources page
 
 - **The 11-step setup wizard is gone.** All of its functionality now lives on
