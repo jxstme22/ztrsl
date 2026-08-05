@@ -477,9 +477,7 @@ class FakeSherpaSenseVoiceModule:
 
 
 @pytest.fixture
-def sensevoice_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> tuple[dict[str, Any], Path]:
+def sensevoice_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
     pytest.importorskip("numpy")
     model_dir = tmp_path / "sensevoice-small"
     model_dir.mkdir()

@@ -93,7 +93,15 @@ class LivePipeline:
         phrase_filters: PhraseFilterSet | None = None,
         glossary: Glossary | None = None,
     ) -> None:
-        if source_mode not in {"filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"}:
+        if source_mode not in {
+            "filipino",
+            "chinese",
+            "english",
+            "indonesian",
+            "vietnamese",
+            "thai",
+            "malay",
+        }:
             raise ValueError("V1 live mode supports Filipino, Chinese or English only")
         self._asr = asr
         self._translation = translation
