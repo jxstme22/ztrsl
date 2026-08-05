@@ -167,10 +167,59 @@ impl ModelRuntime {
     }
 }
 
+/// Bundle identifier mirrored from tauri.conf.json. Needed to resolve the App
+/// Sandbox container directory on macOS (`~/Library/Containers/<id>/Data`).
+const APP_IDENTIFIER: &str = "app.localsquadtranslator.desktop";
+
+/// macOS App Sandbox container root (`~/Library/Containers/<id>/Data`), the
+/// ONLY directory outside the bundle the sandbox lets us write. `None` when
+/// not sandboxed (dev/workspace runs, non-macOS). All user-visible writes —
+/// the model store, sidecar logs, inference caches — must land under this
+/// container; writing to the real home directory fails with EPERM
+/// ("Operation not permitted") under the sandbox.
+fn sandbox_container_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if !is_macos_sandboxed() {
+            return None;
+        }
+        let home = std::env::var_os("HOME")?;
+        let data = PathBuf::from(home)
+            .join("Library")
+            .join("Containers")
+            .join(APP_IDENTIFIER)
+            .join("Data");
+        // The container is materialized by the sandbox on first launch; make
+        // sure it exists so the model store and sidecar can write into it.
+        let _ = std::fs::create_dir_all(&data);
+        Some(data)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// True when this process runs under the macOS App Sandbox. `sandbox_check`
+/// is deprecated but still functional and requires no extra linkage beyond
+/// libSystem.
+#[cfg(target_os = "macos")]
+fn is_macos_sandboxed() -> bool {
+    unsafe extern "C" {
+        fn sandbox_check(pid: i32, operation: *const std::ffi::c_char, style: i32, ...) -> i32;
+    }
+    let operation = std::ffi::CString::new("sandbox").expect("static operation string");
+    // SANDBOX_FILTER_NONE = 0; returns 1 when the operation is permitted
+    // (i.e. the process IS sandboxed and the "sandbox" operation applies).
+    unsafe { sandbox_check(0, operation.as_ptr(), 0) == 1 }
+}
+
 /// Dev builds resolve the model store next to the workspace so existing
 /// checked-out artifacts keep working; packaged builds use the per-user app
 /// data directory (never `Program Files`, which is read-only for standard
-/// users).
+/// users). On macOS the packaged build runs under App Sandbox, so the store
+/// is redirected into the sandbox container; `app_data_dir()` resolves to the
+/// real `~/Library/Application Support`, which the sandbox denies with EPERM.
 fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
     let workspace = workspace_root_from_manifest();
     if workspace
@@ -180,6 +229,12 @@ fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
         .is_dir()
     {
         workspace.join("models")
+    } else if let Some(container) = sandbox_container_dir() {
+        container
+            .join("Library")
+            .join("Application Support")
+            .join(APP_IDENTIFIER)
+            .join("models")
     } else {
         app.path()
             .app_data_dir()
@@ -222,6 +277,26 @@ fn sidecar_config(bundled: Option<&BundledPaths>, extra_env: &[(String, String)]
     // (live worker, clip analysis, accuracy lab) can call os.add_dll_directory
     // before importing ctranslate2 — not just the live worker.
     let mut env = extra_env.to_vec();
+    // Under the macOS App Sandbox the sidecar's HOME must point into the
+    // sandbox container: it derives its log directory from `Path.home()`
+    // (services/inference sidecar.py `_configure_file_logging`), and Python
+    // inference runtimes cache into `$HOME/.cache`. Writes to the real home
+    // are denied by the sandbox with EPERM. Cache env vars are forwarded so
+    // torch/transformers/matplotlib never touch the real home either.
+    if let Some(container) = sandbox_container_dir() {
+        let home = container.display().to_string();
+        env.push(("HOME".to_owned(), home.clone()));
+        env.push(("LOCALAPPDATA".to_owned(), home.clone()));
+        for (key, sub) in [
+            ("HF_HOME", "hf-cache"),
+            ("XDG_CACHE_HOME", "cache"),
+            ("TORCH_HOME", "cache/torch"),
+            ("MPLCONFIGDIR", "cache/mpl"),
+            ("PYTHONPYCACHEPREFIX", "tmp/pycache"),
+        ] {
+            env.push((key.to_owned(), container.join(sub).display().to_string()));
+        }
+    }
     env.push((
         "LST_CUDA_LIBS_DIR".to_owned(),
         model_root
@@ -1040,6 +1115,158 @@ fn reveal_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
     reveal_in_file_manager(&canonical)
 }
 
+/// Windowed overlay mode: the control window morphs into a compact,
+/// always-on-top caption strip (and back). Exiting restores the normal app
+/// window. The webview renders only the caption stack while active.
+const OVERLAY_MODE_SIZE: (f64, f64) = (900.0, 150.0);
+const APP_MODE_SIZE: (f64, f64) = (995.0, 904.0);
+const APP_MODE_MIN_SIZE: (f64, f64) = (994.0, 904.0);
+
+/// Open the macOS Screen Recording privacy pane. ScreenCaptureKit's
+/// system-audio capture is silent (no frames, no error) until the user
+/// enables this permission for the app, so the UI offers this as a
+/// one-click path to the right System Settings page.
+#[tauri::command]
+fn open_screen_recording_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+            .status()
+            .map_err(|error| error.to_string())?;
+        if !status.success() {
+            return Err(format!(
+                "could not open Screen Recording settings: {status}"
+            ));
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = ();
+    }
+    Ok(())
+}
+
+/// Open the macOS Microphone privacy pane. Denied mic access makes cpal
+/// capture silent with no error, so the app surfaces this as a one-click
+/// fix path.
+#[tauri::command]
+fn open_microphone_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            .status()
+            .map_err(|error| error.to_string())?;
+        if !status.success() {
+            return Err(format!("could not open Microphone settings: {status}"));
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = ();
+    }
+    Ok(())
+}
+
+/// macOS: request microphone access through AVFoundation — the same TCC gate
+/// the cpal capture hits. Returns the resulting status: "authorized",
+/// "denied", "restricted", "notDetermined", or "unsupported" off-macOS.
+/// When the status is "notDetermined" this shows the system prompt; the
+/// completion handler is called on an arbitrary queue, so a tokio oneshot
+/// bridges it back to the command's future.
+#[tauri::command]
+async fn request_microphone_permission() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use block2::RcBlock;
+        use objc2::runtime::Bool;
+        use objc2_av_foundation::{AVCaptureDevice, AVAuthorizationStatus, AVMediaTypeAudio};
+        // The media-type constant is an extern static backed by AVFoundation,
+        // which the app links; dereferencing the static is unsafe.
+        let media_type = unsafe { AVMediaTypeAudio.as_ref() }
+            .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
+        let status =
+            unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+        if status != AVAuthorizationStatus::NotDetermined {
+            return Ok(auth_status_label(status));
+        }
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        {
+            // The framework copies the completion block, so the block only
+            // needs to live for the synchronous call; dropping it afterwards
+            // keeps this future `Send`.
+            let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
+            let block = RcBlock::new(move |granted: Bool| {
+                // The block is `Fn` and may be invoked once; take the channel
+                // sender so a second invocation (never expected) no-ops.
+                if let Ok(mut slot) = sender.lock() {
+                    if let Some(sender) = slot.take() {
+                        let _ = sender.send(granted.as_bool());
+                    }
+                }
+            });
+            unsafe {
+                AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, &block);
+            }
+        }
+        match tokio::time::timeout(Duration::from_secs(120), receiver).await {
+            Ok(Ok(true)) => Ok("authorized".to_owned()),
+            Ok(Ok(false)) => Ok("denied".to_owned()),
+            Ok(Err(_)) => Err("microphone permission request failed".to_owned()),
+            Err(_) => Err("timed out waiting for microphone permission".to_owned()),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok("unsupported".to_owned())
+    }
+}
+
+/// Map an `AVAuthorizationStatus` to the wire label.
+#[cfg(target_os = "macos")]
+fn auth_status_label(status: objc2_av_foundation::AVAuthorizationStatus) -> String {
+    use objc2_av_foundation::AVAuthorizationStatus;
+    match status {
+        AVAuthorizationStatus::Authorized => "authorized".to_owned(),
+        AVAuthorizationStatus::Denied => "denied".to_owned(),
+        AVAuthorizationStatus::Restricted => "restricted".to_owned(),
+        _ => "notDetermined".to_owned(),
+    }
+}
+
+#[tauri::command]
+fn set_overlay_mode(active: bool, window: tauri::Window) -> Result<(), String> {
+    use tauri::LogicalSize;
+    if active {
+        // The configured min size (994x904) would clamp the caption strip,
+        // so drop it first and restore it when leaving overlay mode.
+        window
+            .set_min_size(Some(LogicalSize::new(300.0, 80.0)))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_size(LogicalSize::new(OVERLAY_MODE_SIZE.0, OVERLAY_MODE_SIZE.1))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())?;
+    } else {
+        window
+            .set_min_size(Some(LogicalSize::new(
+                APP_MODE_MIN_SIZE.0,
+                APP_MODE_MIN_SIZE.1,
+            )))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_size(LogicalSize::new(APP_MODE_SIZE.0, APP_MODE_SIZE.1))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_top(false)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 /// Platform-specific "open this folder in the file manager" without blocking.
 fn reveal_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -1201,6 +1428,9 @@ struct LiveWorkerConfig {
     /// True when the selected endpoint is a Render endpoint captured via WASAPI
     /// shared-mode loopback rather than a microphone capture stream.
     loopback: bool,
+    /// macOS only: the "system-audio" pseudo-endpoint, captured through
+    /// ScreenCaptureKit instead of cpal. Always false on other platforms.
+    system_audio: bool,
     monitor_enabled: bool,
     vad_sensitivity: u8,
 }
@@ -1340,6 +1570,8 @@ async fn start_live_translation(
             | "ncspeech"
             | "ncspeech-zh"
             | "ncspeech-zh-parakeet"
+            | "mlx"
+            | "mlx-whisper"
             | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
@@ -1372,17 +1604,27 @@ async fn start_live_translation(
     let endpoint = endpoints
         .iter()
         .find(|candidate| candidate.id == endpoint_id)
+        .or_else(|| {
+            // Legacy/stale persisted ids (numeric CoreAudio ids from older
+            // builds) no longer match the stable name-based catalog; fall
+            // back to the friendly name so a saved selection still works.
+            endpoints
+                .iter()
+                .find(|candidate| candidate.friendly_name == endpoint_id)
+        })
         .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
     if endpoint.state != EndpointState::Active {
         return Err(AudioError::EndpointInvalidated.to_string());
     }
     // A Capture endpoint captures a microphone; a Render endpoint is opened in
     // WASAPI shared-mode loopback to capture the game/teammates mix being
-    // played through that render endpoint (e.g. headphones or speakers).
+    // played through that render endpoint (e.g. headphones or speakers). The
+    // macOS "system-audio" pseudo-endpoint is captured via ScreenCaptureKit.
     let loopback = match endpoint.kind {
         EndpointKind::Capture => false,
         EndpointKind::Render => true,
     };
+    let system_audio = endpoint.id == audio_core::SYSTEM_AUDIO_ENDPOINT_ID;
 
     let playback_endpoint_name = if monitor_enabled {
         let raw_playback_id = playback_endpoint_id.as_deref().unwrap_or("").trim();
@@ -1394,6 +1636,11 @@ async fn start_live_translation(
         let playback_endpoint = endpoints
             .iter()
             .find(|candidate| candidate.id == raw_playback_id)
+            .or_else(|| {
+                endpoints
+                    .iter()
+                    .find(|candidate| candidate.friendly_name == raw_playback_id)
+            })
             .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
         if playback_endpoint.kind != EndpointKind::Render
             || playback_endpoint.state != EndpointState::Active
@@ -1426,6 +1673,7 @@ async fn start_live_translation(
         target_language,
         resource_profile,
         loopback,
+        system_audio,
         monitor_enabled,
         vad_sensitivity,
     };
@@ -1926,6 +2174,11 @@ fn start_audio_meter(
     let endpoint = endpoints
         .iter()
         .find(|endpoint| endpoint.id == endpoint_id)
+        .or_else(|| {
+            endpoints
+                .iter()
+                .find(|endpoint| endpoint.friendly_name == endpoint_id)
+        })
         .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
     if endpoint.kind != EndpointKind::Capture || endpoint.state != EndpointState::Active {
         return Err(AudioError::EndpointInvalidated.to_string());
@@ -2109,7 +2362,20 @@ fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+/// macOS: the control window is transparent (`macOSPrivateApi`), so CSS
+/// backdrop-filter alone has nothing to blur — it would render flat black.
+/// `apply_vibrancy` installs an NSVisualEffectView behind the webview; the
+/// CSS's translucent surfaces + blur then read as real frosted glass over
+/// the desktop. Best-effort: failures degrade to a plain window.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
+    use window_vibrancy::{NSVisualEffectMaterial, apply_vibrancy};
+    apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None)
+        .map_err(|error| format!("apply_vibrancy failed: {error}"))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 #[tauri::command]
 fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
     let _ = window;
@@ -2150,6 +2416,7 @@ fn run_live_worker(
         target_language,
         resource_profile,
         loopback,
+        system_audio,
         monitor_enabled,
         vad_sensitivity,
     } = config;
@@ -2219,6 +2486,7 @@ fn run_live_worker(
     let result = run_macos_live_loop(
         endpoint_name,
         loopback,
+        system_audio,
         monitor_enabled,
         playback_endpoint_name,
         &stop,
@@ -2233,6 +2501,8 @@ fn run_live_worker(
     let _ = playback_endpoint_name;
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = loopback;
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let _ = system_audio;
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let _ = monitor_enabled;
 
@@ -2349,21 +2619,72 @@ fn run_windows_live_loop(
     }
 }
 
+/// Unified capture surface for the macOS live loop: cpal (mic / BlackHole
+/// input) or ScreenCaptureKit (system audio mix). Both expose the same
+/// bounded-channel read API, so the loop body is source-agnostic.
 #[cfg(target_os = "macos")]
+enum MacosLiveCapture {
+    CoreAudio(audio_core::MacosAudioCapture),
+    SystemAudio(audio_core::MacosSystemAudioCapture),
+}
+
+#[cfg(target_os = "macos")]
+impl MacosLiveCapture {
+    fn try_next(&self) -> Result<Option<audio_core::AudioFrame>, audio_core::AudioError> {
+        match self {
+            MacosLiveCapture::CoreAudio(capture) => capture.try_next(),
+            MacosLiveCapture::SystemAudio(capture) => capture.try_next(),
+        }
+    }
+
+    fn dropped_frames(&self) -> u64 {
+        match self {
+            MacosLiveCapture::CoreAudio(capture) => capture.dropped_frames(),
+            MacosLiveCapture::SystemAudio(capture) => capture.dropped_frames(),
+        }
+    }
+
+    fn frames_received(&self) -> u64 {
+        match self {
+            MacosLiveCapture::CoreAudio(_) => 0,
+            MacosLiveCapture::SystemAudio(capture) => capture.frames_received(),
+        }
+    }
+
+    fn format(&self) -> audio_core::AudioFormat {
+        match self {
+            MacosLiveCapture::CoreAudio(capture) => capture.format(),
+            MacosLiveCapture::SystemAudio(capture) => capture.format(),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
 fn run_macos_live_loop(
     endpoint_name: String,
     loopback: bool,
+    system_audio: bool,
     monitor_enabled: bool,
     playback_endpoint_name: Option<String>,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), String> {
-    let capture = if loopback {
-        audio_core::MacosAudioCapture::start_loopback(&endpoint_name, 32)
-            .map_err(audio_error_to_string)?
+    let capture = if system_audio {
+        MacosLiveCapture::SystemAudio(
+            audio_core::MacosSystemAudioCapture::start(32).map_err(audio_error_to_string)?,
+        )
+    } else if loopback {
+        MacosLiveCapture::CoreAudio(
+            audio_core::MacosAudioCapture::start_loopback(&endpoint_name, 32)
+                .map_err(audio_error_to_string)?,
+        )
     } else {
-        audio_core::MacosAudioCapture::start(&endpoint_name, 32).map_err(audio_error_to_string)?
+        MacosLiveCapture::CoreAudio(
+            audio_core::MacosAudioCapture::start(&endpoint_name, 32)
+                .map_err(audio_error_to_string)?,
+        )
     };
     let mut playback = if monitor_enabled {
         let Some(name) = playback_endpoint_name.as_deref() else {
@@ -2391,10 +2712,28 @@ fn run_macos_live_loop(
     // some endpoints take a moment to start producing buffers, so counting
     // silence before the first frame would false-positive on a slow warmup.
     let mut last_frame_at: Option<Instant> = None;
+    // ScreenCaptureKit "system audio" starts up but delivers NOTHING when the
+    // app lacks Screen Recording permission (silent TCC denial — the stream
+    // itself does not error). cpal captures deliver buffers even in silence,
+    // so zero buffers after a grace period is definitive, not a quiet room.
+    let started_at = Instant::now();
     let mut stall_warned = false;
     loop {
         if stop.try_recv().is_ok() {
             return Ok(());
+        }
+        if system_audio
+            && capture.frames_received() == 0
+            && started_at.elapsed() >= Duration::from_secs(4)
+        {
+            return Err(
+                "System Audio received no audio from ScreenCaptureKit. macOS is \
+                 not letting this app capture the output mix — grant Screen Recording \
+                 permission to yTRSLT in System Settings > Privacy & Security > \
+                 Screen Recording (add/check it, then restart the app), or switch to \
+                 a BlackHole loopback source instead."
+                    .to_owned(),
+            );
         }
         match capture.try_next().map_err(audio_error_to_string)? {
             Some(frame) => {
@@ -2688,7 +3027,11 @@ pub fn run() {
             gpu_runtime_install,
             gpu_runtime_cancel,
             gpu_runtime_delete,
-            reveal_path
+            reveal_path,
+            set_overlay_mode,
+            open_screen_recording_settings,
+            open_microphone_settings,
+            request_microphone_permission
         ])
         .run(tauri::generate_context!());
 

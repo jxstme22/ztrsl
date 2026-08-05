@@ -99,6 +99,8 @@ function loadAsrProvider(): AsrProvider {
     stored === "ncspeech" ||
     stored === "ncspeech-zh" ||
     stored === "ncspeech-zh-parakeet" ||
+    stored === "mlx" ||
+    stored === "mlx-whisper" ||
     stored === "groq-whisper"
   ) {
     return stored;
@@ -236,10 +238,16 @@ export function LiveTranslationPanel({
   const endpoints = audio.catalog?.endpoints ?? [];
   const isMacos = audio.catalog?.platform === "macos";
   // On Windows, loopback captures a render endpoint (WASAPI loopback). On
-  // macOS, BlackHole exposes its input as a capture endpoint — the game
-  // routes voice-chat output to BlackHole, and we capture that input.
+  // macOS, loopback is either the input of a virtual device (BlackHole) the
+  // game routes voice-chat output to, or the ScreenCaptureKit "system-audio"
+  // pseudo-endpoint that taps the whole output mix — no install needed.
+  const SYSTEM_AUDIO_ID = "system-audio";
   const captureInputs = useMemo(
-    () => endpoints.filter((endpoint) => endpoint.kind === "capture"),
+    () =>
+      endpoints.filter(
+        (endpoint) =>
+          endpoint.kind === "capture" && endpoint.id !== SYSTEM_AUDIO_ID,
+      ),
     [endpoints],
   );
   const loopbackInputs = useMemo(
@@ -248,7 +256,8 @@ export function LiveTranslationPanel({
         ? endpoints.filter(
             (endpoint) =>
               endpoint.kind === "capture" &&
-              /blackhole|black hole/i.test(endpoint.friendlyName),
+              (endpoint.id === SYSTEM_AUDIO_ID ||
+                /blackhole|black hole/i.test(endpoint.friendlyName)),
           )
         : endpoints.filter((endpoint) => endpoint.kind === "render"),
     [endpoints, isMacos],
