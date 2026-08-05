@@ -1,5 +1,23 @@
 # 23 — Release Notes
 
+## v0.6.12 — Fix: 10054 crash on SenseVoice/Paraformer/opus-mt (Windows)
+
+- **Root cause found and fixed.** The new models crashed the sidecar
+  ("connection forcibly closed" / error 10054) because Windows resolved
+  `onnxruntime.dll` from a stale 1.17.1 copy in `C:\Windows\SYSTEM32`
+  (installed by other software) ahead of the app's 1.27.0 copy; sherpa-onnx's
+  binding (built for onnxruntime API 27) then died with an access violation
+  on the first model load. The sidecar now preloads its own onnxruntime DLL
+  by full path before any model import, so the correct 1.27.0 build is always
+  used; the bundled 1.17.1 copy shipped inside sherpa-onnx-core is also
+  replaced at package time.
+- **Verified on Windows CI** — a new smoke workflow downloads the real
+  models and runs the actual providers on a Windows runner: SenseVoice
+  decodes, Paraformer loads and decodes, opus-mt en→zh translates.
+- **Windows smoke harness** — `.github/workflows/smoke-models.yml` +
+  `scripts/ci_smoke_models.py` reproduce model loads on Windows runners for
+  every future model change.
+
 ## v0.6.11 — opus-mt zh→en, CUDA float16 inference, overlay self-hiding, crash traces
 
 - **Helsinki opus-mt (zh→en)** — new installable model for Chinese→English

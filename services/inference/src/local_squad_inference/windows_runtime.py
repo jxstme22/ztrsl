@@ -29,6 +29,7 @@ without executing them.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import importlib.util
 import os
@@ -76,11 +77,12 @@ def align_onnxruntime() -> bool:
         # path so every later name-based load reuses this copy.
         add_dll_directory = getattr(os, "add_dll_directory", None)
         if add_dll_directory is not None:
-            try:
+            with contextlib.suppress(OSError):
                 add_dll_directory(str(standalone.parent))
-            except OSError:
-                pass
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        ctypes_win = ctypes if hasattr(ctypes, "WinDLL") else None
+        if ctypes_win is None:
+            return False
+        kernel32 = ctypes_win.WinDLL("kernel32", use_last_error=True)
         load_library_ex = kernel32.LoadLibraryExW
         load_library_ex.restype = ctypes.c_void_p
         load_library_ex.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p, ctypes.c_uint32]
