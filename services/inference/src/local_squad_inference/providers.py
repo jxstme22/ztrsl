@@ -1085,17 +1085,20 @@ class NllbCTranslate2Provider:
         )
 
 
-class OpusMtEnZhProvider:
-    """Local English->Chinese translation via CTranslate2 (Helsinki opus-mt).
+class OpusMtProvider:
+    """Local Helsinki opus-mt translation via CTranslate2.
 
-    The int8 Marian conversion of ``Helsinki-NLP/opus-mt-en-zh`` (Apache-2.0,
-    commercially usable — unlike NLLB's CC-BY-NC) is produced by
-    ``scripts/export_opus_mt_ct2.py``. Tokenization uses the model's
-    SentencePiece models (``source.spm``/``target.spm``); CTranslate2
-    appends ``</s>`` to the source for Marian models.
+    Int8-quantized Marian conversions of ``Helsinki-NLP/opus-mt-*``
+    (Apache-2.0, commercially usable — unlike NLLB's CC-BY-NC). Tokenization
+    uses the model's SentencePiece models (``source.spm``/``target.spm``);
+    CTranslate2 appends ``</s>`` to the source for Marian models. On CUDA the
+    int8 weights are dequantized to float16 at load for best-quality
+    inference; CPU uses int8.
     """
 
     MODEL_ID = "opus-mt-en-zh-ct2-int8"
+    REQUIRED_SOURCE_MODE = "english"
+    DIRECTION_HINT = "select 'English' source and 'Chinese' output"
     MAX_SOURCE_CHARS = 2000
 
     def __init__(self, model_dir: Path) -> None:
@@ -1110,7 +1113,7 @@ class OpusMtEnZhProvider:
         device, compute_type = resolve_inference_device(
             "LST_TRANSLATION_DEVICE",
             "LST_TRANSLATION_COMPUTE_TYPE",
-            cuda_compute="int8",
+            cuda_compute="float16",
             cpu_compute="int8",
         )
         forced = _device_was_forced("LST_TRANSLATION_DEVICE")
@@ -1147,11 +1150,8 @@ class OpusMtEnZhProvider:
         return f"{self._device}/{self._compute_type}"
 
     def translate(self, result: AsrResult) -> TranslationResult:
-        if result.source_mode != "english":
-            raise ModelUnavailableError(
-                "opus-mt-en-zh translates English audio to Chinese only; "
-                "select 'English' source and 'Chinese' output"
-            )
+        if result.source_mode != self.REQUIRED_SOURCE_MODE:
+            raise ModelUnavailableError(f"{self.MODEL_ID} translates {self.DIRECTION_HINT}")
         if not result.text:
             return TranslationResult(
                 utterance_id=result.utterance_id,
@@ -1188,15 +1188,31 @@ class OpusMtEnZhProvider:
         elapsed_ms = (time.perf_counter() - started) * 1_000
         hypothesis = outputs[0].hypotheses[0]
         ids = [self._target_spm.piece_to_id(token) for token in hypothesis]
-        zh_text = self._target_spm.decode(ids).strip()
+        target_text = self._target_spm.decode(ids).strip()
         return TranslationResult(
             utterance_id=result.utterance_id,
             source_text=result.text,
-            english_text=zh_text,
+            english_text=target_text,
             is_final=True,
             inference_ms=elapsed_ms,
             model_id=self.MODEL_ID,
         )
+
+
+class OpusMtEnZhProvider(OpusMtProvider):
+    """English->Chinese Helsinki opus-mt (``opus-mt-en-zh-ct2-int8``)."""
+
+    MODEL_ID = "opus-mt-en-zh-ct2-int8"
+    REQUIRED_SOURCE_MODE = "english"
+    DIRECTION_HINT = "English audio to Chinese only; select 'English' source and 'Chinese' output"
+
+
+class OpusMtZhEnProvider(OpusMtProvider):
+    """Chinese->English Helsinki opus-mt (``opus-mt-zh-en-ct2-int8``)."""
+
+    MODEL_ID = "opus-mt-zh-en-ct2-int8"
+    REQUIRED_SOURCE_MODE = "chinese"
+    DIRECTION_HINT = "Chinese audio to English only; select 'Chinese' source and 'English' output"
 
 
 def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:

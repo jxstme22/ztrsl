@@ -12,6 +12,7 @@ export type TranslationProvider =
   | "nllb"
   | "madlad"
   | "opus-mt-en-zh"
+  | "opus-mt-zh-en"
   | "libretranslate"
   | "google-translate"
   | "mymemory"

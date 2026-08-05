@@ -256,6 +256,7 @@ class LiveStartPayload(StrictModel):
         "nllb",
         "madlad",
         "opus-mt-en-zh",
+        "opus-mt-zh-en",
         "demo",
         "libretranslate",
         "google-translate",

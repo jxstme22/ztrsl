@@ -317,6 +317,7 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "nllb" => ids.push("nllb-200-distilled-600M-ct2-int8"),
         "madlad" => ids.push("madlad400-3b-mt"),
         "opus-mt-en-zh" => ids.push("opus-mt-en-zh-ct2-int8"),
+        "opus-mt-zh-en" => ids.push("opus-mt-zh-en-ct2-int8"),
         _ => {}
     }
     ids
@@ -1394,6 +1395,7 @@ async fn start_live_translation(
         "nllb"
             | "madlad"
             | "opus-mt-en-zh"
+            | "opus-mt-zh-en"
             | "libretranslate"
             | "google-translate"
             | "mymemory"
@@ -2303,8 +2305,19 @@ fn run_live_worker(
                     Some(status) => format!("sidecar crashed (exit {status})"),
                     None => format!("connection dropped: {error}"),
                 };
+                // Native crashes (faulthandler dumps, onnxruntime aborts) leave
+                // a stderr trace; include it so failures self-report.
+                let tail = supervisor.stderr_tail();
+                let crash_trace = if tail.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        " Sidecar stderr:\n{}",
+                        tail.iter().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n")
+                    )
+                };
                 let _ = events.try_send(LiveWorkerEvent::Warning(format!(
-                    "live translation hiccup: {detail}. Restarting the local \
+                    "live translation hiccup: {detail}.{crash_trace} Restarting the local \
                      inference session automatically…"
                 )));
                 match supervisor.restart().and_then(|_| {

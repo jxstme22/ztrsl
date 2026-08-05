@@ -74,6 +74,7 @@ from local_squad_inference.providers import (
     NemoCtcProvider,
     NllbCTranslate2Provider,
     OpusMtEnZhProvider,
+    OpusMtZhEnProvider,
     SenseVoiceProvider,
     StreamingParaformerProvider,
     TranslationProvider,
@@ -444,6 +445,11 @@ def opus_mt_en_zh_provider() -> OpusMtEnZhProvider:
     return OpusMtEnZhProvider(_model_artifact_dir("opus-mt-en-zh-ct2-int8"))
 
 
+@lru_cache(maxsize=1)
+def opus_mt_zh_en_provider() -> OpusMtZhEnProvider:
+    return OpusMtZhEnProvider(_model_artifact_dir("opus-mt-zh-en-ct2-int8"))
+
+
 def build_translation_provider(name: str, target_language: str = "en") -> TranslationProvider:
     """Return the configured translation provider. Defaults to local NLLB.
 
@@ -465,6 +471,12 @@ def build_translation_provider(name: str, target_language: str = "en") -> Transl
                 "opus-mt-en-zh outputs Chinese; set the live output language to Chinese"
             )
         return opus_mt_en_zh_provider()
+    if name in {"opus-mt-zh-en"}:
+        if target_language != "en":
+            raise HttpTranslationError(
+                "opus-mt-zh-en outputs English; set the live output language to English"
+            )
+        return opus_mt_zh_en_provider()
     if name in {"demo"}:
         return DemoTranslationProvider()
     factory = HTTP_PROVIDER_FACTORIES.get(name)
@@ -1808,6 +1820,12 @@ async def run_server(port: int, token: str) -> None:
 
 
 def main() -> None:
+    # Native crashes (segfaults in onnxruntime/sherpa-onnx/ctranslate2) would
+    # otherwise kill the process silently; the supervisor captures this stderr
+    # trace and surfaces it in transport-failure messages.
+    import faulthandler
+
+    faulthandler.enable()
     port = int(os.environ["LST_IPC_PORT"])
     token = os.environ["LST_IPC_TOKEN"]
     if not token:

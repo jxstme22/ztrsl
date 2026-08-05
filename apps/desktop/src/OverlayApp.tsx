@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GripHorizontal } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { type HistoryEntry, loadHistoryState, visibleHistoryEntries } from "./captions/history";
 import { CaptionStack } from "./components/CaptionStack";
@@ -36,6 +38,29 @@ export function OverlayApp() {
       body.classList.remove("overlay-body");
     };
   }, []);
+
+  // The overlay window owns its own visibility: it never shows at startup
+  // and hides whenever the snapshot says so, even if the control window's
+  // handle to this window misbehaves on some platforms. The control window
+  // only drives mode/content via the snapshot.
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+    void getCurrentWindow().hide();
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+    const overlay = getCurrentWindow();
+    if (snapshot.visible) {
+      void overlay.show();
+    } else {
+      void overlay.hide();
+    }
+  }, [snapshot.visible]);
 
   useEffect(() => {
     let disposed = false;

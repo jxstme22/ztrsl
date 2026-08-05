@@ -1,9 +1,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use std::fs;
+use std::collections::VecDeque;
+use std::io::BufRead;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -126,12 +129,16 @@ pub struct SidecarSupervisor {
     /// Retained spawn config so a crashed sidecar can be restarted in place
     /// (`restart()`) without the caller re-supplying anything.
     config: SidecarConfig,
+    /// Most recent sidecar stderr lines (bounded ring buffer). Native crashes
+    /// (segfaults in onnxruntime/sherpa-onnx etc.) usually leave a trace here
+    /// — surfaced in transport-failure messages so crashes self-report.
+    stderr_tail: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl SidecarSupervisor {
     pub fn start(config: &SidecarConfig) -> Result<Self, SupervisorError> {
         config.validate()?;
-        let (child, socket, session_id, session_bytes, negotiated_version) =
+        let (child, socket, session_id, session_bytes, negotiated_version, stderr_tail) =
             spawn_and_handshake(config)?;
         Ok(Self {
             child,
@@ -142,6 +149,7 @@ impl SidecarSupervisor {
             negotiated_version,
             stopped: false,
             config: config.clone(),
+            stderr_tail,
         })
     }
 
@@ -156,7 +164,7 @@ impl SidecarSupervisor {
         let config = self.config.clone();
         let _ = self.socket.close(None);
         terminate_child(&mut self.child);
-        let (child, socket, session_id, session_bytes, negotiated_version) =
+        let (child, socket, session_id, session_bytes, negotiated_version, stderr_tail) =
             spawn_and_handshake(&config)?;
         self.child = child;
         self.socket = socket;
@@ -164,7 +172,13 @@ impl SidecarSupervisor {
         self.session_bytes = session_bytes;
         self.next_sequence = 0;
         self.negotiated_version = negotiated_version;
+        self.stderr_tail = stderr_tail;
         Ok(())
+    }
+
+    /// Last stderr lines from the current sidecar process (bounded tail).
+    pub fn stderr_tail(&self) -> Vec<String> {
+        self.stderr_tail.lock().map(|tail| tail.iter().cloned().collect()).unwrap_or_default()
     }
 
     /// The subprocess's exit status when it is no longer running, else `None`.
@@ -1018,9 +1032,20 @@ fn connect_with_retry(port: u16, child: &mut Child) -> Result<TcpStream, Supervi
 /// handshake over a loopback WebSocket. Shared by `start` (first launch) and
 /// `restart` (crash recovery) so both paths behave identically. On any
 /// failure the child is terminated before the error is returned.
+#[allow(clippy::type_complexity)]
 fn spawn_and_handshake(
     config: &SidecarConfig,
-) -> Result<(Child, WebSocket<TcpStream>, String, [u8; 16], u16), SupervisorError> {
+) -> Result<
+    (
+        Child,
+        WebSocket<TcpStream>,
+        String,
+        [u8; 16],
+        u16,
+        Arc<Mutex<VecDeque<String>>>,
+    ),
+    SupervisorError,
+> {
     let port = reserve_loopback_port()?;
     let token = random_hex::<32>()?;
     let session_bytes = random_bytes::<16>()?;
@@ -1038,7 +1063,7 @@ fn spawn_and_handshake(
         .env("LST_TRANSLATION_RUNNER", &config.translation_runner)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     for (key, value) in &config.extra_env {
         command.env(key, value);
     }
@@ -1056,6 +1081,27 @@ fn spawn_and_handshake(
         command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
     let mut child = command.spawn().map_err(SupervisorError::Spawn)?;
+
+    // Keep the last stderr lines in a bounded ring buffer so crash traces
+    // (faulthandler dumps, onnxruntime abort messages) can be surfaced in
+    // transport-failure errors. The reader thread ends when the pipe closes.
+    let stderr_tail = Arc::new(Mutex::new(VecDeque::with_capacity(24)));
+    if let Some(stderr) = child.stderr.take() {
+        let tail = Arc::clone(&stderr_tail);
+        std::thread::spawn(move || {
+            let mut reader = std::io::BufReader::new(stderr);
+            let mut line = String::new();
+            while matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+                if let Ok(mut tail) = tail.lock() {
+                    if tail.len() == 24 {
+                        tail.pop_front();
+                    }
+                    tail.push_back(line.trim_end().to_owned());
+                }
+                line.clear();
+            }
+        });
+    }
 
     let stream = match connect_with_retry(port, &mut child) {
         Ok(stream) => stream,
@@ -1112,6 +1158,7 @@ fn spawn_and_handshake(
         session_id,
         session_bytes,
         negotiated_version,
+        stderr_tail,
     ))
 }
 

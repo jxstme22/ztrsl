@@ -1,5 +1,28 @@
 # 23 — Release Notes
 
+## v0.6.11 — opus-mt zh→en, CUDA float16 inference, overlay self-hiding, crash traces
+
+- **Helsinki opus-mt (zh→en)** — new installable model for Chinese→English
+  translation (~158 MB, Apache-2.0, CTranslate2 int8 conversion of
+  Helsinki-NLP/opus-mt-zh-en). Live panel entry with an English-output
+  constraint, sidecar + protocol + desktop wiring end to end.
+- **opus-mt best-quality inference** — on CUDA the opus-mt models now run
+  dequantized **float16** inference (near-full-precision quality); CPU keeps
+  int8. Both directions (en→zh, zh→en). The int8-quantized weights are the
+  only published CTranslate2 format of the Helsinki models, so quality is
+  delivered at inference time rather than through unverifiable "float16"
+  repos (checked: the hosted "float16" conversions are byte-identical int8).
+- **Overlay never shows at startup and always hides on command** — the
+  overlay window now controls its own visibility: it hides on mount and on
+  every snapshot, so hiding works even if the control window's handle to it
+  misbehaves, and it can no longer appear on app open.
+- **Installed model cards** — the loud green border/tint is replaced by a
+  softly shaded surface (top-lit gradient, inner highlight, soft shadow).
+- **Sidecar crash traces** — the sidecar enables `faulthandler` and the
+  supervisor captures its stderr; when the inference process dies
+  mid-session (error 10054), the auto-restart warning now includes the crash
+  trace so failures self-report.
+
 ## v0.6.10 — Live session auto-recovery, overlay transparency + dismiss fixes
 
 - **Live sessions survive sidecar crashes** — when the local inference

@@ -128,6 +128,7 @@ function loadTranslationProvider(): TranslationProvider {
     stored === "nllb" ||
     stored === "madlad" ||
     stored === "opus-mt-en-zh" ||
+    stored === "opus-mt-zh-en" ||
     stored === "libretranslate" ||
     stored === "google-translate" ||
     stored === "mymemory" ||
@@ -327,7 +328,9 @@ export function LiveTranslationPanel({
     (translationProvider !== "custom-http" ||
       customTxEndpoint.trim().length > 0) &&
     (translationProvider !== "opus-mt-en-zh" ||
-      (sourceMode === "english" && targetLanguage === "zh"));
+      (sourceMode === "english" && targetLanguage === "zh")) &&
+    (translationProvider !== "opus-mt-zh-en" ||
+      (sourceMode === "chinese" && targetLanguage === "en"));
 
   const sameEndpoint =
     monitorEnabled &&
@@ -470,7 +473,8 @@ export function LiveTranslationPanel({
                     asrProvider !== "groq-whisper" &&
                       (translationProvider === "madlad" ||
                         translationProvider === "nllb" ||
-                        translationProvider === "opus-mt-en-zh")
+                        translationProvider === "opus-mt-en-zh" ||
+                        translationProvider === "opus-mt-zh-en")
                       ? isSimulator
                         ? "demo"
                         : "local"
@@ -686,6 +690,13 @@ export function LiveTranslationPanel({
                 ),
               },
               {
+                value: "opus-mt-zh-en",
+                label: tag(
+                  "Local opus-mt (zh→en, Apache-2.0)",
+                  installedModelIds.has("opus-mt-zh-en-ct2-int8"),
+                ),
+              },
+              {
                 value: "google-translate",
                 label: cloud("Google Translate (free, unofficial endpoint)"),
               },
@@ -705,6 +716,13 @@ export function LiveTranslationPanel({
               <p className="diag-hint warn">
                 opus-mt (en→zh) needs the source set to English and the
                 output language set to Chinese.
+              </p>
+            )}
+          {translationProvider === "opus-mt-zh-en" &&
+            (sourceMode !== "chinese" || targetLanguage !== "en") && (
+              <p className="diag-hint warn">
+                opus-mt (zh→en) needs the source set to Chinese and the
+                output language set to English.
               </p>
             )}
         </div>
