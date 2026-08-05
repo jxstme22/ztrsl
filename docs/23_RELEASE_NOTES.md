@@ -1,5 +1,20 @@
 # 23 — Release Notes
 
+## v0.6.9 — Fix: live start with new ASR/MT providers, overlay window restored
+
+- **Fix: "unknown ASR provider" on live start** — the desktop's live-start
+  validation was not updated for the new providers, so starting a live
+  session with SenseVoice, Paraformer, or opus-mt was rejected before it
+  reached the sidecar. The allowlist now accepts `sensevoice-small`,
+  `sense-voice`, `paraformer-zh-streaming`, `mlx`, `mlx-whisper` (ASR) and
+  `opus-mt-en-zh` (translation).
+- **Fix: overlay window was an opaque black block** — v0.6.8 accidentally
+  dropped the overlay window's `transparent` flag, so the caption lane
+  rendered as a solid black rectangle over the game. Transparency is
+  restored; the overlay looks and behaves like v0.6.7 again.
+- **Fix: overlay visibility after dismiss** — reverted to the v0.6.7
+  behavior where a caption re-shows the overlay after it was hidden.
+
 ## v0.6.8 — Three new downloadable models, two-column Models page
 
 - **FunASR Paraformer zh (streaming)** — a new downloadable STT model on the
@@ -19,9 +34,9 @@
   custom, and local-export sections (single column on narrow windows).
 - New provider entries in the Live panel for the three models; the sidecar
   accepts them end-to-end.
-- Sidecar packaging includes the `sentencepiece` dependency; the main window
-  no longer requests transparency; overlay hotkey dismiss behavior fixed
-  (hiding the overlay with the hotkey stops captions from re-showing it).
+- Sidecar packaging includes the `sentencepiece` dependency; the overlay
+  window keeps its transparent caption lane; overlay hotkey dismiss behavior
+  fixed (hiding the overlay with the hotkey stops captions from re-showing it).
 
 ## v0.6.7 — Setup wizard removed, audio sources on the Sources page
 

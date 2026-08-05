@@ -44,7 +44,6 @@ export function useOverlayController() {
   const [recoveredPlacement, setRecoveredPlacement] = useState(false);
   const fakeSequence = useRef(0);
   const timers = useRef<number[]>([]);
-  const dismissed = useRef(false);
 
   const snapshot = useMemo<OverlaySnapshot>(
     () => ({
@@ -60,7 +59,6 @@ export function useOverlayController() {
 
   /** Toggle the overlay between the caption bar and the history panel. */
   const toggleHistoryView = useCallback(() => {
-    dismissed.current = false;
     setSettings((current) => ({
       ...current,
       overlayContent:
@@ -148,16 +146,12 @@ export function useOverlayController() {
   const handleHotkey = useCallback((action: HotkeyAction) => {
     switch (action) {
       case "toggleOverlay":
-        setVisible((current) => {
-          dismissed.current = current;
-          return !current;
-        });
+        setVisible((current) => !current);
         break;
       case "toggleTranslation":
         setTranslationEnabled((current) => !current);
         break;
       case "toggleEditMode":
-        dismissed.current = false;
         setVisible(true);
         setMode((current) => (current === "edit" ? "play" : "edit"));
         break;
@@ -181,7 +175,6 @@ export function useOverlayController() {
         );
         break;
       case "toggleHistory":
-        dismissed.current = false;
         setSettings((current) => ({
           ...current,
           overlayContent:
@@ -223,18 +216,15 @@ export function useOverlayController() {
   );
 
   const showOverlay = useCallback(() => {
-    dismissed.current = false;
     setVisible(true);
   }, []);
 
   const hideOverlay = useCallback(() => {
-    dismissed.current = true;
     setVisible(false);
     setMode("play");
   }, []);
 
   const toggleEditMode = useCallback(() => {
-    dismissed.current = false;
     setVisible(true);
     setMode((current) => (current === "edit" ? "play" : "edit"));
   }, []);
@@ -244,9 +234,7 @@ export function useOverlayController() {
   }, []);
 
   const ingestCaption = useCallback((caption: Caption) => {
-    if (!dismissed.current) {
-      setVisible(true);
-    }
+    setVisible(true);
     dispatch({ type: "upsert", caption });
   }, []);
 
@@ -268,7 +256,6 @@ export function useOverlayController() {
       expiresAtMs: createdAtMs + 4_000,
     };
 
-    dismissed.current = false;
     setVisible(true);
     dispatch({ type: "upsert", caption: provisional });
 

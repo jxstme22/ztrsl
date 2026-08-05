@@ -1343,13 +1343,24 @@ async fn start_live_translation(
             | "ncspeech"
             | "ncspeech-zh"
             | "ncspeech-zh-parakeet"
+            | "mlx"
+            | "mlx-whisper"
+            | "paraformer-zh-streaming"
+            | "sensevoice-small"
+            | "sense-voice"
             | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
     }
     if !matches!(
         translation_provider.as_str(),
-        "nllb" | "madlad" | "libretranslate" | "google-translate" | "mymemory" | "custom-http"
+        "nllb"
+            | "madlad"
+            | "opus-mt-en-zh"
+            | "libretranslate"
+            | "google-translate"
+            | "mymemory"
+            | "custom-http"
     ) {
         return Err(format!(
             "unknown translation provider: {translation_provider}"
