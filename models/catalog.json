@@ -91,7 +91,9 @@
       "kind": "asr",
       "runtime": "mlx-whisper",
       "recommended": false,
-      "platforms": ["macos"],
+      "platforms": [
+        "macos"
+      ],
       "description": "MLX-quantized Whisper large-v3-turbo (~440 MB) for Apple Silicon (M-series). Runs on the Metal GPU/ANE for roughly real-time captions — the macOS equivalent of the CUDA path. MIT license.",
       "license": {
         "spdx": "MIT",
@@ -132,7 +134,71 @@
         "sha256": "cdcd0559c7c73efed54209a926e321afc914d046c5fdbf3665f00dc78180e5ed",
         "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2",
         "strip_components": 1,
-        "extract_only": ["model.int8.onnx", "tokens.txt", "LICENSE"]
+        "extract_only": [
+          "model.int8.onnx",
+          "tokens.txt",
+          "LICENSE"
+        ]
+      }
+    },
+    {
+      "id": "paraformer-zh-streaming",
+      "name": "FunASR Paraformer zh (streaming)",
+      "kind": "asr",
+      "runtime": "sherpa-onnx",
+      "recommended": false,
+      "description": "Streaming Mandarin/English speech recognition from the FunASR paraformer-zh-streaming architecture (~240 MB installed, int8). Runs locally via sherpa-onnx — a fast low-latency alternative to Whisper for Chinese voice chat.",
+      "license": {
+        "spdx": "Apache-2.0",
+        "notice": "Model derived from FunASR paraformer-zh-streaming (Apache-2.0); ONNX export published by sherpa-onnx (Apache-2.0)."
+      },
+      "download_size_bytes": 1047319737,
+      "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2",
+      "revision": "2024-03-10",
+      "archive": {
+        "path": "sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2",
+        "size_bytes": 1047319737,
+        "sha256": "5462a1fce42693deae572af1e8c4687124b12aa85fe61ff4d3168bb5280e205f",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2",
+        "strip_components": 1,
+        "extract_only": [
+          "encoder.int8.onnx",
+          "decoder.int8.onnx",
+          "tokens.txt",
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "sensevoice-small",
+      "name": "SenseVoice Small (zh/en/ja/ko/yue)",
+      "kind": "asr",
+      "runtime": "sherpa-onnx",
+      "recommended": false,
+      "description": "Multilingual speech recognition (Mandarin, Cantonese, English, Japanese, Korean) with auto language detection and inverse text normalization (~239 MB installed, int8). Runs locally via sherpa-onnx — a fast, low-latency alternative to Whisper for Chinese voice chat.",
+      "license": {
+        "spdx": "Apache-2.0",
+        "notice": "SenseVoiceSmall weights from FunAudioLLM (Apache-2.0, FunASR MODEL_LICENSE); ONNX export published by sherpa-onnx (Apache-2.0)."
+      },
+      "download_size_bytes": 239549735,
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
+      "revision": "2365baeacb507f821a0c8120fcee3d484dba7a07",
+      "files": [
+        {
+          "path": "model.int8.onnx",
+          "size_bytes": 239233841,
+          "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51"
+        },
+        {
+          "path": "tokens.txt",
+          "size_bytes": 315894,
+          "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+        }
+      ],
+      "capabilities": {
+        "language_capability": "postfilter",
+        "recommended_profiles": [],
+        "vram_class": "low"
       }
     },
     {

@@ -99,6 +99,10 @@ function loadAsrProvider(): AsrProvider {
     stored === "ncspeech" ||
     stored === "ncspeech-zh" ||
     stored === "ncspeech-zh-parakeet" ||
+    stored === "paraformer-zh-streaming" ||
+    stored === "sensevoice-small" ||
+    stored === "mlx" ||
+    stored === "mlx-whisper" ||
     stored === "groq-whisper"
   ) {
     return stored;
@@ -123,6 +127,7 @@ function loadTranslationProvider(): TranslationProvider {
   if (
     stored === "nllb" ||
     stored === "madlad" ||
+    stored === "opus-mt-en-zh" ||
     stored === "libretranslate" ||
     stored === "google-translate" ||
     stored === "mymemory" ||
@@ -320,7 +325,9 @@ export function LiveTranslationPanel({
     (translationProvider !== "libretranslate" ||
       ltEndpoint.trim().length > 0) &&
     (translationProvider !== "custom-http" ||
-      customTxEndpoint.trim().length > 0);
+      customTxEndpoint.trim().length > 0) &&
+    (translationProvider !== "opus-mt-en-zh" ||
+      (sourceMode === "english" && targetLanguage === "zh"));
 
   const sameEndpoint =
     monitorEnabled &&
@@ -462,7 +469,8 @@ export function LiveTranslationPanel({
                     monitorEnabled ? playbackEndpointId : null,
                     asrProvider !== "groq-whisper" &&
                       (translationProvider === "madlad" ||
-                        translationProvider === "nllb")
+                        translationProvider === "nllb" ||
+                        translationProvider === "opus-mt-en-zh")
                       ? isSimulator
                         ? "demo"
                         : "local"
@@ -626,6 +634,20 @@ export function LiveTranslationPanel({
                   installedModelIds.has("ncspeech-zh-parakeet-ctc-0.6b"),
                 ),
               },
+              {
+                value: "paraformer-zh-streaming",
+                label: tag(
+                  "FunASR Paraformer (streaming zh)",
+                  installedModelIds.has("paraformer-zh-streaming"),
+                ),
+              },
+              {
+                value: "sensevoice-small",
+                label: tag(
+                  "SenseVoice Small (zh/en/ja/ko/yue)",
+                  installedModelIds.has("sensevoice-small"),
+                ),
+              },
               { value: "groq-whisper", label: cloud("Groq Whisper (API)") },
             ]}
           />
@@ -657,6 +679,13 @@ export function LiveTranslationPanel({
                 ),
               },
               {
+                value: "opus-mt-en-zh",
+                label: tag(
+                  "Local opus-mt (en→zh, Apache-2.0)",
+                  installedModelIds.has("opus-mt-en-zh-ct2-int8"),
+                ),
+              },
+              {
                 value: "google-translate",
                 label: cloud("Google Translate (free, unofficial endpoint)"),
               },
@@ -671,6 +700,13 @@ export function LiveTranslationPanel({
               { value: "custom-http", label: cloud(t("liveCustomHttp")) },
             ]}
           />
+          {translationProvider === "opus-mt-en-zh" &&
+            (sourceMode !== "english" || targetLanguage !== "zh") && (
+              <p className="diag-hint warn">
+                opus-mt (en→zh) needs the source set to English and the
+                output language set to Chinese.
+              </p>
+            )}
         </div>
 
         <div className="field">

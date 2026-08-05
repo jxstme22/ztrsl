@@ -11,6 +11,7 @@ let browserListening = false;
 export type TranslationProvider =
   | "nllb"
   | "madlad"
+  | "opus-mt-en-zh"
   | "libretranslate"
   | "google-translate"
   | "mymemory"
@@ -25,6 +26,8 @@ export type AsrProvider =
   | "ncspeech"
   | "ncspeech-zh"
   | "ncspeech-zh-parakeet"
+  | "paraformer-zh-streaming"
+  | "sensevoice-small"
   | "groq-whisper";
 
 export async function setTranslationEnv(
