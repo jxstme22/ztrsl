@@ -116,6 +116,53 @@
       ]
     },
     {
+      "id": "opus-mt-en-zh-ct2-int8",
+      "name": "Helsinki opus-mt (en→zh)",
+      "kind": "translation",
+      "runtime": "ctranslate2",
+      "recommended": false,
+      "description": "English-to-Chinese translation via CTranslate2 int8 (~158 MB installed, Apache-2.0). A small, fast, commercially usable local alternative to NLLB for translating English voice chat into Chinese subtitles.",
+      "license": {
+        "spdx": "Apache-2.0",
+        "notice": "CTranslate2 int8 conversion of Helsinki-NLP/opus-mt-en-zh (Apache-2.0) published by the gaudi team."
+      },
+      "download_size_bytes": 158417752,
+      "source": "https://huggingface.co/gaudi/opus-mt-en-zh-ctranslate2",
+      "revision": "dcd22168f08b99dd34c62bc2195e31dc2f04e90b",
+      "files": [
+        {
+          "path": "model.bin",
+          "size_bytes": 155502615,
+          "sha256": "f24c2bb82368f7de0196882de1d8b644d2aa54ae2439c3142f263de8a64ea2a9"
+        },
+        {
+          "path": "config.json",
+          "size_bytes": 215,
+          "sha256": "ce02c0c0d02f285d2ff34c80b0867ccb5c4a3b250a275e6d1d2884f5499a6e46"
+        },
+        {
+          "path": "shared_vocabulary.json",
+          "size_bytes": 1303887,
+          "sha256": "37314a6abb25ed8f8497498aeeb31fcea98de892bf00ff7c2e8c966b26fe0b82"
+        },
+        {
+          "path": "source.spm",
+          "size_bytes": 806435,
+          "sha256": "5775ddc9e3ff2fae91554da56468ad35ff56edaba870fea74447bc7234bfdaa8"
+        },
+        {
+          "path": "target.spm",
+          "size_bytes": 804600,
+          "sha256": "81dc94efa84e4025ef38d25d5d07429fe41e3eb29d44003f1db6fe98487b0052"
+        }
+      ],
+      "capabilities": {
+        "language_capability": "forced",
+        "recommended_profiles": [],
+        "vram_class": "low"
+      }
+    },
+    {
       "id": "omni-ctc-300m-int8",
       "name": "OmniLingual CTC 300M",
       "kind": "asr",

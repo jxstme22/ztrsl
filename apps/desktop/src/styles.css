@@ -2139,6 +2139,14 @@ input[type="range"]::-moz-range-thumb {
   -ms-overflow-style: none;
 }
 
+/* The overlay window is opaque (no transparency): paint the whole window a
+   solid dark surface so the caption lane floats on a clean bar instead of
+   the webview's default fill (visible as a gray rectangle on macOS, where
+   window transparency is unsupported without the private API). */
+html[data-tauri] .overlay-body {
+  background: #0b0b0d;
+}
+
 .overlay-history-empty {
   margin: 0;
   padding: 8px 4px;
@@ -2388,9 +2396,16 @@ input[type="range"]::-moz-range-thumb {
 }
 .lst-model-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   align-items: stretch;
+}
+/* Narrow overlay (sub-700px) falls back to a single column so cards never
+   squish below their comfortable reading width. */
+@media (max-width: 700px) {
+  .lst-model-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .lst-model-card {
   border: 1px solid var(--stroke);

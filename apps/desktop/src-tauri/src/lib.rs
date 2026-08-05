@@ -307,11 +307,14 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "ncspeech" => ids.push("ncspeech-tl-fastconformer-hybrid-large"),
         "ncspeech-zh" => ids.push("ncspeech-zh-citrinet-1024-gamma"),
         "ncspeech-zh-parakeet" => ids.push("ncspeech-zh-parakeet-ctc-0.6b"),
+        "paraformer-zh-streaming" => ids.push("paraformer-zh-streaming"),
+        "sensevoice-small" | "sense-voice" => ids.push("sensevoice-small"),
         _ => {}
     }
     match translation_provider {
         "nllb" => ids.push("nllb-200-distilled-600M-ct2-int8"),
         "madlad" => ids.push("madlad400-3b-mt"),
+        "opus-mt-en-zh" => ids.push("opus-mt-en-zh-ct2-int8"),
         _ => {}
     }
     ids
