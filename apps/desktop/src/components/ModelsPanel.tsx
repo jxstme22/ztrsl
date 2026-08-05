@@ -326,6 +326,7 @@ function ModelCard({
   onInstallClick,
   onDeleteClick,
   onRevealClick,
+  onRemoveDefinitionClick,
   t,
 }: {
   model: ModelInfo;
@@ -337,6 +338,8 @@ function ModelCard({
   onInstallClick: (model: ModelInfo) => void;
   onDeleteClick: (model: ModelInfo) => void;
   onRevealClick: (model: ModelInfo) => void;
+  /** Phase 10: drop a user-defined model definition (files stay on disk). */
+  onRemoveDefinitionClick?: (model: ModelInfo) => void;
   t: ReturnType<typeof useT>;
 }) {
   const installing = progress !== null && !progress.done;
@@ -373,6 +376,11 @@ function ModelCard({
         {localOnly && (
           <span className="lst-chip lst-chip-local">
             {t("modelsLocalExportBadge")}
+          </span>
+        )}
+        {model.userDefined && (
+          <span className="lst-chip lst-chip-local">
+            {t("modelsUserDefinedBadge")}
           </span>
         )}
         {model.licenseSpdx === "CC-BY-NC-4.0" && (
@@ -422,6 +430,19 @@ function ModelCard({
               <Trash2 aria-hidden="true" size={14} />
               {t("modelsDeleteAction")}
             </button>
+            {model.userDefined && onRemoveDefinitionClick !== undefined && (
+              <button
+                type="button"
+                className="button secondary"
+                title={t("modelsRemoveDefinitionTitle")}
+                onClick={() => {
+                  onRemoveDefinitionClick(model);
+                }}
+              >
+                <X aria-hidden="true" size={14} />
+                {t("modelsRemoveDefinition")}
+              </button>
+            )}
           </>
         ) : installing ? (
           <button
@@ -439,17 +460,32 @@ function ModelCard({
             {t("modelsLocalExportHint")}
           </span>
         ) : (
-          <button
-            type="button"
-            className={`button primary ${instantiating ? "disabled" : ""}`}
-            disabled={instantiating}
-            onClick={() => {
-              onInstallClick(model);
-            }}
-          >
-            <HardDriveDownload aria-hidden="true" size={14} />
-            {t("modelsInstallAction2")}
-          </button>
+          <>
+            <button
+              type="button"
+              className={`button primary ${instantiating ? "disabled" : ""}`}
+              disabled={instantiating}
+              onClick={() => {
+                onInstallClick(model);
+              }}
+            >
+              <HardDriveDownload aria-hidden="true" size={14} />
+              {t("modelsInstallAction2")}
+            </button>
+            {model.userDefined && onRemoveDefinitionClick !== undefined && (
+              <button
+                type="button"
+                className="button secondary"
+                title={t("modelsRemoveDefinitionTitle")}
+                onClick={() => {
+                  onRemoveDefinitionClick(model);
+                }}
+              >
+                <X aria-hidden="true" size={14} />
+                {t("modelsRemoveDefinition")}
+              </button>
+            )}
+          </>
         )}
       </div>
     </article>
@@ -631,10 +667,12 @@ function UrlInstallRow({ models }: { models: ModelUiState }) {
 
   const known = [...models.knownAvailable, ...models.knownInstalled];
   const kindOptions = [
+    { value: "", label: "Auto-detect" },
     { value: "asr", label: "Speech recognition (ASR)" },
     { value: "translation", label: "Translation (MT)" },
   ];
   const runtimeOptions = [
+    { value: "", label: "Auto-detect" },
     { value: "faster-whisper", label: "faster-whisper (Whisper)" },
     { value: "ctranslate2", label: "ctranslate2 (NLLB)" },
     { value: "sherpa-onnx", label: "sherpa-onnx (CTC)" },
@@ -716,6 +754,231 @@ function UrlInstallRow({ models }: { models: ModelUiState }) {
             onClick={() => void runInstall()}
           >
             {busy ? t("modelsImporting") : t("modelsUrlInstallBtn")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const ID_PATTERN = /^[a-z0-9-]+$/;
+
+/** Phase 10: register a user-defined model definition (pinned repo files)
+ * that installs through the same verified pipeline as built-ins. */
+function UserModelRow({ models }: { models: ModelUiState }) {
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState("asr");
+  const [runtime, setRuntime] = useState("faster-whisper");
+  const [source, setSource] = useState("");
+  const [revision, setRevision] = useState("");
+  const [files, setFiles] = useState("");
+  const [license, setLicense] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const t = useT();
+
+  const runtimeOptions = [
+    { value: "faster-whisper", label: "faster-whisper (Whisper)" },
+    { value: "ctranslate2", label: "ctranslate2 (NLLB)" },
+    { value: "sherpa-onnx", label: "sherpa-onnx (CTC)" },
+    { value: "candle", label: "candle (MADLAD)" },
+    { value: "mlx", label: "mlx (Apple Silicon Whisper)" },
+  ];
+
+  const runAdd = async () => {
+    if (busy) {
+      return;
+    }
+    const trimmedId = id.trim();
+    const trimmedName = name.trim();
+    const trimmedSource = source.trim();
+    const trimmedRevision = revision.trim();
+    const filePaths = files
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+    setFormError(null);
+    if (!ID_PATTERN.test(trimmedId) || trimmedId.length > 64) {
+      setFormError(t("modelsUserFormIdError"));
+      return;
+    }
+    if (trimmedName === "") {
+      setFormError(t("modelsUserFormNameError"));
+      return;
+    }
+    if (!/^https:\/\/[^ ]+$/.test(trimmedSource)) {
+      setFormError(t("modelsUserFormSourceError"));
+      return;
+    }
+    if (trimmedRevision === "") {
+      setFormError(t("modelsUserFormRevisionError"));
+      return;
+    }
+    if (filePaths.length === 0) {
+      setFormError(t("modelsUserFormFilesError"));
+      return;
+    }
+    setBusy(true);
+    const created = await models.addUserModel({
+      id: trimmedId,
+      name: trimmedName,
+      kind: kind === "translation" ? "translation" : "asr",
+      runtime,
+      description: description.trim(),
+      license: license.trim(),
+      source: trimmedSource,
+      revision: trimmedRevision,
+      files: filePaths.map((path) => ({ path, sizeBytes: 0, sha256: "" })),
+    });
+    setBusy(false);
+    if (created !== null) {
+      setId("");
+      setName("");
+      setDescription("");
+      setLicense("");
+      setFiles("");
+    }
+  };
+
+  return (
+    <div className="card lst-settings-card">
+      <div className="card-head">
+        <h3 className="card-title">{t("modelsUserFormLabel")}</h3>
+        <span className="lst-chip">{t("modelsUserFormBadge")}</span>
+      </div>
+      <div className="live-grid">
+        <div className="field">
+          <label htmlFor="user-model-id">{t("modelsUserFormId")}</label>
+          <input
+            id="user-model-id"
+            type="text"
+            value={id}
+            placeholder="my-whisper-model"
+            onChange={(event) => {
+              setId(event.currentTarget.value);
+            }}
+          />
+          <small className="field-note">{t("modelsUserFormIdHint")}</small>
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-name">{t("modelsUserFormName")}</label>
+          <input
+            id="user-model-name"
+            type="text"
+            value={name}
+            placeholder="My Whisper"
+            onChange={(event) => {
+              setName(event.currentTarget.value);
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-source">
+            {t("modelsUserFormSource")}
+          </label>
+          <input
+            id="user-model-source"
+            type="url"
+            value={source}
+            placeholder="https://huggingface.co/org/repo"
+            onChange={(event) => {
+              setSource(event.currentTarget.value);
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-revision">
+            {t("modelsUserFormRevision")}
+          </label>
+          <input
+            id="user-model-revision"
+            type="text"
+            value={revision}
+            placeholder="main"
+            onChange={(event) => {
+              setRevision(event.currentTarget.value);
+            }}
+          />
+          <small className="field-note">{t("modelsUserFormRevisionHint")}</small>
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-files">{t("modelsUserFormFiles")}</label>
+          <textarea
+            id="user-model-files"
+            rows={3}
+            value={files}
+            placeholder={"model.bin\nconfig.json\ntokenizer.json"}
+            onChange={(event) => {
+              setFiles(event.currentTarget.value);
+            }}
+          />
+          <small className="field-note">{t("modelsUserFormFilesHint")}</small>
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-kind">{t("modelsUrlInstallKind")}</label>
+          <Select
+            id="user-model-kind"
+            label={t("modelsUrlInstallKind")}
+            value={kind}
+            options={[
+              { value: "asr", label: "Speech recognition (ASR)" },
+              { value: "translation", label: "Translation (MT)" },
+            ]}
+            onChange={setKind}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-runtime">
+            {t("modelsUrlInstallRuntime")}
+          </label>
+          <Select
+            id="user-model-runtime"
+            label={t("modelsUrlInstallRuntime")}
+            value={runtime}
+            options={runtimeOptions}
+            onChange={setRuntime}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-license">
+            {t("modelsUserFormLicense")}
+          </label>
+          <input
+            id="user-model-license"
+            type="text"
+            value={license}
+            placeholder="unknown"
+            onChange={(event) => {
+              setLicense(event.currentTarget.value);
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="user-model-description">
+            {t("modelsUserFormDescription")}
+          </label>
+          <input
+            id="user-model-description"
+            type="text"
+            value={description}
+            onChange={(event) => {
+              setDescription(event.currentTarget.value);
+            }}
+          />
+        </div>
+        {formError !== null && (
+          <p className="lst-error-text span-2">{formError}</p>
+        )}
+        <div className="span-2 lst-import-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => void runAdd()}
+          >
+            {busy ? t("modelsImporting") : t("modelsUserFormBtn")}
           </button>
         </div>
       </div>
@@ -942,6 +1205,9 @@ export function ModelsPanel({
             onRevealClick={(clicked) => {
               void models.revealPath(clicked.modelDir);
             }}
+            onRemoveDefinitionClick={(clicked) => {
+              void models.removeUserModel(clicked.id);
+            }}
             t={t}
           />
         ))}
@@ -971,6 +1237,7 @@ export function ModelsPanel({
       </section>
       <DownloadServerRow models={models} />
       <UrlInstallRow models={models} />
+      <UserModelRow models={models} />
       <OfflinePackRow models={models} />
       <GpuRuntimePanel gpuRuntime={gpuRuntime} t={t} />
       {models.custom.length > 0 && (

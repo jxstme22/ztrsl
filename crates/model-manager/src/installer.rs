@@ -135,8 +135,10 @@ impl ModelInstaller {
             if let Some(parent) = destination.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let url =
-                crate::catalog::ModelCatalog::embedded().file_url(entry, file, &self.hf_endpoint);
+            let url = crate::catalog::entry_file_url(entry, file, &self.hf_endpoint);
+            // User models may skip pinning: an empty sha256 means "record the
+            // checksum after download", a zero size means "unknown".
+            let unverified = file.sha256.is_empty() || file.size_bytes == 0;
             let expected_size = file.size_bytes;
             let progress = self.plain_progress(
                 index,
@@ -148,14 +150,16 @@ impl ModelInstaller {
             );
             self.fetch_with_failover(&url, &destination, cancel, progress, &file.sha256)
                 .await?;
-            if std::fs::metadata(&destination)?.len() != expected_size {
+            if !unverified && std::fs::metadata(&destination)?.len() != expected_size {
                 return Err(Error::Size {
                     path: destination.display().to_string(),
                     expected: expected_size,
                     actual: std::fs::metadata(&destination)?.len(),
                 });
             }
-            crate::downloader::verify_file_sha256(&destination, &file.sha256)?;
+            if !file.sha256.is_empty() {
+                crate::downloader::verify_file_sha256(&destination, &file.sha256)?;
+            }
             downloaded += expected_size;
         }
         Ok(())
@@ -189,7 +193,12 @@ impl ModelInstaller {
             {
                 Ok(_) => {
                     // The artifact must still verify against the pinned
-                    // checksum before we accept any provider's bytes.
+                    // checksum before we accept any provider's bytes. An
+                    // empty expected checksum marks an unverified user-model
+                    // artifact (its checksum is recorded at commit time).
+                    if expected_sha256.is_empty() {
+                        return Ok(());
+                    }
                     match crate::downloader::verify_file_sha256(destination, expected_sha256) {
                         Ok(()) => return Ok(()),
                         Err(error) => return Err(error),
@@ -297,6 +306,11 @@ impl ModelInstaller {
     /// - a **single file** (e.g. `model.onnx`): installed under
     ///   `requested_id` with the caller-supplied kind/runtime.
     ///
+    /// When the caller leaves kind and/or runtime empty (and the archive has
+    /// no manifest), the installer auto-detects them from the downloaded
+    /// files (faster-whisper / ctranslate2 / sherpa-onnx / mlx layouts);
+    /// a verdict is only returned for layouts the sidecar can load.
+    ///
     /// Artifact roles are inferred from well-known filenames so the runtime
     /// providers (sherpa-onnx Nemo CTC) can find what they need:
     /// `model.onnx` → "model", `tokens.txt` → "tokens".
@@ -380,11 +394,37 @@ impl ModelInstaller {
                                 .to_owned(),
                         });
                     }
+                    // Auto-detect: when the caller left kind and/or runtime
+                    // empty, infer them from the downloaded files (Phase 10).
+                    let mut kind = requested_kind.to_owned();
+                    let mut runtime = requested_runtime.to_owned();
+                    if kind.is_empty() || runtime.is_empty() {
+                        if let Some((detected_kind, detected_runtime)) =
+                            detect_model_metadata(&model_dir)?
+                        {
+                            if kind.is_empty() {
+                                kind = detected_kind;
+                            }
+                            if runtime.is_empty() {
+                                runtime = detected_runtime;
+                            }
+                        }
+                    }
+                    if kind.is_empty() || runtime.is_empty() {
+                        let files = top_level_files(&model_dir).join(", ");
+                        return Err(Error::Layout {
+                            detail: format!(
+                                "could not determine the model kind/runtime from the \
+                                 downloaded files ({files}); install with an explicit kind \
+                                 and runtime, or use an offline-pack archive with a manifest"
+                            ),
+                        });
+                    }
                     (
                         requested_id.to_owned(),
-                        requested_kind.to_owned(),
-                        requested_runtime.to_owned(),
-                        "CC-BY-4.0".to_owned(),
+                        kind,
+                        runtime,
+                        "unknown".to_owned(),
                     )
                 }
             };
@@ -653,11 +693,7 @@ fn write_url_manifest(
             let file_name = entry.file_name().to_string_lossy().into_owned();
             let size_bytes = std::fs::metadata(&path).map_err(Error::Io)?.len();
             let sha256 = crate::downloader::sha256_of(&path)?;
-            let role = match file_name.as_str() {
-                "model.onnx" => Some("model"),
-                "tokens.txt" => Some("tokens"),
-                _ => None,
-            };
+            let role = infer_artifact_role(&file_name);
             let mut artifact = serde_json::Map::new();
             artifact.insert("path".to_owned(), serde_json::json!(file_name));
             artifact.insert("size_bytes".to_owned(), serde_json::json!(size_bytes));
@@ -732,18 +768,135 @@ fn extract_tarbz2(
     Ok(())
 }
 
+/// Map a well-known model filename to the runtime role the inference
+/// providers use to resolve artifacts (sherpa-onnx Nemo CTC, streaming
+/// paraformer). Unknown files keep no role.
+fn infer_artifact_role(file_name: &str) -> Option<&'static str> {
+    match file_name {
+        "model.onnx" => Some("model"),
+        "tokens.txt" => Some("tokens"),
+        "encoder.int8.onnx" | "encoder.onnx" => Some("encoder"),
+        "decoder.int8.onnx" | "decoder.onnx" => Some("decoder"),
+        _ => None,
+    }
+}
+
+/// Sorted list of top-level file names in `model_dir` (used by auto-detect
+/// and its error messages).
+fn top_level_files(model_dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(model_dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Best-effort parse of `config.json` in `model_dir`; `None` when missing or
+/// unparseable.
+fn read_config_json(model_dir: &Path) -> Option<serde_json::Value> {
+    let raw = std::fs::read(model_dir.join("config.json")).ok()?;
+    serde_json::from_slice(&raw).ok()
+}
+
+/// Auto-detect (kind, runtime) from the downloaded files of a manifest-less
+/// URL install (Phase 10). Detection is deliberately conservative: it only
+/// returns a verdict for layouts the sidecar can actually load, so the user
+/// never gets a "successful" install the runtime cannot use.
+fn detect_model_metadata(model_dir: &Path) -> Result<Option<(String, String)>, Error> {
+    let files = top_level_files(model_dir);
+    let has = |name: &str| files.iter().any(|file| file == name);
+    // sherpa-onnx CTC exports: model.onnx + tokens.txt (NCSpeech layout).
+    if has("model.onnx") && has("tokens.txt") {
+        return Ok(Some(("asr".to_owned(), "sherpa-onnx".to_owned())));
+    }
+    // sherpa-onnx streaming encoders/decoders (paraformer-style layouts).
+    if has("encoder.onnx") || has("encoder.int8.onnx") {
+        return Ok(Some(("asr".to_owned(), "sherpa-onnx".to_owned())));
+    }
+    // faster-whisper / ctranslate2 both ship model.bin + config.json; the
+    // config discriminates (whisper configs carry n_mels/vocal_dim, NLLB
+    // configs carry vocabulary_size / model_type "nllb").
+    if has("model.bin") {
+        if let Some(config) = read_config_json(model_dir) {
+            let model_type = config
+                .get("model_type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if model_type == "nllb" || config.get("vocabulary_size").is_some() {
+                return Ok(Some(("translation".to_owned(), "ctranslate2".to_owned())));
+            }
+            if model_type == "whisper" || config.get("n_mels").is_some() || config.get("vocal_dim").is_some() {
+                return Ok(Some(("asr".to_owned(), "faster-whisper".to_owned())));
+            }
+        }
+        return Ok(None);
+    }
+    // mlx-community Whisper quantized weights.
+    if has("weights.npz") && has("config.json") {
+        return Ok(Some(("asr".to_owned(), "mlx".to_owned())));
+    }
+    Ok(None)
+}
+
 fn write_manifest(destination: &Path, entry: &CatalogEntry) -> Result<(), Error> {
-    let artifacts: Vec<serde_json::Value> = entry
+    // Archive-only catalog entries carry no per-file metadata, so the
+    // manifest artifacts are synthesized from the extracted files (roles
+    // inferred like URL installs). File-list entries keep their checksums —
+    // except user-model entries may carry unverified artifacts (empty sha256
+    // / zero size); the installed manifest must always describe the actual
+    // bytes on disk (the store scan validates against it), so recompute the
+    // real size + checksum for any file that was not pinned.
+    let needs_recompute = entry
         .files
         .iter()
-        .map(|file| {
-            serde_json::json!({
-                "path": file.path,
-                "size_bytes": file.size_bytes,
-                "sha256": file.sha256,
+        .any(|file| file.sha256.is_empty() || file.size_bytes == 0);
+    let artifacts: Vec<serde_json::Value> = if entry.files.is_empty() {
+        std::fs::read_dir(destination)?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+            .map(|entry| {
+                let path = entry.path();
+                let file_name = entry.file_name().to_string_lossy().into_owned();
+                let size_bytes = std::fs::metadata(&path).map_err(Error::Io)?.len();
+                let sha256 = crate::downloader::sha256_of(&path)?;
+                let mut artifact = serde_json::Map::new();
+                artifact.insert("path".to_owned(), serde_json::json!(file_name));
+                artifact.insert("size_bytes".to_owned(), serde_json::json!(size_bytes));
+                artifact.insert("sha256".to_owned(), serde_json::json!(sha256));
+                if let Some(role) = infer_artifact_role(&file_name) {
+                    artifact.insert("role".to_owned(), serde_json::json!(role));
+                }
+                Ok(serde_json::Value::Object(artifact))
             })
-        })
-        .collect();
+            .collect::<Result<Vec<_>, Error>>()?
+    } else {
+        entry
+            .files
+            .iter()
+            .map(|file| {
+                let (size_bytes, sha256) = if needs_recompute {
+                    let path = destination.join(&file.path);
+                    let size_bytes = std::fs::metadata(&path).map_err(Error::Io)?.len();
+                    let sha256 = crate::downloader::sha256_of(&path)?;
+                    (size_bytes, sha256)
+                } else {
+                    (file.size_bytes, file.sha256.clone())
+                };
+                let mut artifact = serde_json::Map::new();
+                artifact.insert("path".to_owned(), serde_json::json!(file.path));
+                artifact.insert("size_bytes".to_owned(), serde_json::json!(size_bytes));
+                artifact.insert("sha256".to_owned(), serde_json::json!(sha256));
+                if let Some(role) = infer_artifact_role(&file.path) {
+                    artifact.insert("role".to_owned(), serde_json::json!(role));
+                }
+                Ok(serde_json::Value::Object(artifact))
+            })
+            .collect::<Result<Vec<_>, Error>>()?
+    };
     let manifest = serde_json::json!({
         "schema_version": 1,
         "id": entry.id,
@@ -1259,6 +1412,140 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("my-whisper-pack"));
 
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_from_url_auto_detects_ctc_layout() {
+        let root = std::env::temp_dir().join(format!("lst-url-detect-ctc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let zip = zip_pack(&[
+            ("model.onnx", b"onnx-bytes"),
+            ("tokens.txt", b"tokens-bytes"),
+        ]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/ctc.zip", zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        let installed_id = installer
+            .install_from_url("https://example.test/ctc.zip", "my-ctc-model", "", "")
+            .await
+            .unwrap();
+        assert_eq!(installed_id, "my-ctc-model");
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("my-ctc-model").join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["kind"], "asr");
+        assert_eq!(manifest["runtime"], "sherpa-onnx");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_from_url_auto_detects_whisper_and_nllb_configs() {
+        let root = std::env::temp_dir().join(format!("lst-url-detect-cfg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let whisper_zip = zip_pack(&[
+            ("model.bin", b"whisper-bytes"),
+            ("config.json", b"{\"n_mels\": 128, \"model_type\": \"whisper\"}"),
+        ]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/whisper.zip", whisper_zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        installer
+            .install_from_url("https://example.test/whisper.zip", "custom-whisper", "", "")
+            .await
+            .unwrap();
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("custom-whisper").join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["kind"], "asr");
+        assert_eq!(manifest["runtime"], "faster-whisper");
+
+        let nllb_zip = zip_pack(&[
+            ("model.bin", b"nllb-bytes"),
+            (
+                "config.json",
+                b"{\"model_type\": \"nllb\", \"vocabulary_size\": 128112}",
+            ),
+        ]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/nllb.zip", nllb_zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        installer
+            .install_from_url("https://example.test/nllb.zip", "custom-nllb", "", "")
+            .await
+            .unwrap();
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("custom-nllb").join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["kind"], "translation");
+        assert_eq!(manifest["runtime"], "ctranslate2");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_from_url_auto_detect_rejects_unrecognizable_files() {
+        let root = std::env::temp_dir().join(format!("lst-url-detect-amb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // A bare model.bin with no config.json cannot be identified; the
+        // install must fail with an actionable error instead of installing
+        // bytes no runtime can load.
+        let zip = zip_pack(&[("model.bin", b"mystery-bytes")]);
+        let fetcher: Arc<dyn Fetcher> =
+            Arc::new(FakeFetcher::with("https://example.test/mystery.zip", zip));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        let error = installer
+            .install_from_url("https://example.test/mystery.zip", "mystery", "", "")
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("model.bin"));
+        assert!(error.to_string().contains("kind/runtime"));
+        assert!(!root.join("mystery").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn user_entry_without_checksums_installs_with_recorded_actuals() {
+        // A user-defined model may carry no checksums (empty sha256) and no
+        // sizes (0). The install must succeed, and the installed manifest
+        // must record the real size + SHA-256 so the store scan validates.
+        let root = std::env::temp_dir().join(format!("lst-user-install-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let fetcher: Arc<dyn Fetcher> = Arc::new(FakeFetcher::with(
+            "https://huggingface.co/my-org/my-whisper/resolve/main/model.bin",
+            b"user-model-data".to_vec(),
+        ));
+        let installer = ModelInstaller::new(ModelStore::new(root.clone()), fetcher);
+        let entry: CatalogEntry = serde_json::from_value(serde_json::json!({
+            "id": "user-model",
+            "name": "User Model",
+            "kind": "asr",
+            "runtime": "faster-whisper",
+            "recommended": false,
+            "description": "d",
+            "license": { "spdx": "MIT" },
+            "download_size_bytes": 0,
+            "source": "https://huggingface.co/my-org/my-whisper",
+            "revision": "main",
+            "files": [
+                { "path": "model.bin", "size_bytes": 0, "sha256": "" }
+            ]
+        }))
+        .unwrap();
+        installer
+            .install(&entry, &CancelHandle::default(), Arc::new(|_| {}))
+            .await
+            .unwrap();
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(root.join("user-model").join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let artifact = &manifest["artifacts"][0];
+        assert_eq!(artifact["size_bytes"], 15);
+        assert_eq!(artifact["sha256"], sha256(b"user-model-data"));
+        assert!(installer.store().is_installed("user-model"));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -15,6 +15,7 @@ mod provider;
 mod runtime;
 mod signed_catalog;
 mod store;
+mod user_catalog;
 
 pub use capabilities::{
     CapabilitiesView, LanguageCapability, ModelCapabilities, VramClass, capabilities_for,
@@ -22,7 +23,7 @@ pub use capabilities::{
 };
 pub use catalog::{
     CatalogArchive, CatalogEntry, CatalogEntryView, CatalogFile, DEFAULT_HF_ENDPOINT, ModelCatalog,
-    ModelKind, huggingface_endpoint, rewrite_hf_url,
+    ModelKind, entry_file_url, huggingface_endpoint, rewrite_hf_url,
 };
 pub use downloader::{
     CancelHandle, DownloadProgress, Fetcher, ProgressFn, ReqwestFetcher, verify_file_sha256,
@@ -39,6 +40,10 @@ pub use runtime::{
 };
 pub use signed_catalog::{public_key_for, sign_payload, verify_catalog_signature};
 pub use store::{InstalledModel, ModelStore};
+pub use user_catalog::{
+    SUPPORTED_RUNTIMES, USER_CATALOG_FILE, UserCatalog, UserFileInput, UserModelEntry,
+    build_user_entry, validate_user_entry,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

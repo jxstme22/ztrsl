@@ -25,6 +25,7 @@ describe("models schemas", () => {
             "https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo",
           revision: "0a363e9",
           fileCount: 5,
+          userDefined: false,
           capabilities: {
             languageCapability: "post-filter",
             recommendedProfiles: [],
@@ -63,6 +64,7 @@ describe("models schemas", () => {
           source: "local-export",
           revision: "export",
           fileCount: 0,
+          userDefined: false,
           capabilities: {
             languageCapability: "forced",
             recommendedProfiles: [],
@@ -111,6 +113,7 @@ describe("models schemas", () => {
             source: "s",
             revision: "r",
             fileCount: 1,
+          userDefined: false,
             status: "broken",
             installedSizeBytes: 0,
             modelDir: "",

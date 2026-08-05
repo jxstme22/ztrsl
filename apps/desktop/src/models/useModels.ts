@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  addUserModel,
   cancelInstall,
   deleteModel,
   getDownloadEndpoint,
@@ -11,6 +12,7 @@ import {
   listModels,
   onInstallProgress,
   pickFolder,
+  removeUserModel,
   revealPath,
   setDownloadEndpoint,
 } from "./bridge";
@@ -18,11 +20,13 @@ import {
   EMPTY_MODELS_LIST,
   EMPTY_DOWNLOAD_ENDPOINT,
   EMPTY_PROVIDER_STATUS,
+  type CatalogEntry,
   type DownloadEndpointInfo,
   type ModelInfo,
   type ModelProgress,
   type ModelsList,
   type ProviderStatus,
+  type UserModelInput,
 } from "./model";
 import { loadModelsSettings, saveModelsSettings } from "./storage";
 
@@ -60,6 +64,10 @@ export type ModelUiState = {
     kind: string,
     runtime: string,
   ) => Promise<string>;
+  /** Register a user-defined model; resolves to the created entry. */
+  addUserModel: (input: UserModelInput) => Promise<CatalogEntry | null>;
+  /** Remove a user-defined model definition (files stay on disk). */
+  removeUserModel: (id: string) => Promise<void>;
   /** Open a native folder picker; null when the user cancels. */
   pickFolder: () => Promise<string | null>;
   /** Open a model folder in the system file manager. */
@@ -250,6 +258,34 @@ export function useModels(desktopOnly = true): ModelUiState {
     [refresh],
   );
 
+  const addUserModelEntry = useCallback(
+    async (input: UserModelInput) => {
+      setError(null);
+      try {
+        const created = await addUserModel(input);
+        await refresh();
+        return created;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return null;
+      }
+    },
+    [refresh],
+  );
+
+  const removeUserModelEntry = useCallback(
+    async (id: string) => {
+      setError(null);
+      try {
+        await removeUserModel(id);
+        await refresh();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    },
+    [refresh],
+  );
+
   return {
     list,
     loading,
@@ -271,6 +307,8 @@ export function useModels(desktopOnly = true): ModelUiState {
     providerStatus,
     importOfflinePack: importOffline,
     installFromUrl,
+    addUserModel: addUserModelEntry,
+    removeUserModel: removeUserModelEntry,
     pickFolder,
     revealPath,
   };

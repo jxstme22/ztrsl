@@ -8,18 +8,21 @@ import {
   EMPTY_GPU_RUNTIME_STATUS,
   EMPTY_MODELS_LIST,
   EMPTY_PROVIDER_STATUS,
+  catalogEntrySchema,
   downloadEndpointSchema,
   gpuRuntimeProgressSchema,
   gpuRuntimeStatusSchema,
   modelsListSchema,
   modelProgressSchema,
   providerStatusSchema,
+  type CatalogEntry,
   type DownloadEndpointInfo,
   type GpuRuntimeProgress,
   type GpuRuntimeStatus,
   type ModelsList,
   type ModelProgress,
   type ProviderStatus,
+  type UserModelInput,
 } from "./model";
 
 export type ProgressHandler = (event: ModelProgress) => void;
@@ -140,6 +143,36 @@ export async function deleteModel(modelId: string): Promise<void> {
     return;
   }
   await invoke("models_delete", { id: modelId });
+}
+
+/** Register a user-defined model definition; resolves to the created entry. */
+export async function addUserModel(
+  input: UserModelInput,
+): Promise<CatalogEntry> {
+  if (!isTauri()) {
+    throw new Error("user models require the desktop app");
+  }
+  return catalogEntrySchema.parse(
+    await invoke("models_user_catalog_add", {
+      id: input.id,
+      name: input.name,
+      kind: input.kind,
+      runtime: input.runtime,
+      description: input.description,
+      license: input.license,
+      source: input.source,
+      revision: input.revision,
+      files: input.files,
+    }),
+  );
+}
+
+/** Remove a user-defined model definition (installed files are untouched). */
+export async function removeUserModel(modelId: string): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke("models_user_catalog_remove", { id: modelId });
 }
 
 /**

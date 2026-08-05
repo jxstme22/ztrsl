@@ -129,6 +129,9 @@ struct ModelRuntime {
 struct ModelRuntimeState {
     store: model_manager::ModelStore,
     catalog: model_manager::ModelCatalog,
+    /// User-registered model definitions (Phase 10): persisted next to the
+    /// store and merged with the embedded catalog for install/list/delete.
+    user_catalog: model_manager::UserCatalog,
     installs: HashMap<String, model_manager::CancelHandle>,
     /// Model ids loaded by the running live session; deletion is refused.
     in_use: HashSet<String>,
@@ -157,6 +160,7 @@ impl ModelRuntime {
             state: Arc::new(Mutex::new(ModelRuntimeState {
                 store: model_manager::ModelStore::new(models_dir.clone()),
                 catalog: model_manager::ModelCatalog::embedded(),
+                user_catalog: model_manager::UserCatalog::load(&models_dir),
                 installs: HashMap::new(),
                 in_use: HashSet::new(),
                 hf_endpoint: None,
@@ -307,20 +311,24 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "ncspeech" => ids.push("ncspeech-tl-fastconformer-hybrid-large"),
         "ncspeech-zh" => ids.push("ncspeech-zh-citrinet-1024-gamma"),
         "ncspeech-zh-parakeet" => ids.push("ncspeech-zh-parakeet-ctc-0.6b"),
+        "paraformer-zh-streaming" => ids.push("paraformer-zh-streaming"),
+        "sensevoice-small" | "sense-voice" => ids.push("sensevoice-small"),
         _ => {}
     }
     match translation_provider {
         "nllb" => ids.push("nllb-200-distilled-600M-ct2-int8"),
         "madlad" => ids.push("madlad400-3b-mt"),
+        "opus-mt-en-zh" => ids.push("opus-mt-en-zh-ct2-int8"),
         _ => {}
     }
     ids
 }
 
 /// v0.4 known-but-not-cataloged models: locally exported CTC ASR models
-/// (NCSpeech family) generated via `scripts/export_ncspeech_onnx.py`. They
-/// are NOT downloadable through the catalog — the UI must show them without
-/// a download action.
+/// (NCSpeech family) generated via `scripts/export_ncspeech_onnx.py` and the
+/// opus-mt English→Chinese translation export generated via
+/// `scripts/export_opus_mt_ct2.py`. They are NOT downloadable through the
+/// catalog — the UI must show them without a download action.
 const KNOWN_MODELS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "ncspeech-tl-fastconformer-hybrid-large",
@@ -342,6 +350,13 @@ const KNOWN_MODELS: &[(&str, &str, &str, &str, &str)] = &[
         "asr",
         "sherpa-onnx",
         "Fixed-language Mandarin speech recognition (local NeMo export, CC-BY-4.0)",
+    ),
+    (
+        "opus-mt-en-zh-ct2-int8",
+        "Helsinki opus-mt (en→zh)",
+        "translation",
+        "ctranslate2",
+        "English-to-Chinese local translation (Apache-2.0; run scripts/export_opus_mt_ct2.py)",
     ),
 ];
 
@@ -379,13 +394,15 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
         .iter()
         .map(|model| (model.id.as_str(), model.total_size_bytes))
         .collect();
-    let mut models_info = Vec::new();
-    for view in state.catalog.view() {
+    let installed_dirs: HashMap<&str, &std::path::Path> = installed
+        .iter()
+        .map(|model| (model.id.as_str(), model.dir.as_path()))
+        .collect();
+    let view_to_info = |view: model_manager::CatalogEntryView| {
         let installed_size = installed_sizes.get(view.id.as_str()).copied().unwrap_or(0);
-        let installed_dir = installed
-            .iter()
-            .find(|model| model.id == view.id)
-            .map(|model| model.dir.display().to_string())
+        let installed_dir = installed_dirs
+            .get(view.id.as_str())
+            .map(|dir| dir.display().to_string())
             .unwrap_or_default();
         let status = if state.installs.contains_key(&view.id) {
             "installing".to_owned()
@@ -394,12 +411,19 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
         } else {
             "available".to_owned()
         };
-        models_info.push(ModelInfo {
+        ModelInfo {
             view,
             status,
             installed_size_bytes: installed_size,
             model_dir: installed_dir,
-        });
+        }
+    };
+    let mut models_info: Vec<ModelInfo> = state.catalog.view().into_iter().map(&view_to_info).collect();
+    // Phase 10 user models: registered definitions install through the same
+    // pipeline as built-ins, so they appear in the same list (with
+    // `userDefined: true` for an honest "Custom" badge).
+    for entry in state.user_catalog.entries() {
+        models_info.push(view_to_info(entry.to_view()));
     }
     // v0.4 known models (NCSpeech local exports): surfaced from disk so the
     // user can see them, but never offered as a download.
@@ -428,6 +452,7 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
                         recommended_profiles: Vec::new(),
                         vram_class: "low".to_owned(),
                     },
+                    user_defined: false,
                 },
                 status: if installed { "installed" } else { "available" }.to_owned(),
                 installed_size_bytes: size,
@@ -436,14 +461,21 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
         })
         .collect();
     // v0.6.1 custom URL imports: installed manifests that are neither in the
-    // catalog nor KNOWN_MODELS. Surfaced by their manifest metadata so the
-    // user can see and delete them even though no provider selection exists
-    // yet for an arbitrary id.
+    // catalog, nor KNOWN_MODELS, nor user-defined. Surfaced by their manifest
+    // metadata so the user can see and delete them even though no provider
+    // selection exists yet for an arbitrary id.
     let catalog_ids: HashSet<String> = state
         .catalog
         .view()
         .iter()
         .map(|entry| entry.id.clone())
+        .chain(
+            state
+                .user_catalog
+                .entries()
+                .iter()
+                .map(|entry| entry.id.clone()),
+        )
         .collect();
     let known_ids: HashSet<&str> = KNOWN_MODELS.iter().map(|(id, ..)| *id).collect();
     let custom = installed
@@ -475,6 +507,7 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
                         recommended_profiles: Vec::new(),
                         vram_class: "low".to_owned(),
                     },
+                    user_defined: false,
                 },
                 status: "installed".to_owned(),
                 installed_size_bytes: size,
@@ -621,6 +654,14 @@ async fn models_install(
             .catalog
             .entry(&id)
             .cloned()
+            .or_else(|| {
+                // Phase 10: user-registered models install through the same
+                // verified pipeline (pinned revision, staged, checksummed).
+                state
+                    .user_catalog
+                    .entry(&id)
+                    .map(|user_entry| user_entry.to_catalog_entry())
+            })
             .ok_or_else(|| format!("unknown model: {id}"))?;
         if state.installs.contains_key(&id) {
             return Err("this model is already being installed".to_owned());
@@ -747,9 +788,9 @@ async fn models_install(
 /// (or tar.bz2) containing an offline-pack `manifest.json`, the manifest
 /// supplies the id/kind/runtime and every artifact is verified against it;
 /// `id`, `kind` and `runtime` may then be left empty. Otherwise the caller
-/// must supply them, and a manifest is synthesized from the downloaded files.
-/// Known NCSpeech ids install into `artifacts/<id>` (sidecar layout);
-/// anything else lands in `root/<id>`.
+/// supplies them — or leaves kind/runtime empty for auto-detection from the
+/// downloaded files (Phase 10). Known NCSpeech ids install into
+/// `artifacts/<id>` (sidecar layout); anything else lands in `root/<id>`.
 #[tauri::command]
 async fn models_install_from_url(
     models: tauri::State<'_, ModelRuntime>,
@@ -792,6 +833,57 @@ async fn models_install_from_url(
     installer
         .install_from_url(url.trim(), &id, &kind, &runtime)
         .await
+        .map_err(|error| error.to_string())
+}
+
+/// Register a user-defined model (Phase 10): a pinned Hugging Face-style
+/// repo/revision/file list that installs through the same verified pipeline
+/// as built-ins. Returns the created entry view.
+#[tauri::command]
+fn models_user_catalog_add(
+    models: tauri::State<'_, ModelRuntime>,
+    id: String,
+    name: String,
+    kind: String,
+    runtime: String,
+    description: String,
+    license: String,
+    source: String,
+    revision: String,
+    files: Vec<model_manager::UserFileInput>,
+) -> Result<model_manager::CatalogEntryView, String> {
+    let entry = model_manager::build_user_entry(
+        &id,
+        &name,
+        &kind,
+        &runtime,
+        &description,
+        &license,
+        &source,
+        &revision,
+        &files,
+    )
+    .map_err(|error| error.to_string())?;
+    let mut state = models.state.lock().map_err(lock_error)?;
+    let embedded = state.catalog.clone();
+    state
+        .user_catalog
+        .add(entry.clone(), &embedded)
+        .map_err(|error| error.to_string())?;
+    Ok(entry.to_view())
+}
+
+/// Remove a user-defined model definition. Installed files (if any) are left
+/// untouched; use `models_delete` to remove them.
+#[tauri::command]
+fn models_user_catalog_remove(
+    models: tauri::State<'_, ModelRuntime>,
+    id: String,
+) -> Result<(), String> {
+    let mut state = models.state.lock().map_err(lock_error)?;
+    state
+        .user_catalog
+        .remove(&id)
         .map_err(|error| error.to_string())
 }
 
@@ -1162,7 +1254,8 @@ struct LiveStartRequest {
     /// ASR backend: "local"/"whisper-turbo" (large-v3-turbo), "whisper-full"
     /// (large-v3), "ncspeech" (NVIDIA FastConformer Tagalog), "ncspeech-zh"
     /// (NVIDIA Citrinet-1024 Mandarin), "ncspeech-zh-parakeet" (NVIDIA
-    /// Parakeet-CTC 0.6B Mandarin), or "groq-whisper".
+    /// Parakeet-CTC 0.6B Mandarin), "sensevoice-small" (SenseVoice zh/en/ja/
+    /// ko/yue), or "groq-whisper".
     #[serde(default)]
     asr_provider: String,
     /// Translation backend: "nllb" (local, near-real-time), "madlad" (local),
@@ -1342,13 +1435,22 @@ async fn start_live_translation(
             | "ncspeech-zh-parakeet"
             | "mlx"
             | "mlx-whisper"
+            | "paraformer-zh-streaming"
+            | "sensevoice-small"
+            | "sense-voice"
             | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
     }
     if !matches!(
         translation_provider.as_str(),
-        "nllb" | "madlad" | "libretranslate" | "google-translate" | "mymemory" | "custom-http"
+        "nllb"
+            | "madlad"
+            | "opus-mt-en-zh"
+            | "libretranslate"
+            | "google-translate"
+            | "mymemory"
+            | "custom-http"
     ) {
         return Err(format!(
             "unknown translation provider: {translation_provider}"
@@ -2680,6 +2782,8 @@ pub fn run() {
             models_list,
             models_install,
             models_install_from_url,
+            models_user_catalog_add,
+            models_user_catalog_remove,
             models_cancel_install,
             models_delete,
             models_download_endpoint,
@@ -2740,7 +2844,7 @@ mod tests {
         assert!(model_dir_exists(&root, "ncspeech-zh-citrinet-1024-gamma"));
 
         // The known set carries the three NCSpeech variants.
-        assert_eq!(KNOWN_MODELS.len(), 3);
+        assert_eq!(KNOWN_MODELS.len(), 4);
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -14,6 +14,8 @@ vi.mock("./bridge", () => ({
   setDownloadEndpoint: vi.fn(),
   pickFolder: vi.fn(),
   revealPath: vi.fn(),
+  addUserModel: vi.fn(),
+  removeUserModel: vi.fn(),
 }));
 
 const mocked = vi.mocked(bridge);
@@ -39,6 +41,7 @@ const AVAILABLE = {
       source: "s",
       revision: "r",
       fileCount: 1,
+      userDefined: false,
       capabilities: mockCapabilities,
       status: "available" as const,
       installedSizeBytes: 0,
@@ -57,6 +60,7 @@ const AVAILABLE = {
       source: "s",
       revision: "r",
       fileCount: 1,
+      userDefined: false,
       capabilities: mockCapabilities,
       status: "available" as const,
       installedSizeBytes: 0,
@@ -167,6 +171,7 @@ describe("useModels", () => {
           source: "s",
           revision: "r",
           fileCount: 1,
+          userDefined: false,
           capabilities: mockCapabilities,
           status: "installed",
           installedSizeBytes: 10,
@@ -185,6 +190,7 @@ describe("useModels", () => {
           source: "s",
           revision: "r",
           fileCount: 1,
+          userDefined: false,
           capabilities: mockCapabilities,
           status: "available",
           installedSizeBytes: 0,
@@ -229,5 +235,102 @@ describe("useModels", () => {
       await result.current.startInstall("whisper-large-v3-turbo");
     });
     expect(result.current.error).toBe("already installing");
+  });
+
+  it("adds a user-defined model and refreshes the list", async () => {
+    mocked.listModels.mockResolvedValue(AVAILABLE);
+    mockEndpoint();
+    mocked.onInstallProgress.mockReturnValue(() => undefined);
+    mocked.addUserModel.mockResolvedValue({
+      id: "my-whisper",
+      name: "My Whisper",
+      kind: "asr",
+      runtime: "faster-whisper",
+      recommended: false,
+      description: "",
+      licenseSpdx: "MIT",
+      licenseNotice: "",
+      downloadSizeBytes: 0,
+      source: "https://huggingface.co/my-org/my-whisper",
+      revision: "main",
+      fileCount: 1,
+      capabilities: mockCapabilities,
+      userDefined: true,
+    });
+    const { result } = renderHook(() => useModels());
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    let created: unknown;
+    await act(async () => {
+      created = await result.current.addUserModel({
+        id: "my-whisper",
+        name: "My Whisper",
+        kind: "asr",
+        runtime: "faster-whisper",
+        description: "",
+        license: "MIT",
+        source: "https://huggingface.co/my-org/my-whisper",
+        revision: "main",
+        files: [{ path: "model.bin", sizeBytes: 0, sha256: "" }],
+      });
+    });
+    expect(mocked.addUserModel).toHaveBeenCalledWith({
+      id: "my-whisper",
+      name: "My Whisper",
+      kind: "asr",
+      runtime: "faster-whisper",
+      description: "",
+      license: "MIT",
+      source: "https://huggingface.co/my-org/my-whisper",
+      revision: "main",
+      files: [{ path: "model.bin", sizeBytes: 0, sha256: "" }],
+    });
+    expect(created).not.toBeNull();
+    expect(mocked.listModels).toHaveBeenCalled();
+  });
+
+  it("surfaces add-user-model errors through models.error", async () => {
+    mocked.listModels.mockResolvedValue(AVAILABLE);
+    mockEndpoint();
+    mocked.onInstallProgress.mockReturnValue(() => undefined);
+    mocked.addUserModel.mockRejectedValue(
+      new Error("model id is a built-in model"),
+    );
+    const { result } = renderHook(() => useModels());
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    let created: unknown;
+    await act(async () => {
+      created = await result.current.addUserModel({
+        id: "whisper-large-v3-turbo",
+        name: "Nope",
+        kind: "asr",
+        runtime: "faster-whisper",
+        description: "",
+        license: "MIT",
+        source: "https://huggingface.co/x/y",
+        revision: "main",
+        files: [{ path: "model.bin", sizeBytes: 0, sha256: "" }],
+      });
+    });
+    expect(created).toBeNull();
+    expect(result.current.error).toBe("model id is a built-in model");
+  });
+
+  it("removes a user-defined model definition and refreshes", async () => {
+    mocked.listModels.mockResolvedValue(AVAILABLE);
+    mockEndpoint();
+    mocked.onInstallProgress.mockReturnValue(() => undefined);
+    const { result } = renderHook(() => useModels());
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    await act(async () => {
+      await result.current.removeUserModel("my-whisper");
+    });
+    expect(mocked.removeUserModel).toHaveBeenCalledWith("my-whisper");
+    expect(mocked.listModels).toHaveBeenCalled();
   });
 });

@@ -566,8 +566,56 @@ const UI_STRINGS = {
     zh: "选择已知模型，或在 URL 无清单时留空并填写自定义 id（小写字母、数字、短横线）。如果 URL 是带清单的离线包压缩包，则以清单为准。",
   },
   modelsUrlInstallNote: {
-    en: "Point at a zip/tar.bz2 archive (offline-pack layout with manifest.json, or plain model files) or a single model file served over http(s). Every artifact is SHA-256 verified before install; sherpa-onnx CTC imports must contain model.onnx and tokens.txt.",
-    zh: "指向 http(s) 提供的 zip/tar.bz2 压缩包（含 manifest.json 的离线包布局，或普通模型文件）或单个模型文件。安装前会对每个产物进行 SHA-256 校验；sherpa-onnx CTC 导入必须包含 model.onnx 和 tokens.txt。",
+    en: "Point at a zip/tar.bz2 archive (offline-pack layout with manifest.json, or plain model files) or a single model file served over http(s). Every artifact is SHA-256 verified before install; sherpa-onnx CTC imports must contain model.onnx and tokens.txt. Leave Kind/Runtime on Auto-detect and the app infers them from the downloaded files.",
+    zh: "指向 http(s) 提供的 zip/tar.bz2 压缩包（含 manifest.json 的离线包布局，或普通模型文件）或单个模型文件。安装前会对每个产物进行 SHA-256 校验；sherpa-onnx CTC 导入必须包含 model.onnx 和 tokens.txt。将类型/运行时留为自动检测时，应用会根据下载的文件推断。",
+  },
+  modelsUserFormLabel: {
+    en: "Add a model from Hugging Face",
+    zh: "从 Hugging Face 添加模型",
+  },
+  modelsUserFormBadge: { en: "user-defined", zh: "用户自定义" },
+  modelsUserFormId: { en: "Model id", zh: "模型 ID" },
+  modelsUserFormIdHint: {
+    en: "Lowercase letters, digits and dashes. This id is used for install, delete and (when the runtime matches) provider selection.",
+    zh: "小写字母、数字和短横线。此 ID 用于安装、删除以及（运行时匹配时）提供方选择。",
+  },
+  modelsUserFormName: { en: "Display name", zh: "显示名称" },
+  modelsUserFormSource: { en: "Repository URL", zh: "仓库地址" },
+  modelsUserFormRevision: { en: "Revision", zh: "版本" },
+  modelsUserFormRevisionHint: {
+    en: "A commit sha, tag or branch; every download is pinned to this revision.",
+    zh: "提交哈希、标签或分支；所有下载都固定到此版本。",
+  },
+  modelsUserFormFiles: { en: "Artifact files", zh: "模型文件" },
+  modelsUserFormFilesHint: {
+    en: "One relative file path per line. Unknown checksums/sizes are computed after download and recorded in the installed manifest.",
+    zh: "每行一个相对文件路径。未知的校验和/大小会在下载后计算并记录到已安装清单中。",
+  },
+  modelsUserFormLicense: { en: "License (SPDX)", zh: "许可证（SPDX）" },
+  modelsUserFormDescription: { en: "Description", zh: "描述" },
+  modelsUserFormBtn: { en: "Add model", zh: "添加模型" },
+  modelsUserFormIdError: {
+    en: "Model id must be 1-64 characters of lowercase letters, digits and dashes.",
+    zh: "模型 ID 必须为 1-64 个字符，仅限小写字母、数字和短横线。",
+  },
+  modelsUserFormNameError: { en: "Display name is required.", zh: "必须填写显示名称。" },
+  modelsUserFormSourceError: {
+    en: "Repository URL must be a plain https:// URL.",
+    zh: "仓库地址必须是 https:// URL。",
+  },
+  modelsUserFormRevisionError: {
+    en: "Revision is required (commit sha, tag or branch).",
+    zh: "必须填写版本（提交哈希、标签或分支）。",
+  },
+  modelsUserFormFilesError: {
+    en: "At least one artifact file is required.",
+    zh: "至少需要一个模型文件。",
+  },
+  modelsUserDefinedBadge: { en: "Custom", zh: "自定义" },
+  modelsRemoveDefinition: { en: "Remove", zh: "移除" },
+  modelsRemoveDefinitionTitle: {
+    en: "Remove this model definition (installed files stay on disk)",
+    zh: "移除该模型定义（已安装文件保留在磁盘上）",
   },
   modelsCustom: { en: "Custom (URL-imported)", zh: "自定义（URL 导入）" },
   modelsCustomDescription: {

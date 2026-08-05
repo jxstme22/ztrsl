@@ -5,7 +5,7 @@
 //! exact revision and per-file SHA-256; nothing is fetched from a non-pinned
 //! URL, and no API keys are ever part of the catalog.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::capabilities::{CapabilitiesView, ModelCapabilities, capabilities_for};
 
@@ -48,6 +48,21 @@ pub fn rewrite_hf_url(url: &str, endpoint: &str) -> String {
         .unwrap_or_else(|| url.to_owned())
 }
 
+/// Derive the pinned download URL for a plain file artifact of any catalog
+/// (embedded or user-defined). `endpoint` is the Hugging Face host to use;
+/// mirrors like hf-mirror.com are honored without changing the revision.
+pub fn entry_file_url(entry: &CatalogEntry, file: &CatalogFile, endpoint: &str) -> String {
+    rewrite_hf_url(
+        &format!(
+            "{}/resolve/{}/{}",
+            entry.source.trim_end_matches('/'),
+            entry.revision,
+            file.path
+        ),
+        endpoint,
+    )
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ModelCatalog {
@@ -86,7 +101,7 @@ pub struct CatalogEntry {
     pub capabilities: Option<ModelCapabilities>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ModelKind {
     Asr,
@@ -120,7 +135,7 @@ pub struct CatalogLicense {
     pub notice: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogFile {
     pub path: String,
@@ -165,6 +180,9 @@ pub struct CatalogEntryView {
     /// Honest capability metadata (Phase 9): forced/preferred/post-filter
     /// language handling, recommended profiles, VRAM class.
     pub capabilities: CapabilitiesView,
+    /// `true` when this entry was added by the user (user model catalog)
+    /// rather than shipped in the embedded catalog.
+    pub user_defined: bool,
 }
 
 impl ModelCatalog {
@@ -194,6 +212,7 @@ impl ModelCatalog {
                 revision: entry.revision.clone(),
                 file_count: entry.files.len() + usize::from(entry.archive.is_some()),
                 capabilities: CapabilitiesView::from(&capabilities_for(entry)),
+                user_defined: false,
             })
             .collect()
     }
@@ -202,15 +221,7 @@ impl ModelCatalog {
     /// is the Hugging Face host to use (see `huggingface_endpoint`); mirrors
     /// like hf-mirror.com are honored without changing the pinned revision.
     pub fn file_url(&self, entry: &CatalogEntry, file: &CatalogFile, endpoint: &str) -> String {
-        rewrite_hf_url(
-            &format!(
-                "{}/resolve/{}/{}",
-                entry.source.trim_end_matches('/'),
-                entry.revision,
-                file.path
-            ),
-            endpoint,
-        )
+        entry_file_url(entry, file, endpoint)
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -268,6 +279,18 @@ mod tests {
             nllb.files.iter().map(|f| f.size_bytes).sum::<u64>(),
             nllb.download_size_bytes
         );
+        let sensevoice = catalog
+            .entry("sensevoice-small")
+            .expect("sensevoice-small");
+        assert_eq!(sensevoice.kind, ModelKind::Asr);
+        assert_eq!(sensevoice.runtime, "sherpa-onnx");
+        assert_eq!(
+            sensevoice.files.iter().map(|f| f.size_bytes).sum::<u64>(),
+            sensevoice.download_size_bytes
+        );
+        assert!(sensevoice.files.iter().all(|f| f.sha256.len() == 64));
+        let capabilities = crate::capabilities::capabilities_for(sensevoice);
+        assert_eq!(capabilities.language_capability, crate::capabilities::LanguageCapability::PostFilter);
     }
 
     #[test]

@@ -22,6 +22,8 @@ export const catalogEntrySchema = z.object({
   revision: z.string(),
   fileCount: z.number().int().nonnegative(),
   capabilities: capabilitiesSchema,
+  /** True when this entry was registered by the user (user model catalog). */
+  userDefined: z.boolean(),
 });
 
 export type CatalogEntry = z.infer<typeof catalogEntrySchema>;
@@ -34,6 +36,31 @@ export const modelInfoSchema = catalogEntrySchema.extend({
 });
 
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
+
+/** One artifact file of a user-defined model. `sha256` may be empty (the
+ * checksum is recorded after download); `sizeBytes` may be 0 (unknown). */
+export const userModelFileInputSchema = z.object({
+  path: z.string(),
+  sizeBytes: z.number().int().nonnegative().default(0),
+  sha256: z.string().default(""),
+});
+
+export type UserModelFileInput = z.infer<typeof userModelFileInputSchema>;
+
+/** Payload for registering a user-defined model (Phase 10). */
+export const userModelInputSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  kind: z.enum(["asr", "translation"]),
+  runtime: z.string(),
+  description: z.string().default(""),
+  license: z.string().default("unknown"),
+  source: z.string(),
+  revision: z.string(),
+  files: z.array(userModelFileInputSchema).min(1),
+});
+
+export type UserModelInput = z.infer<typeof userModelInputSchema>;
 
 export const modelsListSchema = z.object({
   models: z.array(modelInfoSchema),

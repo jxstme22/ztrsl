@@ -22,6 +22,7 @@ function modelsState(): ModelUiState {
           source: "s",
           revision: "r",
           fileCount: 1,
+          userDefined: false,
           capabilities: {
             languageCapability: "post-filter",
             recommendedProfiles: [],
@@ -43,6 +44,8 @@ function modelsState(): ModelUiState {
     startInstall: vi.fn(),
     cancel: vi.fn(),
     remove: vi.fn(),
+    addUserModel: vi.fn(),
+    removeUserModel: vi.fn(),
     hasInstalledModels: false,
     isInstalling: () => false,
     installed: [],
