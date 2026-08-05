@@ -1,27 +1,35 @@
 """Windows runtime alignment for the onnxruntime version clash.
 
-sherpa-onnx 1.13.4's ``_sherpa_onnx`` binding is compiled against onnxruntime
-API 27 (1.27.0), but its companion ``sherpa-onnx-core`` wheel ships a
-1.17.1 copy of ``onnxruntime.dll`` inside ``sherpa_onnx/lib``. Because
-Windows resolves ``onnxruntime.dll`` from the loading module's own directory
-first, the binding grabs the 1.17.1 copy and dies with an access violation
-("The requested API version [27] is not available ... Current ORT Version
-is: 1.17.1") on the first model load — surfaced by the desktop as a
-10054 WebSocket drop.
+Two independent Windows hazards can make sherpa-onnx model loads crash with
+an access violation ("The requested API version [27] is not available, only
+API versions [1, 17] are supported in this build. Current ORT Version is:
+1.17.1"), killing the sidecar (surfaced as a 10054 WebSocket drop):
 
-The fix aligns the process on a single onnxruntime: the bundled 1.17.1 copy
-is replaced by the standalone ``onnxruntime`` package's 1.27.0 DLL, which the
-binding actually expects. Every onnxruntime user (Silero VAD, sherpa-onnx)
-then shares the same 1.27.0 build.
+1. sherpa-onnx 1.13.4's ``_sherpa_onnx`` binding is compiled against
+   onnxruntime API 27 (1.27.0), but its companion ``sherpa-onnx-core`` wheel
+   ships a 1.17.1 copy of ``onnxruntime.dll`` inside ``sherpa_onnx/lib``;
+2. a stale ``onnxruntime.dll`` can exist in ``C:\\Windows\\SYSTEM32``
+   (installed by other software / CI runner images). Windows resolves
+   implicitly-imported ``onnxruntime.dll`` by name: application dir,
+   System32, then added DLL directories — so the binding (and the
+   onnxruntime python package itself) can grab the System32 copy even when
+   the venv has a correct 1.27.0.
 
-CRITICAL: the replacement must happen BEFORE ``sherpa_onnx`` is imported —
-importing the package loads the pyd, and Windows binds its
-``onnxruntime.dll`` reference at load time from the pyd's own directory.
-``importlib.util.find_spec`` locates the packages without executing them.
+The fix loads the standalone ``onnxruntime`` package's DLL by FULL PATH
+before anything imports onnxruntime or sherpa_onnx. Full-path loads bypass
+the name-based search, and Windows reuses an already-loaded module for
+later name-based loads — so the binding ends up on the matching 1.27.0
+build. The bundled sherpa copy is also replaced with the standalone DLL
+when present.
+
+CRITICAL: call this BEFORE ``import onnxruntime`` and
+``import sherpa_onnx``. ``importlib.util.find_spec`` locates packages
+without executing them.
 """
 
 from __future__ import annotations
 
+import ctypes
 import importlib.util
 import os
 from pathlib import Path
@@ -38,27 +46,46 @@ def _package_dir(name: str) -> Path | None:
 
 
 def align_onnxruntime() -> bool:
-    """Replace sherpa-onnx's bundled onnxruntime DLL with the standalone
-    package's copy when they differ. Must run before ``import sherpa_onnx``.
+    """Ensure ``onnxruntime.dll`` resolves to the standalone package's copy.
+    Must run before ``import onnxruntime`` / ``import sherpa_onnx``.
 
-    Returns True when a replacement was performed (or the copies already
-    matched); False when nothing could be verified (non-Windows, packages
-    missing, or the replacement failed).
+    Returns True when the standalone DLL was loaded; False on non-Windows or
+    when it could not be resolved.
     """
     if os.name != "nt":
         return False
     try:
-        sherpa_dir = _package_dir("sherpa_onnx")
         ort_dir = _package_dir("onnxruntime")
-        if sherpa_dir is None or ort_dir is None:
+        sherpa_dir = _package_dir("sherpa_onnx")
+        if ort_dir is None:
             return False
-        bundled = sherpa_dir / "lib" / "onnxruntime.dll"
         standalone = ort_dir / "capi" / "onnxruntime.dll"
-        if not bundled.is_file() or not standalone.is_file():
+        if not standalone.is_file():
             return False
-        if bundled.read_bytes() == standalone.read_bytes():
-            return True
-        bundled.write_bytes(standalone.read_bytes())
-        return True
-    except (OSError, ValueError):
+
+        # Hazard 1: replace the bundled sherpa copy when present.
+        if sherpa_dir is not None:
+            bundled = sherpa_dir / "lib" / "onnxruntime.dll"
+            try:
+                if bundled.is_file() and bundled.read_bytes() != standalone.read_bytes():
+                    bundled.write_bytes(standalone.read_bytes())
+            except OSError:
+                pass
+
+        # Hazard 2: register the standalone's directory and load it by full
+        # path so every later name-based load reuses this copy.
+        add_dll_directory = getattr(os, "add_dll_directory", None)
+        if add_dll_directory is not None:
+            try:
+                add_dll_directory(str(standalone.parent))
+            except OSError:
+                pass
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        load_library_ex = kernel32.LoadLibraryExW
+        load_library_ex.restype = ctypes.c_void_p
+        load_library_ex.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p, ctypes.c_uint32]
+        LOAD_WITH_ALTERED_SEARCH_PATH = 0x00000008
+        handle = load_library_ex(str(standalone), None, LOAD_WITH_ALTERED_SEARCH_PATH)
+        return bool(handle)
+    except (OSError, ValueError, AttributeError):
         return False

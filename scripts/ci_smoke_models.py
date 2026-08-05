@@ -43,6 +43,9 @@ def dll_sha(path: Path) -> str:
 
 from local_squad_inference.windows_runtime import align_onnxruntime
 
+aligned = align_onnxruntime()
+log(f"[diag] alignment ran: {aligned}")
+
 import importlib.util
 
 for pkg in ("onnxruntime", "sherpa_onnx"):
@@ -65,8 +68,6 @@ for pkg in ("onnxruntime", "sherpa_onnx"):
 import onnxruntime as _ort
 
 log(f"[diag] onnxruntime module version: {_ort.__version__}")
-aligned = align_onnxruntime()
-log(f"[diag] alignment ran: {aligned}")
 
 spec = importlib.util.find_spec("sherpa_onnx")
 if spec is not None and spec.submodule_search_locations:
