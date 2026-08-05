@@ -1,5 +1,21 @@
 # 23 — Release Notes
 
+## v0.6.10 — Live session auto-recovery, overlay transparency + dismiss fixes
+
+- **Live sessions survive sidecar crashes** — when the local inference
+  sidecar dies mid-session (the Windows "connection forcibly closed by the
+  remote host" / error 10054), the desktop worker now restarts the sidecar
+  in place, renegotiates the session and keeps captions flowing, with a
+  warning instead of ending the session. Sidecar hiccups it flags as
+  recoverable (`live.error` with `recoverable: true`) surface as warnings
+  while the session keeps listening.
+- **Fix: overlay black block gone** — removed the CSS rule that painted the
+  whole overlay window solid dark; the caption lane renders as the
+  transparent bar again.
+- **Fix: hiding the overlay sticks** — after hiding (button or hotkey), new
+  captions no longer force the overlay back open; use the show button or
+  hotkey to bring it back.
+
 ## v0.6.9 — Fix: live start with new ASR/MT providers, overlay window restored
 
 - **Fix: "unknown ASR provider" on live start** — the desktop's live-start
