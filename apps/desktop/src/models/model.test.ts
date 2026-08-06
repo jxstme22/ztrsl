@@ -121,6 +121,46 @@ describe("models schemas", () => {
     ).toThrow();
   });
 
+  it("keeps the list parseable when a custom model carries a stale capability value", () => {
+    // v0.6.11 and earlier serialized URL-imported custom models with
+    // languageCapability "unknown", which bricked the entire Models page
+    // for any machine with a custom model installed. The schema must fall
+    // back instead of failing the whole list.
+    const result = modelsListSchema.parse({
+      models: [],
+      inUse: [],
+      custom: [
+        {
+          id: "my-custom-model",
+          name: "my-custom-model",
+          kind: "asr",
+          runtime: "custom",
+          recommended: false,
+          description: "installed from URL",
+          licenseSpdx: "unknown",
+          licenseNotice: "",
+          downloadSizeBytes: 123,
+          source: "https://example.com/model.zip",
+          revision: "2026-01-01",
+          fileCount: 2,
+          capabilities: {
+            languageCapability: "unknown",
+            recommendedProfiles: [],
+            vramClass: "unknown",
+          },
+          status: "installed",
+          installedSizeBytes: 123,
+          modelDir: "C:\\models\\my-custom-model",
+        },
+      ],
+    });
+    expect(result.custom).toHaveLength(1);
+    expect(result.custom[0]?.capabilities.languageCapability).toBe(
+      "post-filter",
+    );
+    expect(result.custom[0]?.capabilities.vramClass).toBe("low");
+  });
+
   it("parses progress events including completion errors", () => {
     const downloading = modelProgressSchema.parse({
       modelId: "nllb-200-distilled-600M-ct2-int8",
