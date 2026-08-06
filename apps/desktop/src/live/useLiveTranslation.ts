@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CaptionPayload } from "../ipc/model";
 import type { Caption } from "../overlay/model";
+import type { LiveSourceRequest } from "./bridge";
 import { readingDurationMs } from "../overlay/reducer";
 import { loadSourceConfigs } from "../sources/storage";
 import {
@@ -141,6 +142,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       asrProvider: AsrProvider,
       translationProvider: TranslationProvider,
       vadSensitivity = 50,
+      sources: LiveSourceRequest[] = [],
     ) => {
       setState("starting");
       setError(null);
@@ -158,6 +160,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
             asrProvider,
             translationProvider,
             vadSensitivity,
+            sources,
           ),
         );
       } catch (cause) {

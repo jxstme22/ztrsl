@@ -439,6 +439,30 @@ const UI_STRINGS = {
     en: "Monitor captured audio",
     zh: "监听捕获的音频",
   },
+  liveChannelMode: {
+    en: "Capture mode",
+    zh: "捕获模式",
+  },
+  liveOneChannel: {
+    en: "One channel",
+    zh: "单通道",
+  },
+  liveAllSources: {
+    en: "All sources ({count})",
+    zh: "全部来源（{count}）",
+  },
+  liveOneChannelNote: {
+    en: "Pick one device to caption.",
+    zh: "选择一个设备进行字幕翻译。",
+  },
+  liveAllSourcesNote: {
+    en: "Every configured source is captured and captioned with its own tag.",
+    zh: "将捕获所有已配置的来源，并分别用各自的标签进行字幕翻译。",
+  },
+  liveSourcesBeingCaptured: {
+    en: "Sources being captured",
+    zh: "正在捕获的来源",
+  },
   liveApiKeyOptional: { en: "API key (optional)", zh: "API 密钥（可选）" },
   liveModelsDownloading: { en: "Downloading", zh: "下载中" },
   liveModelsExtracting: { en: "Extracting", zh: "解压中" },
