@@ -1243,10 +1243,71 @@ fn auth_status_label(status: objc2_av_foundation::AVAuthorizationStatus) -> Stri
     }
 }
 
+/// Remembers the normal-mode window geometry while the mini (windowed)
+/// overlay is active, so leaving mini mode returns the app window to exactly
+/// where it was instead of leaving a tiny strip at the bottom of the screen.
+static APP_MODE_GEOMETRY: std::sync::Mutex<Option<(f64, f64, f64, f64)>> =
+    std::sync::Mutex::new(None);
+
 #[tauri::command]
 fn set_overlay_mode(active: bool, window: tauri::Window) -> Result<(), String> {
     use tauri::LogicalSize;
+    #[cfg(target_os = "macos")]
+    {
+        // The normal app window sits on an NSVisualEffectView (vibrancy)
+        // layer. That material fills the whole square window, so while the
+        // mini caption strip is active its CSS-rounded corners would show
+        // the material instead of the desktop — remove it for true
+        // transparency and restore it when leaving mini mode.
+        if active {
+            let _ = window_vibrancy::clear_vibrancy(&window);
+        } else {
+            let _ = window_vibrancy::apply_vibrancy(
+                &window,
+                window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                None,
+                None,
+            );
+        }
+        // The webview paints a white layer unless it is told to be
+        // transparent at runtime: the config-level KVC flag is unreliable on
+        // modern WebKit. wry's set_background_color applies the private
+        // drawsBackground=false + underPageBackgroundColor on the webview
+        // instance, which makes the mini window's corners truly see-through.
+        let _ = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
+        // Round the OS window itself (NSWindow.cornerRadius, macOS 15+):
+        // 18px in mini mode (matching the CSS radius) and 10px for the
+        // normal app frame. Falls back to a no-op on older macOS.
+        unsafe {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+            use objc2::sel;
+            if let Ok(raw) = window.ns_window() {
+                let ns_window = raw as *mut AnyObject;
+                let responds: bool =
+                    msg_send![ns_window, respondsToSelector: sel!(setCornerRadius:)];
+                if responds {
+                    let radius: f64 = if active { 18.0 } else { 10.0 };
+                    let _: () = msg_send![ns_window, setCornerRadius: radius];
+                }
+            }
+        }
+    }
     if active {
+        // Remember where the normal app window is before shrinking into the
+        // caption strip (overwrite every entry: after a restore the saved
+        // geometry is the app geometry again).
+        if let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) {
+            let mut saved = APP_MODE_GEOMETRY
+                .lock()
+                .map_err(|error| format!("geometry lock poisoned: {error}"))?;
+            *saved = Some((
+                position.x as f64,
+                position.y as f64,
+                size.width as f64,
+                size.height as f64,
+            ));
+        }
         // The configured min size (994x904) would clamp the caption strip,
         // so drop it first and restore it when leaving overlay mode.
         window
@@ -1265,9 +1326,21 @@ fn set_overlay_mode(active: bool, window: tauri::Window) -> Result<(), String> {
                 APP_MODE_MIN_SIZE.1,
             )))
             .map_err(|error| error.to_string())?;
-        window
-            .set_size(LogicalSize::new(APP_MODE_SIZE.0, APP_MODE_SIZE.1))
-            .map_err(|error| error.to_string())?;
+        let saved = APP_MODE_GEOMETRY
+            .lock()
+            .map_err(|error| format!("geometry lock poisoned: {error}"))?;
+        if let Some((x, y, width, height)) = *saved {
+            window
+                .set_size(tauri::PhysicalSize::new(width as u32, height as u32))
+                .map_err(|error| error.to_string())?;
+            window
+                .set_position(tauri::PhysicalPosition::new(x as i32, y as i32))
+                .map_err(|error| error.to_string())?;
+        } else {
+            window
+                .set_size(LogicalSize::new(APP_MODE_SIZE.0, APP_MODE_SIZE.1))
+                .map_err(|error| error.to_string())?;
+        }
         window
             .set_always_on_top(false)
             .map_err(|error| error.to_string())?;

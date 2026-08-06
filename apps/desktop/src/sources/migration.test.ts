@@ -23,6 +23,7 @@ const BASE_OVERLAY: OverlaySettings = {
   simultaneousPolicy: "show-both",
   overlayContent: "captions",
   historyMaxRows: "auto",
+  pinned: true,
   hotkeys: {
     toggleOverlay: "CommandOrControl+Shift+T",
     toggleTranslation: "CommandOrControl+Shift+Y",

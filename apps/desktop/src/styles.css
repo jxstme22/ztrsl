@@ -2069,14 +2069,28 @@ input[type="range"]::-moz-range-thumb {
 
 /* Windowed overlay mode: the control window itself becomes the caption
    strip (macOS). Captions sit at the bottom of the window; an always-visible
-   control cluster (drag + back to the normal window) floats top-right. */
+   control cluster (drag, history, pin, back) floats top-right. The window is
+   transparent on macOS, so the bar gets true rounded corners. */
 .windowed-overlay {
   display: grid;
   height: 100vh;
   align-content: end;
   padding: 10px 14px;
-  background: rgba(8, 10, 14, 0.62);
+  border-radius: 18px;
+  background: rgba(8, 10, 14, 0.34);
   pointer-events: none;
+  overflow: hidden;
+}
+
+.windowed-overlay[data-history] {
+  align-content: stretch;
+}
+
+/* In history mode the transcript fills the mini window edge-to-edge (the
+   list bottom-pins inside); no leftover footer strip. */
+.windowed-overlay[data-history] .overlay-history {
+  height: 100%;
+  max-height: none;
 }
 
 .windowed-overlay-controls {
@@ -2121,6 +2135,12 @@ input[type="range"]::-moz-range-thumb {
   color: #fff;
 }
 
+/* Pinned state: the mini window floats above other apps. */
+.windowed-overlay-button.on {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
 .windowed-overlay > .caption-stack {
   width: 100%;
 }
@@ -2135,6 +2155,13 @@ input[type="range"]::-moz-range-thumb {
 
 .overlay-shell[data-mode="play"] {
   pointer-events: none;
+}
+
+/* The history transcript is interactive even in play mode: wheel/touch
+   scrolling must reach the list. */
+.overlay-shell[data-mode="play"] .overlay-history,
+.windowed-overlay .overlay-history {
+  pointer-events: auto;
 }
 
 .overlay-shell[data-mode="edit"] {

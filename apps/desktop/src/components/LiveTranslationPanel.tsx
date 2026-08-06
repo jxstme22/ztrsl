@@ -1,9 +1,10 @@
 import { LoaderCircle, Play, Square } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
 import { useLiveTranslation } from "../live/useLiveTranslation";
 import { setTranslationEnv } from "../live/bridge";
+import { loadSourceConfigs } from "../sources/storage";
 import type {
   AsrProvider,
   SourceMode,
@@ -283,14 +284,61 @@ export function LiveTranslationPanel({
   /** Mark a cloud/API provider so it is clearly distinct from local ones. */
   const cloud = (label: string): string => `${label} · Cloud`;
 
+  const configuredSources = useMemo(() => loadSourceConfigs().sources, []);
+  const endpointInfo = useCallback(
+    (endpointId: string | null): { name: string; capturable: boolean } | null => {
+      if (endpointId === null) {
+        return null;
+      }
+      const endpoint = endpoints.find(
+        (candidate) => candidate.id === endpointId,
+      );
+      if (endpoint === undefined) {
+        return null;
+      }
+      // macOS render endpoints (multi-output devices etc.) cannot be
+      // captured — never offer a configured source built on one.
+      return {
+        name: endpoint.friendlyName,
+        capturable: endpoint.kind === "capture" || !isMacos,
+      };
+    },
+    [endpoints, isMacos],
+  );
+
   const channelOptions = useMemo<SelectOption[]>(() => {
     const options: SelectOption[] = [];
-    const activeCapture = captureInputs.filter(
-      (endpoint) => endpoint.state === "active",
-    );
-    const activeLoopback = loopbackInputs.filter(
-      (endpoint) => endpoint.state === "active",
-    );
+    // Sources configured on the Sources page first: starting live should
+    // reuse exactly what was set up there (endpoint + label).
+    const sourceOptions = configuredSources
+      .map((source) => {
+        const info = endpointInfo(
+          source.captureTarget.kind === "endpoint"
+            ? source.captureTarget.endpointId
+            : null,
+        );
+        if (!info?.capturable) {
+          return null;
+        }
+        return {
+          value:
+            source.captureTarget.kind === "endpoint"
+              ? source.captureTarget.endpointId ?? ""
+              : "",
+          label: `${source.displayName} (${info.name})`,
+          group: "Your sources",
+        };
+      })
+      .filter(
+        (option): option is { value: string; label: string; group: string } =>
+          option !== null && option.value !== "",
+      );
+    options.push(...sourceOptions);
+    // Show every capture/loopback endpoint, not just the system defaults:
+    // virtual devices (BlackHole, the Audio MIDI multi-output routing) are
+    // configured on the Sources page and must be selectable here too.
+    const activeCapture = captureInputs;
+    const activeLoopback = loopbackInputs;
     if (activeCapture.length > 0) {
       options.push(
         ...activeCapture.map((endpoint) => ({
@@ -314,15 +362,16 @@ export function LiveTranslationPanel({
 
   const selectedInput =
     endpoints.find((endpoint) => endpoint.id === inputEndpointId) ?? null;
-  const inputReady = selectedInput !== null && selectedInput.state === "active";
+  // Any selected endpoint is startable: a genuinely dead device surfaces a
+  // clear capture error at start instead of hiding the option entirely.
+  const inputReady = selectedInput !== null;
 
   const playbackEndpoint =
     endpoints.find(
       (endpoint) =>
         endpoint.id === playbackEndpointId && endpoint.kind === "render",
     ) ?? null;
-  const playbackReady =
-    playbackEndpoint !== null && playbackEndpoint.state === "active";
+  const playbackReady = playbackEndpoint !== null;
 
   const configComplete =
     (asrProvider !== "groq-whisper" || groqApiKey.trim().length > 0) &&

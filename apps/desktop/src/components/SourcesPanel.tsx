@@ -132,15 +132,29 @@ function captureOptions(
       continue;
     }
     if (endpoint.kind === "capture") {
-      if (isMacos && !/blackhole|black hole/i.test(endpoint.friendlyName)) {
-        continue;
+      if (endpoint.id === "system-audio") {
+        loopback.push({
+          value: endpoint.id,
+          label: endpoint.friendlyName,
+          group: t("sourcesLoopbackGroup"),
+        });
+      } else if (isMacos && /blackhole|black hole/i.test(endpoint.friendlyName)) {
+        loopback.push({
+          value: endpoint.id,
+          label: `${endpoint.friendlyName} · loopback`,
+          group: t("sourcesLoopbackGroup"),
+        });
+      } else {
+        microphones.push({
+          value: endpoint.id,
+          label: endpoint.friendlyName,
+          group: t("sourcesMicrophoneGroup"),
+        });
       }
-      microphones.push({
-        value: endpoint.id,
-        label: endpoint.friendlyName,
-        group: t("sourcesMicrophoneGroup"),
-      });
-    } else {
+    } else if (!isMacos) {
+      // Windows render endpoints are capturable via WASAPI loopback;
+      // macOS render endpoints (multi-output devices etc.) have no input
+      // streams and must never be offered as capture choices.
       loopback.push({
         value: endpoint.id,
         label: `${endpoint.friendlyName} · loopback`,

@@ -118,6 +118,8 @@ export const overlaySettingsSchema = z.object({
   historyMaxRows: z
     .union([z.literal("auto"), z.literal(5), z.literal(10)])
     .default("auto"),
+  /** Keep the mini (windowed) overlay pinned above other apps. */
+  pinned: z.boolean().default(true),
   hotkeys: hotkeySettingsSchema,
 });
 
@@ -161,6 +163,7 @@ export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
   simultaneousPolicy: "show-both",
   overlayContent: "captions",
   historyMaxRows: "auto",
+  pinned: true,
   hotkeys: DEFAULT_HOTKEYS,
 };
 

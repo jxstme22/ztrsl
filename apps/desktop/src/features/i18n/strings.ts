@@ -48,6 +48,10 @@ const UI_STRINGS = {
     en: "Switch between captions and history",
     zh: "切换字幕与历史",
   },
+  overlayPinLabel: {
+    en: "Pin above other apps",
+    zh: "置顶于其他应用之上",
+  },
   overlayCloseLabel: { en: "Hide caption overlay", zh: "隐藏字幕悬浮窗" },
   overlayDoneEditing: { en: "Done", zh: "完成" },
   overlayHistoryEmpty: { en: "No captions yet", zh: "暂无字幕" },

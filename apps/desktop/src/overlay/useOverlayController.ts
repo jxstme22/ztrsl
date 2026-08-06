@@ -19,6 +19,7 @@ import {
   type HotkeyErrors,
 } from "./bridge";
 import { setWindowedOverlay, isMacos } from "../windowEffects";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   DEFAULT_OVERLAY_SNAPSHOT,
   type Caption,
@@ -198,6 +199,25 @@ export function useOverlayController() {
       );
     });
   }, [windowedMode]);
+
+  // The pin toggle only matters in windowed (mini) mode: the window floats
+  // above other apps when pinned, and behaves normally when unpinned.
+  const pin = useCallback(() => {
+    setSettings((current) => {
+      const next = { ...current, pinned: !current.pinned };
+      void getCurrentWindow().setAlwaysOnTop(next.pinned).catch(() => undefined);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!windowedMode) {
+      return;
+    }
+    void getCurrentWindow()
+      .setAlwaysOnTop(settings.pinned)
+      .catch(() => undefined);
+  }, [windowedMode, settings.pinned]);
 
   const handleHotkey = useCallback(
     (action: HotkeyAction) => {
@@ -388,6 +408,7 @@ export function useOverlayController() {
     showOverlay,
     hideOverlay,
     toggleWindowedMode,
+    pin,
     toggleEditMode,
     toggleHistoryView,
     clearCaptions,

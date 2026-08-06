@@ -6,6 +6,7 @@ import {
   Mic,
   Minus,
   PictureInPicture2,
+  Pin,
   ScrollText,
   Settings,
   X,
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
 
 import { HistoryPanel } from "./captions/HistoryPanel";
 import { useCaptionHistory } from "./captions/useCaptionHistory";
@@ -167,8 +168,24 @@ export function ControlApp() {
   };
 
   if (controller.windowedMode) {
+    const historyView = controller.snapshot.historyView;
+    const maxRows = controller.snapshot.settings.historyMaxRows;
+    const shownHistory =
+      maxRows === "auto" ? history.entries : history.entries.slice(-maxRows);
+    const reversedHistory = [...shownHistory].reverse();
+
+    // Mini history needs a taller window than the caption strip (150px).
+    const toggleWindowedHistory = (): void => {
+      controller.toggleHistoryView();
+      void getCurrentWindow()
+        .setSize(new PhysicalSize(900, historyView ? 150 : 420))
+        .catch(() => undefined);
+    };
     return (
-      <main className="windowed-overlay">
+      <main
+        className="windowed-overlay"
+        data-history={historyView || undefined}
+      >
         <div className="windowed-overlay-controls">
           <button
             type="button"
@@ -184,6 +201,24 @@ export function ControlApp() {
           <button
             type="button"
             className="windowed-overlay-button"
+            aria-label={language.t("overlayToggleHistory")}
+            title={language.t("overlayToggleHistory")}
+            onClick={toggleWindowedHistory}
+          >
+            <ScrollText aria-hidden="true" size={14} />
+          </button>
+          <button
+            type="button"
+            className={`windowed-overlay-button${controller.snapshot.settings.pinned ? " on" : ""}`}
+            aria-label={language.t("overlayPinLabel")}
+            title={language.t("overlayPinLabel")}
+            onClick={controller.pin}
+          >
+            <Pin aria-hidden="true" size={14} />
+          </button>
+          <button
+            type="button"
+            className="windowed-overlay-button"
             aria-label={language.t("overlayExitWindowed")}
             title={language.t("overlayExitWindowed")}
             onClick={controller.toggleWindowedMode}
@@ -191,7 +226,29 @@ export function ControlApp() {
             <X aria-hidden="true" size={14} />
           </button>
         </div>
-        <CaptionStack snapshot={controller.snapshot} mode="mini" />
+        {historyView ? (
+          <div className="overlay-history windowed-history">
+            {history.entries.length === 0 ? (
+              <p className="overlay-history-empty">
+                {language.t("overlayHistoryEmpty")}
+              </p>
+            ) : (
+              <ol className="overlay-history-list">
+                {reversedHistory.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className="overlay-history-entry"
+                    data-uncertain={entry.uncertain || undefined}
+                  >
+                    <span className="overlay-history-text">{entry.text}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        ) : (
+          <CaptionStack snapshot={controller.snapshot} mode="mini" />
+        )}
       </main>
     );
   }
