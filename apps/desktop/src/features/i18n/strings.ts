@@ -75,7 +75,7 @@ const UI_STRINGS = {
   exportBundle: { en: "Export support bundle", zh: "导出支持包" },
 
   // Welcome
-  welcomeTitle: { en: "Welcome to yTRSLT", zh: "欢迎使用 yTRSLT" },
+  welcomeTitle: { en: "Welcome to yTSRL", zh: "欢迎使用 yTSRL" },
   welcomeSub: {
     en: "VALORANT voice chat, captioned in English — on this PC.",
     zh: "在本机为 VALORANT 语音聊天生成英文字幕。",
@@ -339,8 +339,8 @@ const UI_STRINGS = {
     zh: "屏幕录制权限",
   },
   diagnosticsScreenRecordingHint: {
-    en: "System Audio (all apps) stays silent until this app has Screen Recording permission. Open System Settings and enable yTRSLT, then restart the app.",
-    zh: "在授予此应用屏幕录制权限之前，系统音频源将保持静默。请打开系统设置启用 yTRSLT，然后重新启动应用。",
+    en: "System Audio (all apps) stays silent until this app has Screen Recording permission. Open System Settings and enable yTSRL, then restart the app.",
+    zh: "在授予此应用屏幕录制权限之前，系统音频源将保持静默。请打开系统设置启用 yTSRL，然后重新启动应用。",
   },
   diagnosticsScreenRecordingOpen: {
     en: "Open System Settings",
@@ -351,8 +351,8 @@ const UI_STRINGS = {
     zh: "麦克风权限",
   },
   diagnosticsMicrophoneHint: {
-    en: "A denied or missing microphone permission makes mic capture deliver silence with no error. Enable yTRSLT under Microphone, then restart the app.",
-    zh: "如果麦克风权限被拒绝或缺失，麦克风采集将静默无声且不报错。请在麦克风设置中启用 yTRSLT，然后重新启动应用。",
+    en: "A denied or missing microphone permission makes mic capture deliver silence with no error. Enable yTSRL under Microphone, then restart the app.",
+    zh: "如果麦克风权限被拒绝或缺失，麦克风采集将静默无声且不报错。请在麦克风设置中启用 yTSRL，然后重新启动应用。",
   },
   diagnosticsIsolationOk: { en: "Clean", zh: "干净" },
   diagnosticsIsolationLeak: { en: "Leakage detected", zh: "检测到泄漏" },

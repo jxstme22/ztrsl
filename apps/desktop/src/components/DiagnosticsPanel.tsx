@@ -8,7 +8,7 @@ import {
   ShieldCheck,
   ShieldX,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { type DiagnosticsSnapshot } from "../diagnostics/model";
 import { schedulerCoalescingRate } from "../diagnostics/model";
@@ -98,6 +98,23 @@ export function DiagnosticsPanel({
   const [screenRecordingError, setScreenRecordingError] = useState<
     string | null
   >(null);
+  const [microphoneStatus, setMicrophoneStatus] = useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    void invoke("microphone_auth_status")
+      .then((status: unknown) => {
+        if (!disposed) {
+          setMicrophoneStatus(String(status));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+    };
+  }, []);
   const openScreenRecordingSettings = () => {
     setScreenRecordingError(null);
     void invoke("open_screen_recording_settings").catch((cause: unknown) => {
@@ -296,6 +313,13 @@ export function DiagnosticsPanel({
             </button>
           </div>
           <p className="diag-hint">{t("diagnosticsMicrophoneHint")}</p>
+          <p
+            className={`diag-hint ${microphoneStatus === "authorized" ? "" : "warn"}`}
+            data-testid="mic-status"
+          >
+            Microphone permission status:{" "}
+            <strong>{microphoneStatus ?? "checking…"}</strong>
+          </p>
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { LoaderCircle, Play, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
+import { requestMicrophonePermission } from "../audio/bridge";
 import { useLiveTranslation } from "../live/useLiveTranslation";
 import { setTranslationEnv } from "../live/bridge";
 import { loadSourceConfigs } from "../sources/storage";
@@ -196,6 +197,7 @@ export function LiveTranslationPanel({
   const [vadSensitivity, setVadSensitivity] =
     useState<number>(loadVadSensitivity);
   const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
@@ -507,6 +509,25 @@ export function LiveTranslationPanel({
             onClick={() => {
               if (inputEndpointId !== null) {
                 void (async () => {
+                  // Never start a capture without the microphone grant:
+                  // macOS delivers silent zeros (or hangs) on input without
+                  // it. Ask while the app is frontmost, and abort with a
+                  // clear message when the grant is missing or denied.
+                  const permissionStatus = await requestMicrophonePermission().catch(
+                    () => "notDetermined" as const,
+                  );
+                  if (
+                    permissionStatus === "denied" ||
+                    permissionStatus === "restricted" ||
+                    permissionStatus === "notDetermined"
+                  ) {
+                    setPermissionError(
+                      "yTSRL needs Microphone permission — without it every capture is silent. " +
+                        "Open System Settings → Privacy & Security → Microphone and enable yTSRL, then retry.",
+                    );
+                    return;
+                  }
+                  setPermissionError(null);
                   await pushProviderEnv(asrProvider, translationProvider, {
                     groqApiKey,
                     ltEndpoint,
@@ -544,6 +565,32 @@ export function LiveTranslationPanel({
             {busy ? t("liveLoadingModels") : t("liveStartListening")}
           </button>
         )}
+        {listening && (
+          <div
+            className="live-level"
+            role="meter"
+            aria-label="Input level"
+            title={
+              live.snapshot.metrics.capturePeak > 0.01
+                ? "Audio is reaching the app"
+                : "Silence — check the audio routing for this source"
+            }
+          >
+            <span
+              className={`live-level-fill${live.snapshot.metrics.capturePeak > 0.01 ? " on" : ""}`}
+              style={{
+                width: String(
+                  Math.min(100, Math.round(live.snapshot.metrics.capturePeak * 100)),
+                ).concat("%"),
+              }}
+            />
+            <span className="live-level-label">
+              {live.snapshot.metrics.capturePeak > 0.01
+                ? "input level"
+                : "no audio — check routing"}
+            </span>
+          </div>
+        )}
       </div>
 
       {isSimulator && (
@@ -551,6 +598,15 @@ export function LiveTranslationPanel({
           <div>
             <strong>{t("liveSimulatorMode")}</strong>
             <p>{t("liveSimulatorModeText")}</p>
+          </div>
+        </div>
+      )}
+
+      {permissionError !== null && (
+        <div className="inline-alert error" role="alert">
+          <div>
+            <strong>Microphone permission needed</strong>
+            <p>{permissionError}</p>
           </div>
         </div>
       )}

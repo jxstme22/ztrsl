@@ -256,12 +256,10 @@ export function ControlApp() {
   return (
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
-        <span className="titlebar-brand">
-          <span className="titlebar-title">yTRSLT</span>
-          <span className="titlebar-badge">
-            <span className="titlebar-beta">BETA</span>
-            <span className="titlebar-version">v{APP_VERSION}</span>
-          </span>
+        <span className="titlebar-brand-card" data-tauri-drag-region>
+          <span className="titlebar-title">yTSRL</span>
+          <span className="titlebar-beta">BETA</span>
+          <span className="titlebar-version">v{APP_VERSION}</span>
         </span>
         {desktop && (
           <div className="window-actions">

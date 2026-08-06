@@ -1155,6 +1155,26 @@ fn open_screen_recording_settings() -> Result<(), String> {
     Ok(())
 }
 
+/// Report the current microphone authorization state without prompting.
+/// Lets the UI (and support diagnostics) distinguish a hidden TCC denial
+/// ("denied"/"restricted") from a clean slate ("notDetermined") or a working
+/// grant ("authorized").
+#[tauri::command]
+async fn microphone_auth_status() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio};
+        let media_type = unsafe { AVMediaTypeAudio.as_ref() }
+            .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
+        let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+        Ok(auth_status_label(status))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok("unsupported".to_owned())
+    }
+}
+
 /// Open the macOS Microphone privacy pane. Denied mic access makes cpal
 /// capture silent with no error, so the app surfaces this as a one-click
 /// fix path.
@@ -1184,28 +1204,31 @@ fn open_microphone_settings() -> Result<(), String> {
 /// completion handler is called on an arbitrary queue, so a tokio oneshot
 /// bridges it back to the command's future.
 #[tauri::command]
-async fn request_microphone_permission() -> Result<String, String> {
+async fn request_microphone_permission(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        use block2::RcBlock;
+        use block2::{Block, RcBlock};
         use objc2::runtime::Bool;
         use objc2_av_foundation::{AVCaptureDevice, AVAuthorizationStatus, AVMediaTypeAudio};
         // The media-type constant is an extern static backed by AVFoundation,
         // which the app links; dereferencing the static is unsafe.
-        let media_type = unsafe { AVMediaTypeAudio.as_ref() }
-            .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
-        let status =
-            unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
-        if status != AVAuthorizationStatus::NotDetermined {
-            return Ok(auth_status_label(status));
-        }
+        let media_type_ptr = {
+            let media_type = unsafe { AVMediaTypeAudio.as_ref() }
+                .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
+            let status =
+                unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+            if status != AVAuthorizationStatus::NotDetermined {
+                return Ok(auth_status_label(status));
+            }
+            *media_type as *const objc2_foundation::NSString as usize
+        };
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        {
-            // The framework copies the completion block, so the block only
-            // needs to live for the synchronous call; dropping it afterwards
-            // keeps this future `Send`.
-            let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
-            let block = RcBlock::new(move |granted: Bool| {
+        let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
+        // Leak the block: AVFoundation copies it when the request runs, and
+        // the main-thread closure needs it alive beyond this function's
+        // frame. A few dozen bytes per permission request.
+        let block: &'static RcBlock<dyn Fn(Bool)> =
+            Box::leak(Box::new(RcBlock::new(move |granted: Bool| {
                 // The block is `Fn` and may be invoked once; take the channel
                 // sender so a second invocation (never expected) no-ops.
                 if let Ok(mut slot) = sender.lock() {
@@ -1213,12 +1236,21 @@ async fn request_microphone_permission() -> Result<String, String> {
                         let _ = sender.send(granted.as_bool());
                     }
                 }
-            });
-            unsafe {
-                AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, &block);
-            }
-        }
-        match tokio::time::timeout(Duration::from_secs(120), receiver).await {
+            })));
+        let block_ptr = &**block as *const Block<dyn Fn(Bool)> as usize;
+        // The TCC permission prompt only presents when the request
+        // originates on the main thread — background-thread requests
+        // silently no-op on modern macOS (status stays "notDetermined",
+        // no prompt, completion never fires). Dispatch the request onto the
+        // main thread and await the completion. objc2 objects are !Send, so
+        // the closure carries raw pointers only.
+        app.run_on_main_thread(move || unsafe {
+            let media_type = &*(media_type_ptr as *const objc2_foundation::NSString);
+            let block = &*(block_ptr as *const Block<dyn Fn(Bool)>);
+            AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, block);
+        })
+        .map_err(|error| error.to_string())?;
+        match tokio::time::timeout(Duration::from_secs(30), receiver).await {
             Ok(Ok(true)) => Ok("authorized".to_owned()),
             Ok(Ok(false)) => Ok("denied".to_owned()),
             Ok(Err(_)) => Err("microphone permission request failed".to_owned()),
@@ -1240,6 +1272,64 @@ fn auth_status_label(status: objc2_av_foundation::AVAuthorizationStatus) -> Stri
         AVAuthorizationStatus::Denied => "denied".to_owned(),
         AVAuthorizationStatus::Restricted => "restricted".to_owned(),
         _ => "notDetermined".to_owned(),
+    }
+}
+
+/// Force the WKWebView to stop painting its opaque white layer.
+///
+/// wry disables the webview background at config time via the private
+/// `drawsBackground` KVC key on the WKWebViewConfiguration — on current
+/// WebKit builds that key is no longer honored, so the corners of a rounded
+/// window stay white even though the window itself is transparent. This
+/// applies the same key on the webview *instance* plus the public
+/// `pageBackgroundColor` (macOS 12+) after the window exists.
+#[cfg(target_os = "macos")]
+fn clear_webview_background(window: &tauri::Window) {
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject};
+    use objc2::sel;
+    use objc2_app_kit::NSColor;
+    use objc2_foundation::NSNumber;
+    let Ok(raw) = window.ns_window() else {
+        return;
+    };
+    unsafe {
+        let Some(wk_class) = AnyClass::get(c"WKWebView") else {
+            return;
+        };
+        let ns_window = raw as *mut AnyObject;
+        let content_view: *mut AnyObject = msg_send![ns_window, contentView];
+        let mut target: *mut AnyObject = std::ptr::null_mut();
+        let is_webview: bool = msg_send![content_view, isKindOfClass: wk_class];
+        if is_webview {
+            target = content_view;
+        } else {
+            let subviews: *mut AnyObject = msg_send![content_view, subviews];
+            let count: usize = msg_send![subviews, count];
+            for index in 0..count {
+                let view: *mut AnyObject = msg_send![subviews, objectAtIndex: index];
+                let is_webview: bool = msg_send![view, isKindOfClass: wk_class];
+                if is_webview {
+                    target = view;
+                    break;
+                }
+            }
+        }
+        if target.is_null() {
+            return;
+        }
+        let no = NSNumber::numberWithBool(false);
+        let key = objc2_foundation::NSString::from_str("drawsBackground");
+        // KVC setValue:forKey: is NSObject API — always present.
+        let _: () = msg_send![target, setValue: &*no, forKey: &*key];
+        // pageBackgroundColor lives on WKWebView (macOS 12+); wry's wrapper
+        // view may not forward it, so probe before messaging (an
+        // unrecognized selector would crash the app).
+        let responds: bool = msg_send![target, respondsToSelector: sel!(setPageBackgroundColor:)];
+        if responds {
+            let clear = NSColor::clearColor();
+            let _: () = msg_send![target, setPageBackgroundColor: &*clear];
+        }
     }
 }
 
@@ -1275,6 +1365,7 @@ fn set_overlay_mode(active: bool, window: tauri::Window) -> Result<(), String> {
         // drawsBackground=false + underPageBackgroundColor on the webview
         // instance, which makes the mini window's corners truly see-through.
         let _ = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
+        clear_webview_background(&window);
         // Round the OS window itself (NSWindow.cornerRadius, macOS 15+):
         // 18px in mini mode (matching the CSS radius) and 10px for the
         // normal app frame. Falls back to a no-op on older macOS.
@@ -1525,6 +1616,11 @@ struct LiveMetrics {
     monitor_drops: u64,
     monitor_underrun_samples: u64,
     captions_received: u64,
+    /// Peak amplitude (0..1) of the most recently captured frame. Lets the
+    /// UI show whether audio actually reaches the app: zero with a source
+    /// that should be live means the endpoint receives silence (e.g. a
+    /// virtual device with nothing routed into it).
+    capture_peak: f32,
 }
 
 #[derive(Debug, Serialize)]
@@ -1680,6 +1776,27 @@ async fn start_live_translation(
     }
     if vad_sensitivity > 100 {
         return Err("vad_sensitivity must be between 0 and 100".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // A denied (or missing) microphone grant makes every input capture
+        // deliver silent zeros with no error — the classic "starts but never
+        // hears anything" failure. Surface it before starting instead.
+        use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio};
+        let media_type = unsafe { AVMediaTypeAudio.as_ref() };
+        if let Some(media_type) = media_type {
+            let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+            use objc2_av_foundation::AVAuthorizationStatus;
+            if status == AVAuthorizationStatus::Denied
+                || status == AVAuthorizationStatus::Restricted
+            {
+                return Err(
+                    "yTSRL needs Microphone permission — without it every capture is silent. \
+                     Enable it in System Settings → Privacy & Security → Microphone, then retry."
+                        .to_owned(),
+                );
+            }
+        }
     }
     let endpoints = platform_endpoints(&audio)?;
     let endpoint = endpoints
@@ -2647,6 +2764,10 @@ fn run_windows_live_loop(
                 stall_warned = false;
                 metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                 metrics.capture_drops = capture.dropped_frames();
+                metrics.capture_peak = frame
+                    .samples
+                    .iter()
+                    .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
                 if let Some(playback) = playback.as_mut() {
                     metrics.monitor_drops = playback.dropped_frames();
                     metrics.monitor_underrun_samples = playback.underrun_samples();
@@ -3112,7 +3233,8 @@ pub fn run() {
             set_overlay_mode,
             open_screen_recording_settings,
             open_microphone_settings,
-            request_microphone_permission
+            request_microphone_permission,
+            microphone_auth_status
         ])
         .run(tauri::generate_context!());
 
