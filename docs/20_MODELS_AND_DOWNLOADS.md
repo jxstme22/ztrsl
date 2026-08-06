@@ -11,7 +11,7 @@ with SHA-256 verification.
 
 Alternatives: **Whisper large-v3** (full, ~3.1 GB), **MADLAD-400 3B**
 (slower CPU translation, selectable), **FunASR Paraformer zh (streaming)**
-(Mandarin/English streaming ASR via sherpa-onnx, ~1 GB archive, int8),
+(Mandarin/English streaming ASR via sherpa-onnx, ~237 MB, int8),
 **SenseVoice Small** (multilingual zh/en/ja/ko/yue ASR via sherpa-onnx,
 ~239 MB int8, auto language detection), **Helsinki opus-mt (en→zh)** and
 **Helsinki opus-mt (zh→en)** (English↔Chinese translation via CTranslate2
