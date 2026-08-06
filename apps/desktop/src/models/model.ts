@@ -1,9 +1,15 @@
 import { z } from "zod";
 
 export const capabilitiesSchema = z.object({
-  languageCapability: z.enum(["forced", "preferred", "post-filter"]),
+  // Fallbacks keep the models list parseable even when a (stale) backend
+  // emits a value outside the contract — an invalid capability must never
+  // brick the whole Models page (v0.6.11 and earlier serialized custom
+  // model capability as "unknown", breaking the list for URL-imports).
+  languageCapability: z
+    .enum(["forced", "preferred", "post-filter"])
+    .catch("post-filter"),
   recommendedProfiles: z.array(z.string()),
-  vramClass: z.enum(["low", "medium", "high"]),
+  vramClass: z.enum(["low", "medium", "high"]).catch("low"),
 });
 
 export type Capabilities = z.infer<typeof capabilitiesSchema>;
