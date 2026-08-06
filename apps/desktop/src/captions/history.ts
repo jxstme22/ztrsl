@@ -3,11 +3,12 @@ import { z } from "zod";
 import type { Caption } from "../overlay/model";
 
 /**
- * Captions history: a small, persisted ring buffer of FINAL captions only.
+ * Captions history: a ring buffer of FINAL captions only, kept for the whole
+ * session (bounded to keep memory sane).
  * Provisional ("listening") captions never enter history — the overlay and
  * the History page show a finished chat transcript, not the live pipeline.
  */
-export const CAPTION_HISTORY_LIMIT = 10;
+export const CAPTION_HISTORY_LIMIT = 500;
 
 export const historyEntrySchema = z.object({
   /** Caption id; the same id upserts in place (final replaces provisional). */

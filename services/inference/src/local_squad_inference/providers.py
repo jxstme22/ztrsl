@@ -543,7 +543,16 @@ class MlxWhisperProvider:
     Greedy decoding only (mlx-whisper has no beam search) — acceptable for
     captions; `condition_on_previous_text=False` avoids drift between
     utterances.
+
+    mlx is not thread-safe for concurrent transcription: parallel calls race
+    the class-level model cache and corrupt per-thread stream state
+    ("There is no Stream(cpu, N) in current thread"). The live pipeline can
+    overlap utterances, so every mlx call is serialized on a process-wide
+    lock — correctness over pipelining (a single Metal device serializes the
+    compute anyway).
     """
+
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(self, model_dir: Path, *, model_id: str | None = None) -> None:
         manifest = verify_manifest(model_dir, model_dir / "manifest.json")
@@ -578,15 +587,16 @@ class MlxWhisperProvider:
         samples = numpy.asarray(utterance.pcm_f32, dtype=numpy.float32)
         started = time.perf_counter()
         try:
-            result = mlx_whisper.transcribe(
-                samples,
-                path_or_hf_repo=str(self._model_dir.resolve()),
-                language=whisper_language_code(source_mode),
-                condition_on_previous_text=False,
-                temperature=0.0,
-                word_timestamps=False,
-                verbose=False,
-            )
+            with self._lock:
+                result = mlx_whisper.transcribe(
+                    samples,
+                    path_or_hf_repo=str(self._model_dir.resolve()),
+                    language=whisper_language_code(source_mode),
+                    condition_on_previous_text=False,
+                    temperature=0.0,
+                    word_timestamps=False,
+                    verbose=False,
+                )
         except (OSError, RuntimeError, ValueError) as error:
             raise ModelUnavailableError("MLX Whisper ASR model could not run") from error
         materialized = [
@@ -617,15 +627,16 @@ class MlxWhisperProvider:
             raise ModelUnavailableError("mlx-whisper is required for file ASR") from error
         started = time.perf_counter()
         try:
-            result = mlx_whisper.transcribe(
-                str(source.resolve()),
-                path_or_hf_repo=str(self._model_dir.resolve()),
-                language=whisper_language_code(source_mode),
-                condition_on_previous_text=False,
-                temperature=0.0,
-                word_timestamps=False,
-                verbose=False,
-            )
+            with self._lock:
+                result = mlx_whisper.transcribe(
+                    str(source.resolve()),
+                    path_or_hf_repo=str(self._model_dir.resolve()),
+                    language=whisper_language_code(source_mode),
+                    condition_on_previous_text=False,
+                    temperature=0.0,
+                    word_timestamps=False,
+                    verbose=False,
+                )
         except (OSError, RuntimeError, ValueError) as error:
             raise ModelUnavailableError("MLX Whisper ASR model could not run") from error
         materialized = [

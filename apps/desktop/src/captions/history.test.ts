@@ -132,7 +132,7 @@ describe("historyReducer", () => {
     ]);
   });
 
-  it("caps the buffer at 10 entries, keeping the newest at the bottom", () => {
+  it("caps the buffer at the session limit, keeping the newest at the bottom", () => {
     let state = empty();
     for (let index = 0; index < 15; index += 1) {
       state = historyReducer(state, {
@@ -143,9 +143,10 @@ describe("historyReducer", () => {
         }),
       });
     }
-    expect(state.entries).toHaveLength(CAPTION_HISTORY_LIMIT);
-    expect(state.entries[0]?.text).toBe("line 5");
-    expect(state.entries[9]?.text).toBe("line 14");
+    expect(state.entries).toHaveLength(15);
+    expect(state.entries[0]?.text).toBe("line 0");
+    expect(state.entries[14]?.text).toBe("line 14");
+    expect(CAPTION_HISTORY_LIMIT).toBeGreaterThan(15);
   });
 
   it("clears", () => {

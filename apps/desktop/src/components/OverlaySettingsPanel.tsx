@@ -304,9 +304,9 @@ export function OverlaySettingsPanel({
             <input
               id="background-opacity"
               type="range"
-              min="0.35"
+              min="0.12"
               max="0.9"
-              step="0.05"
+              step="0.02"
               value={snapshot.settings.backgroundOpacity}
               onChange={(event) => {
                 onUpdateSettings({

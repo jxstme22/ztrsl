@@ -8,8 +8,10 @@ type CaptionStackProps = {
   snapshot: OverlaySnapshot;
   preview?: boolean;
   /** "stack" shows every visible lane as a row; "latest" renders only the
-      newest caption so each subtitle replaces the previous one. */
-  mode?: "stack" | "latest";
+      newest caption so each subtitle replaces the previous one; "mini"
+      renders the newest few captions as compact rows (the overlay's mini
+      lane — up to the user's row preference). */
+  mode?: "stack" | "latest" | "mini";
 };
 
 export function CaptionStack({
@@ -25,7 +27,13 @@ export function CaptionStack({
 
   const lanes = selectVisibleCaptions(snapshot.captions, snapshot.settings);
   const last = lanes[lanes.length - 1];
-  const captions = mode === "latest" && last !== undefined ? [last] : lanes;
+  const miniLimit = snapshot.settings.historyMaxRows === "auto" ? 10 : snapshot.settings.historyMaxRows;
+  const captions =
+    mode === "latest" && last !== undefined
+      ? [last]
+      : mode === "mini"
+        ? lanes.slice(-miniLimit)
+        : lanes;
 
   if (captions.length === 0) {
     return preview ? (

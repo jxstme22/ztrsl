@@ -2,6 +2,7 @@ import {
   Activity,
   Boxes,
   Gauge,
+  GripHorizontal,
   Mic,
   Minus,
   PictureInPicture2,
@@ -40,7 +41,7 @@ import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
-import { isDesktopRuntime, emitHistoryToOverlay } from "./overlay/bridge";
+import { isDesktopRuntime, emitHistoryToOverlay, beginOverlayDrag } from "./overlay/bridge";
 import type { Caption, OverlaySettings } from "./overlay/model";
 import { useOverlayController } from "./overlay/useOverlayController";
 import { loadSourceConfigs } from "./sources/storage";
@@ -168,16 +169,29 @@ export function ControlApp() {
   if (controller.windowedMode) {
     return (
       <main className="windowed-overlay">
-        <button
-          type="button"
-          className="windowed-overlay-exit"
-          aria-label={language.t("overlayExitWindowed")}
-          title={language.t("overlayExitWindowed")}
-          onClick={controller.toggleWindowedMode}
-        >
-          <X aria-hidden="true" size={14} />
-        </button>
-        <CaptionStack snapshot={controller.snapshot} mode="latest" />
+        <div className="windowed-overlay-controls">
+          <button
+            type="button"
+            className="windowed-overlay-button"
+            aria-label={language.t("overlayDragLabel")}
+            title={language.t("overlayDragLabel")}
+            onPointerDown={() => {
+              void beginOverlayDrag();
+            }}
+          >
+            <GripHorizontal aria-hidden="true" size={14} />
+          </button>
+          <button
+            type="button"
+            className="windowed-overlay-button"
+            aria-label={language.t("overlayExitWindowed")}
+            title={language.t("overlayExitWindowed")}
+            onClick={controller.toggleWindowedMode}
+          >
+            <X aria-hidden="true" size={14} />
+          </button>
+        </div>
+        <CaptionStack snapshot={controller.snapshot} mode="mini" />
       </main>
     );
   }

@@ -44,6 +44,11 @@ const UI_STRINGS = {
     zh: "编辑模式 · 拖动调整位置",
   },
   overlayDragLabel: { en: "Drag caption overlay", zh: "拖动字幕悬浮窗" },
+  overlayToggleViewLabel: {
+    en: "Switch between captions and history",
+    zh: "切换字幕与历史",
+  },
+  overlayCloseLabel: { en: "Hide caption overlay", zh: "隐藏字幕悬浮窗" },
   overlayDoneEditing: { en: "Done", zh: "完成" },
   overlayHistoryEmpty: { en: "No captions yet", zh: "暂无字幕" },
   overlayCustomize: { en: "Customize overlay", zh: "自定义悬浮窗" },
@@ -712,8 +717,8 @@ const UI_STRINGS = {
   settingsHistoryRows10: { en: "10 rows", zh: "10 行" },
   settingsHistoryRows5: { en: "5 rows", zh: "5 行" },
   settingsHistoryRowsNote: {
-    en: "Cap the overlay chat to a fixed number of lines. Default sizes the panel to its window.",
-    zh: "将悬浮窗聊天限制为固定行数。默认随窗口自适应。",
+    en: "Cap the overlay chat to a fixed number of lines; Default keeps the whole session (scrollable).",
+    zh: "将悬浮窗聊天限制为固定行数；默认保留整个会话（可滚动）。",
   },
   strictnessOff: { en: "Off — process any language", zh: "关闭——处理任何语言" },
   strictnessBalanced: {

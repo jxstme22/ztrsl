@@ -79,6 +79,8 @@ const args = [
   "--hidden-import",
   "sherpa_onnx",
   "--hidden-import",
+  "sentencepiece",
+  "--hidden-import",
   "av",
   "--hidden-import",
   "websockets",
@@ -127,6 +129,25 @@ const stagedDir = resolve(SIDECAR_DIR, "local-squad-sidecar");
 console.log("Staging sidecar ->", stagedDir);
 rmSync(stagedDir, { recursive: true, force: true });
 cpSync(builtDir, stagedDir, { recursive: true });
+
+// macOS mlx: PyInstaller flattens libmlx.dylib into the onedir root, so mlx's
+// colocated metallib lookup (relative to the loaded dylib) misses the shader
+// library at _internal/mlx/lib/mlx.metallib and every live transcription dies
+// with "Failed to load the default metallib". Mirror mlx.metallib next to the
+// flattened dylib so the colocated fallback resolves.
+if (IS_MACOS) {
+  const metallib = resolve(
+    stagedDir,
+    "_internal",
+    "mlx",
+    "lib",
+    "mlx.metallib",
+  );
+  if (existsSync(metallib)) {
+    copyFileSync(metallib, resolve(stagedDir, "_internal", "mlx.metallib"));
+    console.log("mlx: staged mlx.metallib next to the flattened dylib");
+  }
+}
 
 // Translation-runner (MADLAD candle runner) next to it.
 if (existsSync(RUNNER)) {

@@ -29,7 +29,7 @@ export function normalizeSettings(settings: OverlaySettings): OverlaySettings {
     widthNormalized: clamp(settings.widthNormalized, 0.3, 0.95),
     heightNormalized: clamp(settings.heightNormalized, 0.05, 0.9),
     fontScale: clamp(settings.fontScale, 0.8, 1.6),
-    backgroundOpacity: clamp(settings.backgroundOpacity, 0.35, 0.9),
+    backgroundOpacity: clamp(settings.backgroundOpacity, 0.12, 0.9),
   };
 }
 

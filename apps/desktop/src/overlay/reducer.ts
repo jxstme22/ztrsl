@@ -7,7 +7,9 @@ export type CaptionAction =
   | { type: "expire"; nowMs: number }
   | { type: "clear" };
 
-export const MAX_CAPTIONS = 2;
+/** Caption slots carried to the overlay window: enough for the mini lane's
+ * multi-row stack (up to 10 rows plus room for a provisional + final pair). */
+export const MAX_CAPTIONS = 12;
 
 /** Lane key: a caption owns its source's lane (immutable id) when it carries
  * a source snapshot, otherwise it is its own lane (legacy/fake captions). */

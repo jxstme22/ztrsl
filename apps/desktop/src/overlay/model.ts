@@ -91,15 +91,15 @@ export const overlayContentSchema = z.enum(["captions", "history"]);
 export type OverlayContent = z.infer<typeof overlayContentSchema>;
 
 export const overlaySettingsSchema = z.object({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(3),
   monitorId: z.string().max(256).nullable(),
   xNormalized: z.number().min(0).max(1),
   yNormalized: z.number().min(0).max(1),
   widthNormalized: z.number().min(0.3).max(0.95),
   /** Overlay window height as a fraction of the monitor (history mode). */
-  heightNormalized: z.number().min(0.05).max(0.9).default(0.17),
+  heightNormalized: z.number().min(0.05).max(0.9).default(0.3),
   fontScale: z.number().min(0.8).max(1.6),
-  backgroundOpacity: z.number().min(0.35).max(0.9),
+  backgroundOpacity: z.number().min(0.12).max(0.9),
   showSource: z.boolean(),
   /** Global caption paragraph alignment; per-source overrides win (v0.5.1). */
   captionAlignment: captionAlignmentSchema.default("center"),
@@ -127,7 +127,7 @@ export const overlaySnapshotSchema = z.object({
   visible: z.boolean(),
   mode: overlayModeSchema,
   translationEnabled: z.boolean(),
-  captions: z.array(captionSchema).max(2),
+  captions: z.array(captionSchema).max(12),
   settings: overlaySettingsSchema,
   /** When true the overlay window renders the captions-history list. */
   historyView: z.boolean().default(false),
@@ -146,14 +146,14 @@ export const DEFAULT_HOTKEYS: HotkeySettings = {
 };
 
 export const DEFAULT_OVERLAY_SETTINGS: OverlaySettings = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   monitorId: null,
   xNormalized: 0.5,
   yNormalized: 0.72,
   widthNormalized: 0.8,
-  heightNormalized: 0.17,
+  heightNormalized: 0.3,
   fontScale: 1,
-  backgroundOpacity: 0.45,
+  backgroundOpacity: 0.25,
   showSource: true,
   captionAlignment: "center",
   primarySourceId: null,

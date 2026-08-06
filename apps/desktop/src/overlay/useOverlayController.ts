@@ -9,6 +9,8 @@ import {
 
 import {
   listenForDoneEditing,
+  listenForHideOverlay,
+  listenForToggleHistoryView,
   listenForOverlaySettings,
   listenForRecoveredOverlay,
   registerHotkeys,
@@ -46,6 +48,7 @@ export function useOverlayController() {
   const [recoveredPlacement, setRecoveredPlacement] = useState(false);
   const fakeSequence = useRef(0);
   const timers = useRef<number[]>([]);
+  const dismissed = useRef(false);
 
   const snapshot = useMemo<OverlaySnapshot>(
     () => ({
@@ -104,6 +107,8 @@ export function useOverlayController() {
     let stopRecovered: (() => void) | undefined;
     let stopSettings: (() => void) | undefined;
     let stopDoneEditing: (() => void) | undefined;
+    let stopToggleView: (() => void) | undefined;
+    let stopHide: (() => void) | undefined;
 
     void listenForRecoveredOverlay(() => {
       setRecoveredPlacement(true);
@@ -137,11 +142,44 @@ export function useOverlayController() {
       }
     });
 
+    void listenForToggleHistoryView(() => {
+      // The overlay control strip's view toggle: swap the mini caption lane
+      // and the full history panel.
+      setSettings((current) => ({
+        ...current,
+        overlayContent:
+          current.overlayContent === "history" ? "captions" : "history",
+      }));
+      setVisible(true);
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        stopToggleView = unlisten;
+      }
+    });
+
+    void listenForHideOverlay(() => {
+      // The overlay control strip's close button: hide now and stay hidden
+      // (new captions must not re-show it) until the user shows it again.
+      dismissed.current = true;
+      setVisible(false);
+      setMode("play");
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        stopHide = unlisten;
+      }
+    });
+
     return () => {
       disposed = true;
       stopRecovered?.();
       stopSettings?.();
       stopDoneEditing?.();
+      stopToggleView?.();
+      stopHide?.();
     };
   }, []);
 

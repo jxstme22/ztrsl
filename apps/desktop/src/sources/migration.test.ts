@@ -8,14 +8,14 @@ import { isValidSourceId } from "./identity";
 const SEQUENTIAL_RANDOM = () => 0.5;
 
 const BASE_OVERLAY: OverlaySettings = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   monitorId: null,
   xNormalized: 0.5,
   yNormalized: 0.72,
   widthNormalized: 0.8,
-  heightNormalized: 0.17,
+  heightNormalized: 0.3,
   fontScale: 1,
-  backgroundOpacity: 0.45,
+  backgroundOpacity: 0.25,
   showSource: true,
   captionAlignment: "center",
   primarySourceId: null,

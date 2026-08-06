@@ -43,7 +43,7 @@ describe("overlay settings storage", () => {
     expect(serialized).not.toContain("audio");
   });
 
-  it("migrates schemaVersion 1 documents to v2 with safe lane defaults", () => {
+  it("migrates schemaVersion 1 documents to v3 with safe lane defaults", () => {
     const legacy = {
       schemaVersion: 1,
       monitorId: null,
@@ -60,12 +60,43 @@ describe("overlay settings storage", () => {
     };
 
     const migrated = loadOverlaySettings(storage);
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
     expect(migrated.simultaneousPolicy).toBe("show-both");
     expect(migrated.primarySourceId).toBeNull();
     expect(migrated.hiddenSourceIds).toEqual([]);
     expect(migrated.showSource).toBe(false);
     expect(migrated.fontScale).toBe(1.1);
+    expect(migrated.backgroundOpacity).toBe(0.25);
+  });
+
+  it("migrates schemaVersion 2 documents to v3 with the new visual defaults", () => {
+    const legacy = {
+      schemaVersion: 2,
+      monitorId: null,
+      xNormalized: 0.4,
+      yNormalized: 0.7,
+      widthNormalized: 0.8,
+      heightNormalized: 0.17,
+      fontScale: 1.1,
+      backgroundOpacity: 0.45,
+      showSource: false,
+      captionAlignment: "center",
+      primarySourceId: null,
+      hiddenSourceIds: [],
+      simultaneousPolicy: "show-both",
+      overlayContent: "captions",
+      historyMaxRows: "auto",
+      hotkeys: DEFAULT_OVERLAY_SETTINGS.hotkeys,
+    };
+    const storage = {
+      getItem: () => JSON.stringify(legacy),
+    };
+
+    const migrated = loadOverlaySettings(storage);
+    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.backgroundOpacity).toBe(0.25);
+    expect(migrated.heightNormalized).toBe(0.3);
+    expect(migrated.overlayContent).toBe("captions");
   });
 });
 

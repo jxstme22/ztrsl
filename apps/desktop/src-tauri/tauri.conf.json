@@ -37,7 +37,6 @@
         "resizable": false,
         "fullscreen": false,
         "decorations": false,
-        "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "shadow": false
@@ -45,8 +44,7 @@
     ],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost"
-    },
-    "macOSPrivateApi": true
+    }
   },
   "bundle": {
     "active": true,

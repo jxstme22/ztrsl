@@ -545,11 +545,7 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
                     source: model.source.clone(),
                     revision: model.revision.clone(),
                     file_count: 0,
-                    capabilities: model_manager::CapabilitiesView {
-                        language_capability: "unknown".to_owned(),
-                        recommended_profiles: Vec::new(),
-                        vram_class: "low".to_owned(),
-                    },
+                    capabilities: custom_import_capabilities(),
                 },
                 status: "installed".to_owned(),
                 installed_size_bytes: size,
@@ -563,6 +559,18 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
         known,
         custom,
     })
+}
+
+/// Capabilities for a URL-imported (custom) model: the capability contract
+/// is unknown, so report the conservative "post-filter" default — the
+/// frontend schema accepts (forced/preferred/post-filter) — "unknown"
+/// would break the whole models list at parse time.
+fn custom_import_capabilities() -> model_manager::CapabilitiesView {
+    model_manager::CapabilitiesView {
+        language_capability: "post-filter".to_owned(),
+        recommended_profiles: Vec::new(),
+        vram_class: "low".to_owned(),
+    }
 }
 
 #[derive(Debug, Serialize)]

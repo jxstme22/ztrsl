@@ -2068,47 +2068,57 @@ input[type="range"]::-moz-range-thumb {
 /* ---------------------------------------------------------------- */
 
 /* Windowed overlay mode: the control window itself becomes the caption
-   strip (macOS). Mirrors .overlay-shell — captions sit at the bottom of
-   the window, hover reveals the exit affordance. */
+   strip (macOS). Captions sit at the bottom of the window; an always-visible
+   control cluster (drag + back to the normal window) floats top-right. */
 .windowed-overlay {
   display: grid;
   height: 100vh;
   align-content: end;
   padding: 10px 14px;
-  background: transparent;
+  background: rgba(8, 10, 14, 0.62);
   pointer-events: none;
 }
 
-.windowed-overlay-exit {
+.windowed-overlay-controls {
   position: absolute;
   top: 10px;
   right: 12px;
   z-index: 3;
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid var(--stroke);
-  border-radius: 10px;
-  background: rgba(20, 20, 24, 0.7);
-  color: var(--fg-strong);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  opacity: 0;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(10, 12, 16, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   pointer-events: auto;
-  transition: opacity 120ms ease;
+}
+
+.windowed-overlay-button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
-.windowed-overlay:hover .windowed-overlay-exit {
-  opacity: 1;
+.windowed-overlay-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
 
-.windowed-overlay-exit:hover {
-  color: var(--fg-inverse);
+.windowed-overlay-button:active {
   background: var(--accent);
-  border-color: var(--accent);
+  color: #fff;
 }
 
 .windowed-overlay > .caption-stack {
@@ -2133,8 +2143,71 @@ input[type="range"]::-moz-range-thumb {
   pointer-events: auto;
 }
 
+/* Always-visible control strip: the overlay owns drag/move, the view toggle
+   and close, so these must stay clickable even in play mode. */
+.overlay-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(10, 12, 16, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+  opacity: 0.35;
+  transition: opacity 140ms ease;
+}
+
+.overlay-shell:hover .overlay-controls,
+.overlay-controls:focus-within {
+  opacity: 1;
+}
+
+.overlay-control-button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.overlay-control-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.overlay-control-button:active {
+  background: var(--accent);
+  color: #fff;
+}
+
 .overlay-shell > .caption-stack {
   width: 100%;
+}
+
+/* Mini caption lane: a compact multi-row stack (up to the user's row
+   preference) instead of a single latest caption. */
+.caption-stack[data-mode="mini"] {
+  gap: 6px;
+}
+
+.caption-stack[data-mode="mini"] .caption-entry {
+  padding: 6px 14px;
+  border-radius: 12px;
+  font-size: calc(0.92em * var(--caption-fit-scale, 1));
 }
 
 /* Captions-history view inside the overlay window: a readable transcript
@@ -2160,14 +2233,25 @@ input[type="range"]::-moz-range-thumb {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-  /* The overlay never shows scrollbars: rows are capped and overflow is
-     reachable by wheel/touch only. */
-  scrollbar-width: none;
+  /* The whole session is kept and the transcript scrolls inside this
+     panel; the overlay document itself still never scrolls. */
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
   -ms-overflow-style: none;
 }
 
 .overlay-history::-webkit-scrollbar {
-  display: none;
+  width: 8px;
+}
+
+.overlay-history::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.overlay-history::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* The overlay document must never scroll and must never draw a scrollbar,
@@ -2185,6 +2269,14 @@ input[type="range"]::-moz-range-thumb {
   overflow: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+/* The overlay window is opaque (no transparency): paint the whole window a
+   solid dark surface so the caption lane floats on a clean bar instead of
+   the webview's default fill (visible as a gray rectangle on macOS, where
+   window transparency is unsupported without the private API). */
+html[data-tauri] .overlay-body {
+  background: #0b0b0d;
 }
 
 .overlay-history-empty {

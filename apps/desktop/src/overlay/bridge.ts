@@ -35,6 +35,8 @@ const RECOVERED_EVENT = "overlay:recovered";
 const SETTINGS_EVENT = "overlay:settings";
 const HISTORY_EVENT = "captions:history";
 const DONE_EDITING_EVENT = "overlay:done-editing";
+const TOGGLE_VIEW_EVENT = "overlay:toggle-view";
+const HIDE_EVENT = "overlay:hide";
 
 function monitorId(monitor: Monitor): string {
   return (
@@ -81,8 +83,11 @@ export async function syncOverlayWindow(
     throw new Error("Overlay window is unavailable");
   }
 
-  await overlay.setIgnoreCursorEvents(snapshot.mode === "play");
-  await overlay.setFocusable(snapshot.mode === "edit");
+  // The overlay is always interactive: it owns an always-visible control
+  // strip (drag handle, view toggle, close), so click-through and
+  // non-focusable windows would make those controls dead on arrival.
+  await overlay.setIgnoreCursorEvents(false);
+  await overlay.setFocusable(true);
   await emitTo("overlay", SNAPSHOT_EVENT, snapshot);
 
   if (snapshot.visible) {
@@ -143,6 +148,42 @@ export async function listenForDoneEditing(
     return () => undefined;
   }
   return listen(DONE_EDITING_EVENT, onDone);
+}
+
+/** Overlay control strip: swap between the mini caption lane and history. */
+export async function emitToggleHistoryView(): Promise<void> {
+  if (!isDesktopRuntime()) {
+    return;
+  }
+  await emitTo("control", TOGGLE_VIEW_EVENT);
+}
+
+/** Control window: react when the overlay's view-toggle button is pressed. */
+export async function listenForToggleHistoryView(
+  onToggle: () => void,
+): Promise<UnlistenFn> {
+  if (!isDesktopRuntime()) {
+    return () => undefined;
+  }
+  return listen(TOGGLE_VIEW_EVENT, onToggle);
+}
+
+/** Overlay control strip: hide the overlay (stays hidden until shown again). */
+export async function emitHideOverlay(): Promise<void> {
+  if (!isDesktopRuntime()) {
+    return;
+  }
+  await emitTo("control", HIDE_EVENT);
+}
+
+/** Control window: react when the overlay's close button is pressed. */
+export async function listenForHideOverlay(
+  onHide: () => void,
+): Promise<UnlistenFn> {
+  if (!isDesktopRuntime()) {
+    return () => undefined;
+  }
+  return listen(HIDE_EVENT, onHide);
 }
 
 /** Receive live history updates in the overlay window. */
