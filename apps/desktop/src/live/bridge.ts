@@ -53,6 +53,18 @@ export type SourceMode =
 
 export type TargetLanguage = "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
 
+export type LiveSourceRequest = {
+  sourceId: string;
+  endpointId: string;
+  displayName: string;
+  captionTag: string;
+  languageProfile: string;
+  strictness?: string;
+  labelStyle?: string;
+  color?: string | null;
+  priority?: number;
+};
+
 export async function startLiveTranslation(
   endpointId: string,
   playbackEndpointId: string | null,
@@ -63,6 +75,7 @@ export async function startLiveTranslation(
   asrProvider: AsrProvider,
   translationProvider: TranslationProvider,
   vadSensitivity = 50,
+  sources: LiveSourceRequest[] = [],
 ): Promise<LiveSnapshot> {
   if (!isTauri()) {
     browserListening = true;
@@ -89,6 +102,7 @@ export async function startLiveTranslation(
         resourceProfile: "quality",
         monitorEnabled,
         vadSensitivity,
+        sources,
       },
     }),
   );
