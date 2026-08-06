@@ -1,5 +1,16 @@
 # 23 — Release Notes
 
+## v0.6.13 — Models page resilience, new app icons
+
+- **Models page can no longer be blanked by a stale capability value** — a
+  URL-imported (custom) model carrying an out-of-contract capability
+  (v0.6.8–v0.6.11 wrote `unknown`) previously failed schema validation and
+  took down the whole models list. The frontend now falls back to the
+  conservative defaults (`post-filter` / `low`) instead of failing, so the
+  page always loads; regression test covers the legacy payload.
+- **New app icons** — the full icon set (window, installer, Windows Store,
+  Android, iOS) is regenerated from the new artwork.
+
 ## v0.6.12 — Fix: 10054 crash on SenseVoice/Paraformer/opus-mt (Windows)
 
 - **Root cause found and fixed.** The new models crashed the sidecar
