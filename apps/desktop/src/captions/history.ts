@@ -14,6 +14,8 @@ export const historyEntrySchema = z.object({
   id: z.string().min(1).max(128),
   /** Final translated text; falls back to the source text when empty. */
   text: z.string().min(1).max(500),
+  /** Transcribed (source-language) input, when the caption carried one. */
+  sourceText: z.string().max(500).default(""),
   /** Source display label ("SRC" tag) when the caption carried one. */
   sourceLabel: z.string().max(32),
   /** Immutable source id (32-hex) when the caption came from a v2 source. */
@@ -77,6 +79,7 @@ function entryForCaption(
   return {
     id: caption.id,
     text,
+    sourceText: caption.sourceText.trim(),
     sourceLabel: caption.source?.captionTag ?? "",
     sourceId: caption.source?.sourceId ?? "",
     displayName: context.displayName ?? "",

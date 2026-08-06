@@ -2331,6 +2331,24 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.5;
 }
 
+/* Transcribed (source-language) input shown under the translation when the
+   user enables the History page toggle. Muted so the translation stays
+   the primary line. */
+.history-source {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+  opacity: 0.8;
+}
+
+/* Checklist-style toggle: filled when active. */
+.button.quiet.on {
+  background: var(--glass-strong);
+  border-color: var(--stroke);
+  color: var(--fg-strong);
+}
+
 .edit-toolbar {
   position: absolute;
   top: 10px;

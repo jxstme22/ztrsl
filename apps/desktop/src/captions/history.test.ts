@@ -4,6 +4,7 @@ import {
   CAPTION_HISTORY_LIMIT,
   clearHistoryState,
   historyReducer,
+  historyStateSchema,
   loadHistoryState,
   saveHistoryState,
   visibleHistoryEntries,
@@ -63,6 +64,7 @@ describe("historyReducer", () => {
     expect(next.entries[0]).toMatchObject({
       id: "c1",
       text: "Say it",
+      sourceText: "sabihin mo",
       sourceLabel: "SRC",
       sourceId: "0123456789abcdef0123456789abcdef",
       displayName: "Valorant Team",
@@ -71,6 +73,37 @@ describe("historyReducer", () => {
       uncertain: false,
     });
     expect(next.entries[0]?.timestampMs).toBeGreaterThan(0);
+  });
+
+  it("keeps the transcribed input on the entry", () => {
+    const next = historyReducer(empty(), {
+      type: "record",
+      caption: caption(),
+    });
+    expect(next.entries[0]?.sourceText).toBe("sabihin mo");
+  });
+
+  it("defaults sourceText to empty for legacy stored entries", () => {
+    const parsed = historyStateSchema.safeParse({
+      version: 1,
+      entries: [
+        {
+          id: "legacy",
+          text: "Say it",
+          sourceLabel: "",
+          sourceId: "",
+          displayName: "",
+          color: "",
+          audioSource: "",
+          timestampMs: 1,
+          uncertain: false,
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.entries[0]?.sourceText).toBe("");
+    }
   });
 
   it("falls back to the source text when the translation is empty", () => {
@@ -220,6 +253,7 @@ describe("visibleHistoryEntries", () => {
   const entries = Array.from({ length: 12 }, (_, i) => ({
     id: `c${String(i)}`,
     text: `entry ${String(i)}`,
+    sourceText: "",
     sourceLabel: "",
     sourceId: "",
     displayName: "",

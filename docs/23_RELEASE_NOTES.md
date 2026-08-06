@@ -1,5 +1,13 @@
 # 23 — Release Notes
 
+## v0.7.1 — History page shows the transcribed input
+
+- **Transcribed input toggle on the History page** — a checklist button next
+  to Clear lets you show the recognized (source-language) text under each
+  translation, so you can compare what was said with what was translated.
+  Off by default; your choice persists. The overlay is unchanged — the
+  caption lane keeps showing only the translation.
+
 ## v0.7.0 — Multi-source live, mainland-China downloads, rebranded title bar
 
 - **Multi-source live sessions** — the Live page gains a Capture mode

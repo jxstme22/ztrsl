@@ -1,8 +1,11 @@
 import type { CSSProperties } from "react";
-import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ListChecks, Trash2 } from "lucide-react";
 
 import { type HistoryEntry } from "../captions/history";
 import { useT } from "../features/i18n/store";
+
+const SHOW_SOURCE_KEY = "lst.history.showSource";
 
 function formatTime(timestampMs: number): string {
   const date = new Date(timestampMs);
@@ -40,6 +43,17 @@ export function HistoryPanel({
   onClear: () => void;
 }) {
   const t = useT();
+  const [showSource, setShowSource] = useState<boolean>(
+    () => window.localStorage.getItem(SHOW_SOURCE_KEY) === "1",
+  );
+
+  const toggleSource = () => {
+    setShowSource((current) => {
+      const next = !current;
+      window.localStorage.setItem(SHOW_SOURCE_KEY, next ? "1" : "0");
+      return next;
+    });
+  };
 
   return (
     <section className="card lst-section-card" aria-labelledby="history-title">
@@ -48,6 +62,18 @@ export function HistoryPanel({
           {t("historyTitle")}
         </h3>
         <span className="lst-model-count pill">{entries.length}</span>
+        <button
+          className={`button quiet ${showSource ? "on" : ""}`}
+          type="button"
+          aria-label={t("historyShowTranscribed")}
+          aria-pressed={showSource}
+          title={t("historyShowTranscribed")}
+          disabled={entries.length === 0}
+          onClick={toggleSource}
+        >
+          <ListChecks aria-hidden="true" size={14} />
+          {t("historyShowTranscribed")}
+        </button>
         <button
           className="button quiet"
           type="button"
@@ -85,6 +111,9 @@ export function HistoryPanel({
                   )}
                 </div>
                 <p className="history-text">{entry.text}</p>
+                {showSource && entry.sourceText !== "" && (
+                  <p className="history-source">{entry.sourceText}</p>
+                )}
               </li>
             );
           })}

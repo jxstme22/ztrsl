@@ -29,6 +29,10 @@ const UI_STRINGS = {
   // Captions history
   historyTitle: { en: "Captions history", zh: "字幕历史" },
   historyClear: { en: "Clear", zh: "清空" },
+  historyShowTranscribed: {
+    en: "Transcribed input",
+    zh: "转写原文",
+  },
   historyEmpty: {
     en: "No finished captions yet. Start a live session — only finalized captions are saved here.",
     zh: "暂无已完成字幕。启动实时会话后，只有最终确定的字幕会被保存到这里。",
