@@ -2342,10 +2342,30 @@ fn run_live_worker(
     };
 
     if let Err(error) = result {
-        let _ = events.send(LiveWorkerEvent::Error(error.to_string()));
+        let _ = events.send(LiveWorkerEvent::Error(friendly_live_error(&error)));
     }
     let _ = supervisor.stop_live();
     let _ = events.try_send(LiveWorkerEvent::Stopped);
+}
+
+/// Map raw platform errors to actionable messages. The most common failure
+/// on Windows is opening an endpoint that another app (VALORANT/Discord
+/// voice chat, games) holds in exclusive mode — WASAPI refuses the second
+/// client with AUDCLNT_E_DEVICE_IN_USE and cpal surfaces it as
+/// "…already in use". The VB-CABLE route (capturing CABLE Output) avoids
+/// this because the virtual device is never opened exclusively.
+fn friendly_live_error(error: &LiveLoopError) -> String {
+    let raw = error.to_string();
+    let lower = raw.to_ascii_lowercase();
+    if lower.contains("in use") || lower.contains("exclusive") {
+        "The audio device is in exclusive use by another app (the game or \
+         voice chat usually). Stop it, or use the VB-CABLE route for voice \
+         chat captions: route the game's voice chat output to CABLE Input \
+         and capture CABLE Output on the Live page."
+            .to_owned()
+    } else {
+        raw
+    }
 }
 
 /// Errors from the live capture/supervisor loop. `Supervisor` errors carry
@@ -2852,7 +2872,22 @@ pub fn run() {
 mod tests {
     use audio_core::{AudioSource, SYNTHETIC_ENDPOINT_ID};
 
-    use super::{AppStatus, AudioRuntimeState, KNOWN_MODELS, model_dir_exists};
+    use super::{
+        AppStatus, AudioRuntimeState, KNOWN_MODELS, LiveLoopError, friendly_live_error,
+        model_dir_exists,
+    };
+
+    #[test]
+    fn exclusive_mode_capture_failure_gets_actionable_message() {
+        let message = friendly_live_error(&LiveLoopError::Audio(
+            "An audio endpoint device is already in use".to_owned(),
+        ));
+        assert!(message.contains("VB-CABLE"));
+        assert!(message.contains("exclusive use"));
+        // Non-audio errors pass through unchanged.
+        let raw = friendly_live_error(&LiveLoopError::Endpoint("boom".to_owned()));
+        assert_eq!(raw, "boom");
+    }
 
     #[test]
     fn known_models_are_catalog_free_but_detected_from_disk() {
