@@ -1,5 +1,16 @@
 # 23 — Release Notes
 
+## v0.6.14 — Multi-source live sessions, new app icons
+
+- **Multi-source live translation** — the Live page gains a Capture mode
+  toggle: **One channel** (single device) or **All sources**. All-sources
+  starts one live session that captures every source configured on the
+  Sources page simultaneously, each with its own device, VAD timing and
+  caption tag — captions come out tagged per source (e.g. "TEAM", "MIX")
+  and History groups them per source. Per-source language profiles and
+  priorities are respected; monitoring is unavailable in all-sources mode.
+- **New app icons** — the full icon set is regenerated from the new artwork.
+
 ## v0.6.13 — Models page resilience, new app icons
 
 - **Models page can no longer be blanked by a stale capability value** — a
