@@ -245,7 +245,7 @@ select:disabled {
   grid-template-columns: 1fr auto 1fr;
   flex: 0 0 auto;
   align-items: center;
-  height: 34px;
+  height: 46px;
   padding: 0 10px 0 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(10, 14, 22, 0.42);
@@ -254,43 +254,63 @@ select:disabled {
   user-select: none;
 }
 
-.titlebar-brand {
+/* One rounded brand card: app name + BETA + version, theme-locked
+   (white text on dark, black text on light) so it never goes muddy. */
+.titlebar-brand-card {
   grid-column: 2;
   justify-self: center;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
 }
 
 .titlebar-title {
-  color: var(--fg-strong);
+  color: #ffffff;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.06em;
 }
 
-/* Simple card holding the BETA accent + app version. */
-.titlebar-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
 .titlebar-beta {
-  color: var(--fg);
-  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 800;
   letter-spacing: 0.14em;
+  line-height: 1;
 }
 
 .titlebar-version {
-  color: var(--muted);
-  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+:root[data-theme="light"] .titlebar-brand-card {
+  border-color: rgba(0, 0, 0, 0.14);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+:root[data-theme="light"] .titlebar-title {
+  color: #000000;
+}
+
+:root[data-theme="light"] .titlebar-beta {
+  background: rgba(0, 0, 0, 0.1);
+  color: #000000;
+}
+
+:root[data-theme="light"] .titlebar-version {
+  color: rgba(0, 0, 0, 0.78);
 }
 
 .window-actions {
@@ -324,7 +344,7 @@ select:disabled {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  flex: 0 0 64px;
+  flex: 0 0 62px;
   padding: 14px 6px;
   border-right: 1px solid var(--stroke);
   background: transparent;
@@ -341,8 +361,8 @@ select:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 12px;

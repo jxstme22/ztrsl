@@ -53,7 +53,7 @@ type SectionId =
   | "diagnostics"
   | "sources";
 
-const APP_VERSION = "0.6.7";
+const APP_VERSION = "0.7.0";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -160,12 +160,10 @@ export function ControlApp() {
   return (
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
-        <span className="titlebar-brand">
-          <span className="titlebar-title">yTRSLT</span>
-          <span className="titlebar-badge">
-            <span className="titlebar-beta">BETA</span>
-            <span className="titlebar-version">v{APP_VERSION}</span>
-          </span>
+        <span className="titlebar-brand-card" data-tauri-drag-region>
+          <span className="titlebar-title">yTSRL</span>
+          <span className="titlebar-beta">BETA</span>
+          <span className="titlebar-version">v0.7</span>
         </span>
         {desktop && (
           <div className="window-actions">
@@ -204,7 +202,7 @@ export function ControlApp() {
                     setSection(item.id);
                   }}
                 >
-                  <Icon aria-hidden="true" size={22} strokeWidth={1.9} />
+                  <Icon aria-hidden="true" size={20} strokeWidth={1.9} />
                 </button>
               );
             })}

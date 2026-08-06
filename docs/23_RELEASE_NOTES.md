@@ -1,20 +1,29 @@
 # 23 — Release Notes
 
-## v0.6.14 — Multi-source live sessions, new app icons
+## v0.7.0 — Multi-source live, mainland-China downloads, rebranded title bar
 
-- **Multi-source live translation** — the Live page gains a Capture mode
+- **Multi-source live sessions** — the Live page gains a Capture mode
   toggle: **One channel** (single device) or **All sources**. All-sources
   starts one live session that captures every source configured on the
   Sources page simultaneously, each with its own device, VAD timing and
   caption tag — captions come out tagged per source (e.g. "TEAM", "MIX")
   and History groups them per source. Per-source language profiles and
   priorities are respected; monitoring is unavailable in all-sources mode.
+- **Mainland-China downloads fixed** — FunASR Paraformer zh (streaming) and
+  OmniLingual CTC 300M were hosted only on GitHub releases (unreachable in
+  mainland China → "transport error: error decoding response body"). Both
+  now download file-by-file from the official sherpa-onnx Hugging Face
+  mirrors (byte-identical, checksum-verified), so the hf-mirror → modelscope
+  failover chain works.
+- **Rebranded title bar** — app renamed to **yTSRL**; the title bar now
+  shows one rounded brand card — `yTSRL (BETA) v0.7` — white text on dark
+  mode, black text on light mode. Title bar height and sidebar icons
+  tightened.
 - **Models page can no longer be blanked by a stale capability value** — a
   URL-imported (custom) model carrying an out-of-contract capability
-  (v0.6.8–v0.6.11 wrote `unknown`) previously failed schema validation and
-  took down the whole models list. The frontend now falls back to the
-  conservative defaults (`post-filter` / `low`) instead of failing, so the
-  page always loads; regression test covers the legacy payload.
+  previously failed schema validation and took down the whole models list.
+  The frontend now falls back to the conservative defaults (`post-filter` /
+  `low`) instead of failing; regression test covers the legacy payload.
 - **New app icons** — the full icon set is regenerated from the new artwork.
 
 ## v0.6.12 — Fix: 10054 crash on SenseVoice/Paraformer/opus-mt (Windows)

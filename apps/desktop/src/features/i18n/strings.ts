@@ -66,7 +66,7 @@ const UI_STRINGS = {
   exportBundle: { en: "Export support bundle", zh: "导出支持包" },
 
   // Welcome
-  welcomeTitle: { en: "Welcome to yTRSLT", zh: "欢迎使用 yTRSLT" },
+  welcomeTitle: { en: "Welcome to yTSRL", zh: "欢迎使用 yTSRL" },
   welcomeSub: {
     en: "VALORANT voice chat, captioned in English — on this PC.",
     zh: "在本机为 VALORANT 语音聊天生成英文字幕。",
