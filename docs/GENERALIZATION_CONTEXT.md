@@ -192,10 +192,21 @@ stamped with per-source tag/color/language profile (`source.registry`).
   clipping, deterministic thresholds)
 - [x] DS-507 — isolation test decision (passed/inconclusive/
   non_voice_leak/no_voice)
+- [x] DS-508 — reusable routing profiles (schema, save/load/delete,
+  profile-from-wizard builder, missing-endpoint recovery view)
+- [x] DS-509 — Fix-Audio-Setup recovery: endpoint replacement without
+  recreating the profile; reset-only-this-profile
+- [x] DS-600 — preset resolver (user override > source override > domain
+  preset > origin default > global default) with diagnostics reasons
+- [x] DS-601/603/606 — preset validation: General preset carries no game
+  vocabulary; no preset embeds provider ids; VAD profile references
+  resolve; terminology tests
+- [x] DS-602 — VALORANT workflow preserved via the preset builder (tests
+  pin the default source config to the valorant-team preset)
 
 ## Next task
 
-DS-508 — save reusable routing profiles (Phase 5 remaining).
+DS-604 — simplify Home screen quick-start from saved profiles (Phase 6 UI).
 
 ## Decisions that must not be reversed
 
