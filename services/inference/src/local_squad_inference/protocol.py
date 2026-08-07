@@ -248,11 +248,17 @@ class LiveStartPayload(StrictModel):
         "ncspeech-zh-parakeet",
         "mlx",
         "mlx-whisper",
+        "nvidia-whisper-large-v3",
+        "nvidia-nemotron-asr-streaming",
+        "nvidia-parakeet-1.1b",
+        "nvidia-canary-1b",
         "groq-whisper",
     ] = "local"
     translation_provider: Literal[
         "nllb",
         "madlad",
+        "nvidia-riva-4b",
+        "nvidia-riva-1.6b",
         "demo",
         "libretranslate",
         "google-translate",

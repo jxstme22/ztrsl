@@ -21,10 +21,11 @@ from websockets.exceptions import ConnectionClosed
 
 from local_squad_inference.clip import process_clip
 from local_squad_inference.evaluation.accuracy_lab import KNOWN_CONFIGS, compare_clips
-from local_squad_inference.http_asr import GroqWhisperProvider, HttpAsrError
+from local_squad_inference.http_asr import GroqWhisperProvider, HttpAsrError, NvidiaAsrProvider
 from local_squad_inference.http_translation import (
     HTTP_PROVIDER_FACTORIES,
     HttpTranslationError,
+    NvidiaRivaProvider,
 )
 from local_squad_inference.live import LivePipeline, LivePipelineMetrics, source_key_of
 from local_squad_inference.overlap import (
@@ -443,6 +444,8 @@ def build_translation_provider(name: str, target_language: str = "en") -> Transl
         return madlad_translation_provider()
     if name in {"demo"}:
         return DemoTranslationProvider()
+    if name in {"nvidia-riva-4b", "nvidia-riva-1.6b"}:
+        return NvidiaRivaProvider(name, target_language=target_language)
     factory = HTTP_PROVIDER_FACTORIES.get(name)
     if factory is None:
         raise HttpTranslationError(f"unknown HTTP translation provider: {name}")
@@ -475,6 +478,8 @@ def build_asr_provider(name: str) -> AsrProvider:
         return local_ncspeech_provider(name)
     if name == "groq-whisper":
         return GroqWhisperProvider()
+    if name.startswith("nvidia-"):
+        return NvidiaAsrProvider(name)
     if name in {"demo"}:
         return DemoAsrProvider()
     raise HttpAsrError(f"unknown ASR provider: {name}")

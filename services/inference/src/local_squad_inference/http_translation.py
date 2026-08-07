@@ -332,6 +332,98 @@ class MyMemoryProvider(TranslationProvider):
             )
 
 
+# Target-language display names for NVIDIA Riva chat-completions prompts.
+TARGET_LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "zh": "Chinese",
+    "fil": "Filipino",
+    "ind": "Indonesian",
+    "vie": "Vietnamese",
+    "tha": "Thai",
+    "zsm": "Malay",
+}
+
+# OpenAI-compatible chat gateway; model ids are NVIDIA NIM model names.
+NVIDIA_CHAT_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_RIVA_MODELS: dict[str, str] = {
+    "nvidia-riva-4b": "nvidia/riva-translate-4b-instruct-v1.1",
+    "nvidia-riva-1.6b": "nvidia/riva-translate-1.6b",
+}
+
+
+class NvidiaRivaProvider(TranslationProvider):
+    """Translate through NVIDIA Riva chat-completions (build.nvidia.com).
+
+    Configure with `LST_NVIDIA_API_KEY` (nvapi-…, free tier). The target
+    language is prompted explicitly; replies are returned verbatim.
+    """
+
+    def __init__(self, model_id: str, target_language: str = "en") -> None:
+        api_key = os.environ.get("LST_NVIDIA_API_KEY", "").strip()
+        if not api_key:
+            raise HttpTranslationError("NVIDIA API key is missing (set LST_NVIDIA_API_KEY)")
+        model = NVIDIA_RIVA_MODELS.get(model_id)
+        if model is None:
+            raise HttpTranslationError(f"unknown NVIDIA Riva model: {model_id}")
+        self._api_key = api_key
+        self._model = model
+        self._model_id = model_id
+        self._target_name = TARGET_LANGUAGE_NAMES.get(target_language, target_language)
+
+    PROVIDER_ID = "nvidia-riva"
+
+    def translate(self, result: AsrResult) -> TranslationResult:
+        if not result.text:
+            return _ok(result, "", inference_ms=0.0, provider_id=self._model_id)
+        body = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are an expert translator. Translate the user text into "
+                        f"{self._target_name}. Reply with only the translation."
+                    ),
+                },
+                {"role": "user", "content": result.text},
+            ],
+            "temperature": 0.2,
+            "top_p": 0.7,
+            "max_tokens": 512,
+        }
+        started = time.perf_counter()
+        try:
+            data = _http_post_json(
+                NVIDIA_CHAT_ENDPOINT,
+                body,
+                timeout_s=30.0,
+                api_key=self._api_key,
+            )
+            choices = data.get("choices") or []
+            content = ""
+            if choices and isinstance(choices[0], dict):
+                message = choices[0].get("message") or {}
+                content = str(message.get("content") or "").strip()
+            if not content:
+                return _placeholder(
+                    result,
+                    "[NVIDIA Riva returned no text]",
+                    provider_id=self._model_id,
+                )
+            return _ok(
+                result,
+                content,
+                inference_ms=(time.perf_counter() - started) * 1_000.0,
+                provider_id=self._model_id,
+            )
+        except (HttpTranslationError, OSError, ValueError, KeyError, TypeError) as error:
+            return _placeholder(
+                result,
+                f"[NVIDIA Riva unavailable: {error}]",
+                provider_id=self._model_id,
+            )
+
+
 class CustomHttpProvider(TranslationProvider):
     """Generic HTTP translation provider — bring your own endpoint.
 

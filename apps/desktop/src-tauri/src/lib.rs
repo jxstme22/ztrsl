@@ -382,11 +382,16 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "ncspeech" => ids.push("ncspeech-tl-fastconformer-hybrid-large"),
         "ncspeech-zh" => ids.push("ncspeech-zh-citrinet-1024-gamma"),
         "ncspeech-zh-parakeet" => ids.push("ncspeech-zh-parakeet-ctc-0.6b"),
+        // Cloud ASR (Groq / NVIDIA NIM): no local model to check.
+        "groq-whisper" | "nvidia-whisper-large-v3" | "nvidia-nemotron-asr-streaming"
+        | "nvidia-parakeet-1.1b" | "nvidia-canary-1b" => {}
         _ => {}
     }
     match translation_provider {
         "nllb" => ids.push("nllb-200-distilled-600M-ct2-int8"),
         "madlad" => ids.push("madlad400-3b-mt"),
+        // Cloud translation (NVIDIA Riva): no local model to check.
+        "nvidia-riva-4b" | "nvidia-riva-1.6b" => {}
         _ => {}
     }
     ids
@@ -1749,13 +1754,24 @@ async fn start_live_translation(
             | "ncspeech-zh-parakeet"
             | "mlx"
             | "mlx-whisper"
+            | "nvidia-whisper-large-v3"
+            | "nvidia-nemotron-asr-streaming"
+            | "nvidia-parakeet-1.1b"
+            | "nvidia-canary-1b"
             | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
     }
     if !matches!(
         translation_provider.as_str(),
-        "nllb" | "madlad" | "libretranslate" | "google-translate" | "mymemory" | "custom-http"
+        "nllb"
+            | "madlad"
+            | "nvidia-riva-4b"
+            | "nvidia-riva-1.6b"
+            | "libretranslate"
+            | "google-translate"
+            | "mymemory"
+            | "custom-http"
     ) {
         return Err(format!(
             "unknown translation provider: {translation_provider}"
@@ -1765,6 +1781,7 @@ async fn start_live_translation(
     // "http" mode so the sidecar keeps the demo flag off and routes through the
     // configured remote provider.
     let provider = if asr_provider == "groq-whisper"
+        || asr_provider.starts_with("nvidia-")
         || !matches!(translation_provider.as_str(), "madlad" | "nllb")
     {
         "http".to_string()

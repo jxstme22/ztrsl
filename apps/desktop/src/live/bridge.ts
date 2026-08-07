@@ -11,6 +11,8 @@ let browserListening = false;
 export type TranslationProvider =
   | "nllb"
   | "madlad"
+  | "nvidia-riva-4b"
+  | "nvidia-riva-1.6b"
   | "libretranslate"
   | "google-translate"
   | "mymemory"
@@ -25,6 +27,10 @@ export type AsrProvider =
   | "ncspeech"
   | "ncspeech-zh"
   | "ncspeech-zh-parakeet"
+  | "nvidia-whisper-large-v3"
+  | "nvidia-nemotron-asr-streaming"
+  | "nvidia-parakeet-1.1b"
+  | "nvidia-canary-1b"
   | "groq-whisper";
 
 export async function setTranslationEnv(

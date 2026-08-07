@@ -36,6 +36,7 @@ const TARGET_LANGUAGE_KEY = "lst.live.target-language";
 const ASR_PROVIDER_KEY = "lst.live.asr-provider";
 const VAD_SENSITIVITY_KEY = "lst.live.vad-sensitivity";
 const GROQ_API_KEY_KEY = "lst.live.groq-api-key";
+const NVIDIA_API_KEY_KEY = "lst.live.nvidia-api-key";
 const TRANSLATION_PROVIDER_KEY = "lst.live.translation-provider";
 const LT_ENDPOINT_KEY = "lst.live.lt-endpoint";
 const LT_API_KEY_KEY = "lst.live.lt-api-key";
@@ -155,6 +156,7 @@ async function pushProviderEnv(
   translationProvider: TranslationProvider,
   config: {
     groqApiKey: string;
+    nvidiaApiKey: string;
     ltEndpoint: string;
     ltApiKey: string;
     customTxEndpoint: string;
@@ -166,6 +168,12 @@ async function pushProviderEnv(
   pairs.push(["LST_CAPTION_MODE", config.captionMode]);
   if (asrProvider === "groq-whisper") {
     pairs.push(["LST_GROQ_API_KEY", config.groqApiKey]);
+  }
+  if (
+    asrProvider.startsWith("nvidia-") ||
+    translationProvider.startsWith("nvidia-")
+  ) {
+    pairs.push(["LST_NVIDIA_API_KEY", config.nvidiaApiKey]);
   }
   if (translationProvider === "libretranslate") {
     pairs.push(["LST_LT_ENDPOINT", config.ltEndpoint]);
@@ -201,8 +209,27 @@ export function LiveTranslationPanel({
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
+  const [nvidiaApiKey, setNvidiaApiKey] = useState<string>(
+    () => window.localStorage.getItem(NVIDIA_API_KEY_KEY) ?? "",
+  );
   const [translationProvider, setTranslationProvider] =
     useState<TranslationProvider>(loadTranslationProvider);
+
+  // Only show LOCAL models that are downloaded; cloud/free endpoints
+  // (Groq, NVIDIA NIM, translation APIs) are always visible.
+  const LOCAL_ASR_MODELS: Partial<Record<string, string>> = {
+    "whisper-turbo": "whisper-large-v3-turbo",
+    "whisper-full": "whisper-large-v3",
+    mlx: "mlx-whisper-large-v3-turbo-q4",
+    "mlx-whisper": "mlx-whisper-large-v3-turbo-q4",
+    ncspeech: "ncspeech-tl-fastconformer-hybrid-large",
+    "ncspeech-zh": "ncspeech-zh-citrinet-1024-gamma",
+    "ncspeech-zh-parakeet": "ncspeech-zh-parakeet-ctc-0.6b",
+  };
+  const LOCAL_TRANSLATION_MODELS: Partial<Record<string, string>> = {
+    nllb: "nllb-200-distilled-600M-ct2-int8",
+    madlad: "madlad400-3b-mt",
+  };
   const [ltEndpoint, setLtEndpoint] = useState<string>(
     () => window.localStorage.getItem(LT_ENDPOINT_KEY) ?? "",
   );
@@ -221,6 +248,9 @@ export function LiveTranslationPanel({
   useEffect(() => {
     setEnvVar(GROQ_API_KEY_KEY, groqApiKey);
   }, [groqApiKey]);
+  useEffect(() => {
+    setEnvVar(NVIDIA_API_KEY_KEY, nvidiaApiKey);
+  }, [nvidiaApiKey]);
   useEffect(() => {
     setEnvVar(LT_API_KEY_KEY, ltApiKey);
   }, [ltApiKey]);
@@ -377,6 +407,8 @@ export function LiveTranslationPanel({
 
   const configComplete =
     (asrProvider !== "groq-whisper" || groqApiKey.trim().length > 0) &&
+    (!asrProvider.startsWith("nvidia-") || nvidiaApiKey.trim().length > 0) &&
+    (!translationProvider.startsWith("nvidia-") || nvidiaApiKey.trim().length > 0) &&
     (translationProvider !== "libretranslate" ||
       ltEndpoint.trim().length > 0) &&
     (translationProvider !== "custom-http" ||
@@ -530,6 +562,7 @@ export function LiveTranslationPanel({
                   setPermissionError(null);
                   await pushProviderEnv(asrProvider, translationProvider, {
                     groqApiKey,
+                    nvidiaApiKey,
                     ltEndpoint,
                     ltApiKey,
                     customTxEndpoint,
@@ -740,8 +773,29 @@ export function LiveTranslationPanel({
                   installedModelIds.has("ncspeech-zh-parakeet-ctc-0.6b"),
                 ),
               },
+              {
+                value: "nvidia-whisper-large-v3",
+                label: cloud("NVIDIA Whisper large-v3 (NIM)"),
+              },
+              {
+                value: "nvidia-nemotron-asr-streaming",
+                label: cloud("NVIDIA Nemotron ASR streaming (NIM)"),
+              },
+              {
+                value: "nvidia-parakeet-1.1b",
+                label: cloud("NVIDIA Parakeet CTC 1.1B (NIM)"),
+              },
+              {
+                value: "nvidia-canary-1b",
+                label: cloud("NVIDIA Canary 1B (NIM)"),
+              },
               { value: "groq-whisper", label: cloud("Groq Whisper (API)") },
-            ]}
+            ].filter((option) => {
+              const localModel = LOCAL_ASR_MODELS[option.value];
+              return (
+                localModel === undefined || installedModelIds.has(localModel)
+              );
+            })}
           />
         </div>
 
@@ -782,8 +836,21 @@ export function LiveTranslationPanel({
                 value: "mymemory",
                 label: cloud("MyMemory (free, daily quota)"),
               },
+              {
+                value: "nvidia-riva-4b",
+                label: cloud("NVIDIA Riva Translate 4B (NIM)"),
+              },
+              {
+                value: "nvidia-riva-1.6b",
+                label: cloud("NVIDIA Riva Translate 1.6B (NIM)"),
+              },
               { value: "custom-http", label: cloud(t("liveCustomHttp")) },
-            ]}
+            ].filter((option) => {
+              const localModel = LOCAL_TRANSLATION_MODELS[option.value];
+              return (
+                localModel === undefined || installedModelIds.has(localModel)
+              );
+            })}
           />
         </div>
 
@@ -863,6 +930,25 @@ export function LiveTranslationPanel({
               </li>
             </ol>
           </div>
+        </div>
+      )}
+
+      {(asrProvider.startsWith("nvidia-") ||
+        translationProvider.startsWith("nvidia-")) && (
+        <div className="field">
+          <label htmlFor="nvidia-api-key">{t("liveNvidiaApiKey")}</label>
+          <input
+            id="nvidia-api-key"
+            type="password"
+            placeholder="nvapi-… (from build.nvidia.com)"
+            value={nvidiaApiKey}
+            disabled={listening || busy}
+            onChange={(event) => {
+              setNvidiaApiKey(event.currentTarget.value);
+              setEnvVar("LST_NVIDIA_API_KEY", event.currentTarget.value);
+            }}
+          />
+          <small className="field-note">{t("liveNvidiaApiKeyNote")}</small>
         </div>
       )}
 
