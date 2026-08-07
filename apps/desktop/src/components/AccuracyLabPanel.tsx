@@ -149,9 +149,9 @@ export function AccuracyLabPanel() {
               setSourceMode(value);
             }}
             options={[
-              { value: "mixed", label: "Tagalog-first mixed / code-switched" },
-              { value: "filipino", label: "Filipino / Taglish" },
-              { value: "cebuano", label: "Cebuano / Bislish" },
+              { value: "mixed", label: "Tagalog-first (mixed/code-switched)" },
+              { value: "filipino", label: "Filipino (Taglish)" },
+              { value: "cebuano", label: "Cebuano (Bislish)" },
               { value: "chinese", label: "Chinese (Mandarin/Cantonese)" },
             ]}
           />
@@ -170,7 +170,7 @@ export function AccuracyLabPanel() {
                 value: ACCURACY_CONFIGS.slice(0, 2)
                   .map((config) => config.label)
                   .join(","),
-                label: "Recommended pair (Turbo + NLLB, Full + NLLB)",
+                label: "Recommended pair (Turbo + Full) × NLLB",
               },
               {
                 value: ACCURACY_CONFIGS.map((config) => config.label).join(","),

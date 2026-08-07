@@ -107,9 +107,15 @@ export function ControlApp() {
             (config) => config.sourceId === caption.source?.sourceId,
           )?.displayName ?? caption.source.captionTag;
       }
+      const snapshot = liveRef.current?.snapshot;
+      const modelLabel =
+        snapshot?.asrModel !== null && snapshot?.provider !== null
+          ? `${snapshot?.asrModel ?? ""} + ${snapshot?.provider ?? ""}`
+          : "";
       historyRef.current.record(caption, {
         displayName,
         audioSource: endpoint?.friendlyName ?? "",
+        provider: modelLabel,
       });
       controller.ingestCaption(caption);
     },
@@ -133,9 +139,51 @@ export function ControlApp() {
   // same localStorage, so this only needs to run when entries change).
   useEffect(() => {
     if (desktop) {
-      void emitHistoryToOverlay(history.entries);
+      void emitHistoryToOverlay(history.activeEntries);
     }
-  }, [desktop, history.entries]);
+  }, [desktop, history.activeEntries]);
+
+  // History sessions: when live translation reaches the listening state, the
+  // live pipeline carries a session id (fresh, or a kept-open one reused via
+  // sessionIdHint). Create the session record once; a kept-open id already
+  // exists and is simply pointed at by the reducer.
+  useEffect(() => {
+    if (live.state !== "listening" || live.sessionId === null) {
+      return;
+    }
+    if (historyRef.current.sessions.some((s) => s.id === live.sessionId)) {
+      return;
+    }
+    const locale = language.language === "zh" ? "zh-CN" : "en-US";
+    const date = new Date().toLocaleString(locale, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    historyRef.current.beginSession(
+      live.sessionId,
+      `${language.t("historySessionPrefix")} · ${date}`,
+    );
+  }, [language, live.sessionId, live.state]);
+
+  // Stop-live confirmation: the user picks whether the current session ends
+  // (transcript stays in History) or stays open for the next start.
+  const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const requestStop = useCallback(() => {
+    setStopDialogOpen(true);
+  }, []);
+
+  const resolveStop = useCallback(
+    (endSession: boolean) => {
+      setStopDialogOpen(false);
+      if (endSession && live.sessionId !== null) {
+        historyRef.current.endSession(live.sessionId);
+      }
+      void live.stop();
+    },
+    [live],
+  );
 
   const minimize = () => {
     if (desktop) {
@@ -230,10 +278,16 @@ export function ControlApp() {
               audio={audio}
               live={live}
               models={models}
+              sessionIdHint={history.currentSessionId}
+              onRequestStop={requestStop}
             />
           )}
           {section === "profile" && (
-            <ProfilePage audio={audio} live={live} />
+            <ProfilePage
+              audio={audio}
+              live={live}
+              sessionIdHint={history.currentSessionId}
+            />
           )}
           {section === "about" && <AboutPanel version={APP_VERSION} />}
           {section === "models" && (
@@ -241,7 +295,13 @@ export function ControlApp() {
           )}
           {section === "history" && (
             <div className="page-stack">
-              <HistoryPanel entries={history.entries} onClear={history.clear} />
+              <HistoryPanel
+                sessions={history.sessions}
+                currentSessionId={history.currentSessionId}
+                onRenameSession={history.renameSession}
+                onDeleteSession={history.deleteSession}
+                onClearSession={history.clearSession}
+              />
             </div>
           )}
           {section === "sources" && (
@@ -262,6 +322,52 @@ export function ControlApp() {
           )}
         </section>
       </div>
+
+      {stopDialogOpen && (
+        <div className="lst-modal-backdrop" role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={language.t("liveStopConfirmTitle")}
+            className="lst-modal"
+          >
+            <div className="lst-modal-head">
+              <h3>{language.t("liveStopConfirmTitle")}</h3>
+            </div>
+            <p className="lst-modal-body">
+              {history.activeSession !== null
+                ? language
+                    .t("liveStopConfirmBody")
+                    .replace("{name}", history.activeSession.name)
+                : language.t("liveStopConfirmBodyShort")}
+            </p>
+            <div className="lst-modal-actions">
+              <button
+                className="button primary"
+                type="button"
+                autoFocus
+                onClick={() => { resolveStop(true); }}
+              >
+                {language.t("liveStopEnd")}
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => { resolveStop(false); }}
+              >
+                {language.t("liveStopKeep")}
+              </button>
+              <button
+                className="button quiet"
+                type="button"
+                onClick={() => { setStopDialogOpen(false); }}
+              >
+                {language.t("cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {desktop && showWelcome && (
         <WelcomeModelsDialog
@@ -298,11 +404,15 @@ function LivePage({
   audio,
   live,
   models,
+  sessionIdHint,
+  onRequestStop,
 }: {
   controller: Controller;
   audio: AudioController;
   live: LiveController;
   models: ModelsController;
+  sessionIdHint: string | null;
+  onRequestStop: () => void;
 }) {
   const { snapshot } = controller;
   const t = useT();
@@ -335,7 +445,13 @@ function LivePage({
         </section>
       )}
 
-      <LiveTranslationPanel audio={audio} live={live} models={models} />
+      <LiveTranslationPanel
+        audio={audio}
+        live={live}
+        models={models}
+        sessionIdHint={sessionIdHint}
+        onRequestStop={onRequestStop}
+      />
 
       <section className="card" aria-labelledby="overlay-customize">
         <div className="card-head">

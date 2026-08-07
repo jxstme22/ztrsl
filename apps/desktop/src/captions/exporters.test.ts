@@ -28,6 +28,7 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
     detectedLanguage: "",
     warnings: [],
     preset: "",
+    latencyMs: 0,
     sessionId: "",
     ...overrides,
   };

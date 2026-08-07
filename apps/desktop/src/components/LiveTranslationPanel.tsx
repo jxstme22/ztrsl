@@ -31,6 +31,10 @@ type LiveTranslationPanelProps = {
   live: LiveController;
   /** Installed model ids, so provider options can show what's on disk. */
   models?: ModelUiState;
+  /** Kept-open history session id to append into (null = fresh session). */
+  sessionIdHint?: string | null;
+  /** When provided, Stop asks the caller (confirmation modal) first. */
+  onRequestStop?: () => void;
 };
 
 const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
@@ -218,6 +222,8 @@ export function LiveTranslationPanel({
   audio,
   live,
   models,
+  sessionIdHint = null,
+  onRequestStop,
 }: LiveTranslationPanelProps) {
   const [inputEndpointId, setInputEndpointId] = useState<string | null>(() =>
     loadStored(INPUT_ENDPOINT_KEY),
@@ -544,7 +550,13 @@ export function LiveTranslationPanel({
             type="button"
             disabled={busy}
             aria-busy={busy}
-            onClick={() => void live.stop()}
+            onClick={() => {
+              if (onRequestStop === undefined) {
+                void live.stop();
+              } else {
+                onRequestStop();
+              }
+            }}
           >
             {busy ? (
               <LoaderCircle className="spin" aria-hidden="true" size={16} />
@@ -623,8 +635,9 @@ export function LiveTranslationPanel({
                       sourceOrigin: source.sourceOrigin,
                       languageConfig: source.languageConfig,
                     })),
-                  );
-                })();
+                  sessionIdHint,
+                );
+              })();
               }
             }}
           >

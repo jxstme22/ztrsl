@@ -63,6 +63,10 @@ describe("SavedProfilesPanel (DS-604)", () => {
       "en",
       "whisper-turbo",
       "nllb",
+      50,
+      "balanced",
+      [],
+      null,
     );
     vi.restoreAllMocks();
   });

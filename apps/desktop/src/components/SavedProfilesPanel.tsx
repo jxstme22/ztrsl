@@ -42,9 +42,11 @@ function sourceModeForProfile(profile: RoutingProfile): SourceMode {
 export function SavedProfilesPanel({
   audio,
   live,
+  sessionIdHint = null,
 }: {
   audio: AudioController;
   live: LiveController;
+  sessionIdHint?: string | null;
 }) {
   const t = useT();
   const profiles = useMemo(() => loadRoutingProfiles(), []);
@@ -70,6 +72,10 @@ export function SavedProfilesPanel({
       "en",
       "whisper-turbo",
       "nllb",
+      50,
+      "balanced",
+      [],
+      sessionIdHint,
     );
   };
 

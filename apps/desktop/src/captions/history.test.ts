@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CAPTION_HISTORY_LIMIT,
+  SESSION_MAX_ENTRIES,
   clearHistoryState,
+  currentSessionEntries,
   historyReducer,
-  historyStateSchema,
+  loadHistoryDisplayOptions,
   loadHistoryState,
+  saveHistoryDisplayOptions,
   saveHistoryState,
   visibleHistoryEntries,
   type HistoryState,
@@ -21,6 +23,7 @@ function caption(overrides: Partial<Caption> = {}): Caption {
     englishText: "Say it",
     createdAtMs: 1000,
     expiresAtMs: 5000,
+    latencyMs: 0,
     certainty: {
       state: "normal",
       uncertaintyReasons: [],
@@ -30,21 +33,54 @@ function caption(overrides: Partial<Caption> = {}): Caption {
   };
 }
 
-function empty(): HistoryState {
-  return { version: 1, entries: [] };
+/** A ready-to-record state with a live session open. */
+function liveState(sessionId = "sess-1", name = "Session · 08/08 14:30"): HistoryState {
+  return historyReducer(empty(), {
+    type: "beginSession",
+    id: sessionId,
+    name,
+    startedAtMs: 1000,
+  });
 }
 
-describe("historyReducer", () => {
+function empty(): HistoryState {
+  return { version: 2, sessions: [], currentSessionId: null };
+}
+
+function fakeStorage(
+  initial: Record<string, string> = {},
+): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+  const store = new Map<string, string>(Object.entries(initial));
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+  };
+}
+
+describe("historyReducer sessions", () => {
   it("ignores provisional captions", () => {
-    const next = historyReducer(empty(), {
+    const next = historyReducer(liveState(), {
       type: "record",
       caption: caption({ status: "provisional" }),
     });
-    expect(next.entries).toHaveLength(0);
+    expect(next.sessions[0]?.entries).toHaveLength(0);
   });
 
-  it("records final captions with source label, color and timestamp", () => {
+  it("drops captions when no session is open", () => {
     const next = historyReducer(empty(), {
+      type: "record",
+      caption: caption(),
+    });
+    expect(next.sessions).toHaveLength(0);
+  });
+
+  it("records finals into the current session with full context", () => {
+    const next = historyReducer(liveState(), {
       type: "record",
       caption: caption({
         source: {
@@ -54,14 +90,16 @@ describe("historyReducer", () => {
           captionAlignment: "center",
           color: "#ffcc00",
         },
+        latencyMs: 640,
       }),
       context: {
         displayName: "Valorant Team",
         audioSource: "Headphones (loopback)",
+        provider: "whisper-large-v3-turbo + nllb",
       },
     });
-    expect(next.entries).toHaveLength(1);
-    expect(next.entries[0]).toMatchObject({
+    expect(next.sessions[0]?.entries).toHaveLength(1);
+    expect(next.sessions[0]?.entries[0]).toMatchObject({
       id: "c1",
       text: "Say it",
       sourceText: "sabihin mo",
@@ -70,73 +108,39 @@ describe("historyReducer", () => {
       displayName: "Valorant Team",
       color: "#ffcc00",
       audioSource: "Headphones (loopback)",
+      provider: "whisper-large-v3-turbo + nllb",
+      latencyMs: 640,
+      sessionId: "sess-1",
       uncertain: false,
     });
-    expect(next.entries[0]?.timestampMs).toBeGreaterThan(0);
+    expect(next.sessions[0]?.entries[0]?.timestampMs).toBeGreaterThan(0);
   });
 
-  it("keeps the transcribed input on the entry", () => {
-    const next = historyReducer(empty(), {
-      type: "record",
-      caption: caption(),
-    });
-    expect(next.entries[0]?.sourceText).toBe("sabihin mo");
-  });
-
-  it("defaults sourceText to empty for legacy stored entries", () => {
-    const parsed = historyStateSchema.safeParse({
-      version: 1,
-      entries: [
-        {
-          id: "legacy",
-          text: "Say it",
-          sourceLabel: "",
-          sourceId: "",
-          displayName: "",
-          color: "",
-          audioSource: "",
-          timestampMs: 1,
-          uncertain: false,
-        },
-      ],
-    });
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect(parsed.data.entries[0]?.sourceText).toBe("");
-    }
-  });
-
-  it("falls back to the source text when the translation is empty", () => {
-    const next = historyReducer(empty(), {
-      type: "record",
-      caption: caption({ englishText: "   " }),
-    });
-    expect(next.entries[0]?.text).toBe("sabihin mo");
-  });
-
-  it("drops captions with no text at all", () => {
-    const next = historyReducer(empty(), {
-      type: "record",
-      caption: caption({ englishText: "", sourceText: "" }),
-    });
-    expect(next.entries).toHaveLength(0);
-  });
-
-  it("upserts by id in place (final replaces its provisional slot)", () => {
-    const once = historyReducer(empty(), {
+  it("upserts by id within its own session only", () => {
+    const once = liveState();
+    const withCaption = historyReducer(once, {
       type: "record",
       caption: caption({ id: "c1" }),
     });
-    const twice = historyReducer(once, {
+    // The same caption id in a NEW session must not touch the old one —
+    // that is the regression where a fresh pipeline overwrote an old entry
+    // mid-list on the History page.
+    const second = historyReducer(historyReducer(withCaption, {
+      type: "endSession",
+      id: "sess-1",
+    }), { type: "beginSession", id: "sess-2", name: "Session · 14:45" });
+    const withSameId = historyReducer(second, {
       type: "record",
       caption: caption({ id: "c1", englishText: "Say it louder" }),
     });
-    expect(twice.entries).toHaveLength(1);
-    expect(twice.entries[0]?.text).toBe("Say it louder");
+    expect(withSameId.sessions[0]?.entries).toHaveLength(1);
+    expect(withSameId.sessions[0]?.entries[0]?.text).toBe("Say it");
+    expect(withSameId.sessions[1]?.entries).toHaveLength(1);
+    expect(withSameId.sessions[1]?.entries[0]?.text).toBe("Say it louder");
   });
 
   it("merges a consecutive duplicate final within the dedupe window", () => {
-    const once = historyReducer(empty(), {
+    const once = historyReducer(liveState(), {
       type: "record",
       caption: caption({ id: "c1", englishText: "Rotate B" }),
     });
@@ -144,11 +148,11 @@ describe("historyReducer", () => {
       type: "record",
       caption: caption({ id: "c2", englishText: "Rotate B" }),
     });
-    expect(twice.entries).toHaveLength(1);
+    expect(twice.sessions[0]?.entries).toHaveLength(1);
   });
 
   it("keeps chat order: oldest first, newest appended last", () => {
-    let state = empty();
+    let state = liveState();
     for (let index = 0; index < 3; index += 1) {
       state = historyReducer(state, {
         type: "record",
@@ -158,16 +162,16 @@ describe("historyReducer", () => {
         }),
       });
     }
-    expect(state.entries.map((entry) => entry.text)).toEqual([
+    expect(state.sessions[0]?.entries.map((e) => e.text)).toEqual([
       "line 0",
       "line 1",
       "line 2",
     ]);
   });
 
-  it("caps the buffer at 10 entries, keeping the newest at the bottom", () => {
-    let state = empty();
-    for (let index = 0; index < 15; index += 1) {
+  it("keeps everything (no 10-entry ring); safety cap at SESSION_MAX_ENTRIES", () => {
+    let state = liveState();
+    for (let index = 0; index < SESSION_MAX_ENTRIES + 25; index += 1) {
       state = historyReducer(state, {
         type: "record",
         caption: caption({
@@ -176,21 +180,15 @@ describe("historyReducer", () => {
         }),
       });
     }
-    expect(state.entries).toHaveLength(CAPTION_HISTORY_LIMIT);
-    expect(state.entries[0]?.text).toBe("line 5");
-    expect(state.entries[9]?.text).toBe("line 14");
-  });
-
-  it("clears", () => {
-    const state = historyReducer(empty(), {
-      type: "record",
-      caption: caption(),
-    });
-    expect(historyReducer(state, { type: "clear" }).entries).toHaveLength(0);
+    expect(state.sessions[0]?.entries).toHaveLength(SESSION_MAX_ENTRIES);
+    expect(state.sessions[0]?.entries[0]?.text).toBe("line 25");
+    expect(state.sessions[0]?.entries.at(-1)?.text).toBe(
+      "line " + String(SESSION_MAX_ENTRIES + 24),
+    );
   });
 
   it("marks uncertain finals", () => {
-    const next = historyReducer(empty(), {
+    const next = historyReducer(liveState(), {
       type: "record",
       caption: caption({
         certainty: {
@@ -200,52 +198,254 @@ describe("historyReducer", () => {
         },
       }),
     });
-    expect(next.entries[0]?.uncertain).toBe(true);
+    expect(next.sessions[0]?.entries[0]?.uncertain).toBe(true);
+  });
+
+  it("falls back to the source text when the translation is empty", () => {
+    const next = historyReducer(liveState(), {
+      type: "record",
+      caption: caption({ englishText: "   " }),
+    });
+    expect(next.sessions[0]?.entries[0]?.text).toBe("sabihin mo");
+  });
+});
+
+describe("historyReducer session lifecycle", () => {
+  it("beginSession creates a session and makes it current", () => {
+    const next = historyReducer(empty(), {
+      type: "beginSession",
+      id: "sess-1",
+      name: "Session · 08/08 14:30",
+    });
+    expect(next.currentSessionId).toBe("sess-1");
+    expect(next.sessions).toHaveLength(1);
+    expect(next.sessions[0]).toMatchObject({
+      id: "sess-1",
+      name: "Session · 08/08 14:30",
+      endedAtMs: null,
+      entries: [],
+    });
+  });
+
+  it("beginSession on an existing id just points the current session at it", () => {
+    const started = historyReducer(empty(), {
+      type: "beginSession",
+      id: "sess-1",
+      name: "Session · 08/08 14:30",
+    });
+    const next = historyReducer(historyReducer(started, {
+      type: "endSession",
+      id: "sess-1",
+    }), {
+      type: "beginSession",
+      id: "sess-1",
+      name: "Session · 08/08 14:30",
+    });
+    expect(next.sessions).toHaveLength(1);
+    expect(next.currentSessionId).toBe("sess-1");
+  });
+
+  it("endSession stamps the end time and clears the current session", () => {
+    const state = historyReducer(liveState(), {
+      type: "endSession",
+      id: "sess-1",
+      endedAtMs: 99,
+    });
+    expect(state.currentSessionId).toBeNull();
+    expect(state.sessions[0]?.endedAtMs).toBe(99);
+  });
+
+  it("keep-open: current session survives a plain stop (no endSession)", () => {
+    const next = historyReducer(liveState(), {
+      type: "endSession",
+      id: "sess-1",
+    });
+    expect(next.currentSessionId).toBeNull();
+  });
+
+  it("renameSession trims and refuses blank names", () => {
+    const renamed = historyReducer(liveState(), {
+      type: "renameSession",
+      id: "sess-1",
+      name: "  Round 3  ",
+    });
+    expect(renamed.sessions[0]?.name).toBe("Round 3");
+    const blank = historyReducer(renamed, {
+      type: "renameSession",
+      id: "sess-1",
+      name: "   ",
+    });
+    expect(blank.sessions[0]?.name).toBe("Round 3");
+  });
+
+  it("deleteSession removes the session and clears the current id", () => {
+    const state = historyReducer(liveState(), {
+      type: "deleteSession",
+      id: "sess-1",
+    });
+    expect(state.sessions).toHaveLength(0);
+    expect(state.currentSessionId).toBeNull();
+  });
+
+  it("selectSession validates the id and allows null", () => {
+    const state = liveState();
+    expect(historyReducer(state, { type: "selectSession", id: "nope" }).currentSessionId).toBeNull();
+    expect(historyReducer(state, { type: "selectSession", id: "sess-1" }).currentSessionId).toBe("sess-1");
+    expect(historyReducer(state, { type: "selectSession", id: null }).currentSessionId).toBeNull();
+  });
+
+  it("clearSession empties only the targeted session's entries", () => {
+    const withEntry = historyReducer(liveState(), {
+      type: "record",
+      caption: caption(),
+    });
+    const next = historyReducer(withEntry, { type: "clearSession", id: "sess-1" });
+    expect(next.sessions[0]?.entries).toHaveLength(0);
+    expect(next.currentSessionId).toBe("sess-1");
+  });
+
+  it("clear resets everything", () => {
+    const state = historyReducer(historyReducer(liveState(), {
+      type: "record",
+      caption: caption(),
+    }), { type: "clear" });
+    expect(state).toEqual(empty());
   });
 });
 
 describe("history storage", () => {
-  it("round-trips through localStorage", () => {
-    const storage = new Map<string, string>();
-    const fakeStorage = {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => {
-        storage.set(key, value);
-      },
-      removeItem: (key: string) => {
-        storage.delete(key);
-      },
-    };
-    const state = historyReducer(empty(), {
+  it("round-trips v2 state through localStorage", () => {
+    const storage = fakeStorage();
+    const state = historyReducer(liveState(), {
       type: "record",
       caption: caption(),
     });
-    saveHistoryState(state, fakeStorage);
-    expect(loadHistoryState(fakeStorage)).toEqual(state);
+    saveHistoryState(state, storage);
+    expect(loadHistoryState(storage)).toEqual(state);
+  });
+
+  it("migrates a v1 flat buffer into a single imported session", () => {
+    const legacy = JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          id: "old-1",
+          text: "Old line",
+          sourceText: "",
+          sourceLabel: "",
+          sourceId: "",
+          displayName: "",
+          color: "",
+          audioSource: "",
+          timestampMs: 1000,
+          uncertain: false,
+        },
+      ],
+    });
+    const storage = fakeStorage({ "lst.captions.history.v1": legacy });
+    const state = loadHistoryState(storage);
+    expect(state.version).toBe(2);
+    expect(state.sessions).toHaveLength(1);
+    expect(state.sessions[0]?.id).toBe("sess-imported");
+    expect(state.sessions[0]?.entries[0]?.text).toBe("Old line");
+    expect(storage.getItem("lst.captions.history.v1")).toBeNull();
   });
 
   it("recovers from corrupted payloads", () => {
-    const storage = new Map<string, string>([
-      ["lst.captions.history.v1", "{nope"],
-    ]);
-    const fakeStorage = {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: () => undefined,
-      removeItem: () => undefined,
-    };
-    expect(loadHistoryState(fakeStorage)).toEqual(empty());
+    const storage = fakeStorage({ "lst.captions.history.v2": "{nope" });
+    expect(loadHistoryState(storage)).toEqual(empty());
   });
 
-  it("clear removes the key", () => {
-    const storage = new Map<string, string>([
-      ["lst.captions.history.v1", "{}"],
-    ]);
-    clearHistoryState({
-      removeItem: (key: string) => {
-        storage.delete(key);
-      },
+  it("recovers from corrupted legacy payloads", () => {
+    const storage = fakeStorage({ "lst.captions.history.v1": "{nope" });
+    expect(loadHistoryState(storage)).toEqual(empty());
+  });
+
+  it("clear removes both storage keys", () => {
+    const storage = fakeStorage({
+      "lst.captions.history.v2": "{}",
+      "lst.captions.history.v1": "{}",
     });
-    expect(storage.has("lst.captions.history.v1")).toBe(false);
+    clearHistoryState(storage);
+    expect(storage.getItem("lst.captions.history.v2")).toBeNull();
+    expect(storage.getItem("lst.captions.history.v1")).toBeNull();
+  });
+});
+
+describe("currentSessionEntries", () => {
+  it("prefers the current session", () => {
+    const state = historyReducer(historyReducer(liveState("sess-1"), {
+      type: "record",
+      caption: caption({ id: "a" }),
+    }), { type: "beginSession", id: "sess-2", name: "Session · 14:45" });
+    const next = historyReducer(state, {
+      type: "record",
+      caption: caption({ id: "b" }),
+    });
+    expect(currentSessionEntries(next).map((e) => e.id)).toEqual(["b"]);
+  });
+
+  it("falls back to the most recently started session", () => {
+    const state = historyReducer(historyReducer(liveState("sess-1"), {
+      type: "record",
+      caption: caption({ id: "a" }),
+    }), { type: "endSession", id: "sess-1" });
+    const older = historyReducer(state, {
+      type: "beginSession",
+      id: "sess-2",
+      name: "Session · 14:45",
+      startedAtMs: 5000,
+    });
+    const newest = historyReducer(older, {
+      type: "beginSession",
+      id: "sess-3",
+      name: "Session · 15:00",
+      startedAtMs: 9000,
+    });
+    const recorded = historyReducer(historyReducer(newest, {
+      type: "record",
+      caption: caption({ id: "b" }),
+    }), { type: "endSession", id: "sess-3" });
+    expect(currentSessionEntries(recorded).map((e) => e.id)).toEqual(["b"]);
+  });
+
+  it("returns an empty list with no sessions", () => {
+    expect(currentSessionEntries(empty())).toEqual([]);
+  });
+});
+
+describe("history display options", () => {
+  it("round-trips through localStorage", () => {
+    const storage = fakeStorage();
+    const options = {
+      showSource: false,
+      showSpeaker: true,
+      showTimestamp: false,
+      showLatency: true,
+      showModels: true,
+    };
+    saveHistoryDisplayOptions(options, storage);
+    expect(loadHistoryDisplayOptions(storage)).toEqual(options);
+  });
+
+  it("defaults to everything visible except the transcribed input", () => {
+    expect(loadHistoryDisplayOptions(fakeStorage())).toEqual({
+      showSource: false,
+      showSpeaker: true,
+      showTimestamp: true,
+      showLatency: true,
+      showModels: true,
+    });
+  });
+
+  it("migrates the legacy showSource toggle", () => {
+    const storage = fakeStorage({ "lst.history.showSource": "1" });
+    expect(loadHistoryDisplayOptions(storage).showSource).toBe(true);
+  });
+
+  it("recovers from corrupted payloads", () => {
+    const storage = fakeStorage({ "lst.history.options.v2": "{nope" });
+    expect(loadHistoryDisplayOptions(storage).showSource).toBe(false);
   });
 });
 
@@ -269,6 +469,7 @@ describe("visibleHistoryEntries", () => {
     warnings: [],
     preset: "",
     sessionId: "",
+    latencyMs: 0,
   }));
 
   it("keeps every buffered entry in auto mode", () => {

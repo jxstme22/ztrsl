@@ -3,7 +3,12 @@ import { GripHorizontal } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { type HistoryEntry, loadHistoryState, visibleHistoryEntries } from "./captions/history";
+import {
+  currentSessionEntries,
+  type HistoryEntry,
+  loadHistoryState,
+  visibleHistoryEntries,
+} from "./captions/history";
 import { CaptionStack } from "./components/CaptionStack";
 import { useT } from "./features/i18n/store";
 import {
@@ -19,7 +24,7 @@ import { DEFAULT_OVERLAY_SNAPSHOT } from "./overlay/model";
 export function OverlayApp() {
   const [snapshot, setSnapshot] = useState(DEFAULT_OVERLAY_SNAPSHOT);
   const [history, setHistory] = useState<HistoryEntry[]>(
-    () => loadHistoryState().entries,
+    () => currentSessionEntries(loadHistoryState()),
   );
   const t = useT();
 
@@ -97,12 +102,29 @@ export function OverlayApp() {
   // re-apply the stored placement — that would fight the drag, especially
   // when captions are arriving mid-move.
   const draggingRef = useRef(false);
+  // Snapshot events arrive constantly while live translation runs; every
+  // event carries a freshly-created settings object. Only re-apply the
+  // placement when the placement fields actually changed, so an unchanged
+  // settings object can never yank the window back mid-move.
+  const lastPlacementKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (draggingRef.current) {
       return;
     }
-    void restoreOverlayPlacement(snapshot.settings);
+    const settings = snapshot.settings;
+    const key = JSON.stringify([
+      settings.monitorId,
+      settings.xNormalized,
+      settings.yNormalized,
+      settings.widthNormalized,
+      settings.heightNormalized,
+    ]);
+    if (key === lastPlacementKeyRef.current) {
+      return;
+    }
+    lastPlacementKeyRef.current = key;
+    void restoreOverlayPlacement(settings);
   }, [snapshot.settings]);
 
   // Chat order: entries are stored oldest-first, newest last. The list uses

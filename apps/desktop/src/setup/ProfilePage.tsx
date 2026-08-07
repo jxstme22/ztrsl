@@ -15,9 +15,11 @@ type LiveController = ReturnType<typeof useLiveTranslation>;
 export function ProfilePage({
   audio,
   live,
+  sessionIdHint = null,
 }: {
   audio: AudioController;
   live: LiveController;
+  sessionIdHint?: string | null;
 }) {
   const t = useT();
   return (
@@ -30,7 +32,7 @@ export function ProfilePage({
         </div>
         <p className="card-note">{t("profileIntro")}</p>
       </section>
-      <SavedProfilesPanel audio={audio} live={live} />
+      <SavedProfilesPanel audio={audio} live={live} sessionIdHint={sessionIdHint} />
       <SetupWizard audio={audio} />
     </div>
   );
