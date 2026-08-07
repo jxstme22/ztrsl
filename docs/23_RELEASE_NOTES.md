@@ -1,5 +1,33 @@
 # 23 — Release Notes
 
+## v0.8.0 — general-purpose release (feat/general-purpose-v0.8)
+
+First release of the generalization train — the build plan
+(`yTSRL_DEEPSEEK_BUILD_PLAN.md`) shipped in full. Key highlights:
+
+- **Language routing** — source-language routing matrix with per-source
+  modes; unknown languages are gated honestly (DEC-001: never a silent
+  fallback to an unrelated language).
+- **Setup wizard** — capture-mode selection, VB-CABLE pairing, signal
+  test, per-use-case profiles (gaming/streaming/meetings), recovery
+  guidance.
+- **Presets & quality** — catalog presets, quality profiles
+  (Fast/Balanced/Best quality/Low memory), Advanced provider config.
+- **Audio health & VAD** — energy/silero diagnostics, VAD profiles
+  (fast callouts / natural conversation / meeting), audio normalization
+  policies.
+- **Recognition router** — hardware capability detection, per-provider
+  routing, Paraformer/SenseVoice honesty (no silent wrong-language
+  output), graceful fallbacks.
+- **Vocabulary & context** — context manager, vocabulary packs, hotwords,
+  preservation lists.
+- **History & exports** — stronger history, TXT/JSON/SRT/VTT/MD exporters.
+- **Reliability** — caption SSE stream (`LST_CAPTION_STREAM_PORT`),
+  performance budgets, release gate (`scripts/check_release_gate.py`).
+- Cloud endpoints: NVIDIA Parakeet CTC 1.1B ASR + Riva 4B + Baidu
+  Translate (working free endpoints), plus the live-pipeline provisional
+  fixes from v0.7.4.
+
 ## v0.7.2 — NVIDIA NIM cloud providers (feat/side)
 
 - **NVIDIA ASR endpoints (build.nvidia.com)** — Whisper large-v3, Nemotron
