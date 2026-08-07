@@ -1,5 +1,32 @@
 # 23 — Release Notes
 
+## v0.8.1 — history sessions, CTA-styled UI (feat/general-purpose-v0.8)
+
+Follow-up to v0.8.0 with the history rework and the UI polish pass:
+
+- **Session-scoped transcripts** — History is now grouped into sessions
+  instead of a fixed ring: a session opens when Live starts, stays open
+  when you choose "Keep open" on stop (the next Start appends to it), and
+  ends when you confirm "End session". The stop button now asks first.
+  Sessions can be picked, renamed, deleted, and cleared; the whole list
+  persists. The overlay history shows the current session's transcript.
+- **History display options** — one Settings menu on the History page
+  toggles transcribed input, speaker, timestamps, latency, and model
+  badges; per-entry copy button; search box. Latency is the sidecar's real
+  capture→caption time.
+- **Caption segmentation styles** — chunk, balanced, sentence.
+- **CTA button recipe** — primary actions (live start, end session, wizard
+  next, install, accuracy run) and the sidebar active icon wear a gradient
+  button with a soft glow, ring outline, 1px press, and a 550ms diagonal
+  shine sweep (blue in light theme, orange shading in dark). The titlebar
+  brand card uses the same recipe.
+- **Cramped selects fixed** — Clip Lab and Accuracy Lab source-speech /
+  configuration options use short labels (Tagalog-first, Filipino, Cebuano,
+  Chinese; Recommended) so the cards stop over-widening.
+- **Setup wizard page, Profile page, About page, sidebar reorder** — the
+  wizard is now a Profile page with inline live layout and a sticky history
+  toolbar; app renamed yTSRL→yTRSL.
+
 ## v0.8.0 — general-purpose release (feat/general-purpose-v0.8)
 
 First release of the generalization train — the build plan

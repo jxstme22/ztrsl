@@ -987,9 +987,7 @@ def test_worker_skips_provisionals_when_disabled() -> None:
 
     class ProvisionalPipeline:
         def __init__(self) -> None:
-            self.snapshot = SnapshotUtterance(
-                sequence=0, utterance_id="prov", source_id=None
-            )
+            self.snapshot = SnapshotUtterance(sequence=0, utterance_id="prov", source_id=None)
 
         def feed_utterances(self, packet: AudioPacket) -> list[FakeUtterance]:
             return []
