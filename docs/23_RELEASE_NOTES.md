@@ -1,5 +1,24 @@
 # 23 — Release Notes
 
+## v0.7.3 — working free endpoints (Parakeet / Riva / Baidu) on main
+
+- **NVIDIA ASR trimmed to what the free tier actually serves** — the Live
+  panel now offers only **Parakeet CTC 1.1B** (en/de/es/fr). Whisper,
+  Nemotron and Canary returned HTTP 500 "inference connection error" on
+  free-tier keys and are no longer selectable (provider code remains for
+  accounts whose keys unlock them).
+- **NVIDIA Riva 4B fixed** — the gateway rejected `application/json;
+  charset=utf-8` with HTTP 415; requests now send plain `application/json`,
+  so Riva translation works. Riva 1.6B removed (404 on the chat gateway).
+- **Baidu Translate (free, mainland China)** — new cloud translation
+  provider hosted in mainland China (works where Google/MyMemory are
+  blocked). Needs a free AppID + secret from fanyi-api.baidu.com; source
+  language auto-detected, Simplified Chinese (`to=zh`) supported.
+- **Env allowlist fix** — `LST_NVIDIA_API_KEY` (and the new
+  `LST_BAIDU_APPID`/`LST_BAIDU_SECRET`) were silently dropped by the
+  `set_translation_env` gate, causing "NVIDIA API key is missing" even
+  after pasting a key. All keys now pass through.
+
 ## v0.7.2 — NVIDIA NIM cloud providers (feat/side)
 
 - **NVIDIA ASR endpoints (build.nvidia.com)** — Whisper large-v3, Nemotron
