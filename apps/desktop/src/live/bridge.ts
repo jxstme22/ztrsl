@@ -13,6 +13,8 @@ export type TranslationProvider =
   | "madlad"
   | "opus-mt-en-zh"
   | "opus-mt-zh-en"
+  | "nvidia-riva-4b"
+  | "nvidia-riva-1.6b"
   | "libretranslate"
   | "google-translate"
   | "mymemory"
@@ -29,6 +31,10 @@ export type AsrProvider =
   | "ncspeech-zh-parakeet"
   | "paraformer-zh-streaming"
   | "sensevoice-small"
+  | "nvidia-whisper-large-v3"
+  | "nvidia-nemotron-asr-streaming"
+  | "nvidia-parakeet-1.1b"
+  | "nvidia-canary-1b"
   | "groq-whisper";
 
 export async function setTranslationEnv(

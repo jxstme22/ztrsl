@@ -427,6 +427,14 @@ const UI_STRINGS = {
 
   // Live API config
   liveGroqApiKey: { en: "Groq API key", zh: "Groq API 密钥" },
+  liveNvidiaApiKey: {
+    en: "NVIDIA API key (build.nvidia.com, free tier)",
+    zh: "NVIDIA API 密钥（build.nvidia.com，免费档）",
+  },
+  liveNvidiaApiKeyNote: {
+    en: "One free key from build.nvidia.com unlocks every NVIDIA NIM endpoint. Audio/text is sent to NVIDIA while these options are selected.",
+    zh: "在 build.nvidia.com 获取一个免费密钥即可使用所有 NVIDIA NIM 端点。选择这些选项时，音频/文本会发送到 NVIDIA。",
+  },
   liveLibreTranslateUrl: {
     en: "LibreTranslate endpoint URL",
     zh: "LibreTranslate 端点 URL",
