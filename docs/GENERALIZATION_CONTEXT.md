@@ -203,10 +203,30 @@ stamped with per-source tag/color/language profile (`source.registry`).
   resolve; terminology tests
 - [x] DS-602 — VALORANT workflow preserved via the preset builder (tests
   pin the default source config to the valorant-team preset)
+- [x] DS-604 — Home quick-start: SavedProfilesPanel on the Live page starts
+  a routing profile with one click; missing endpoints show recovery UI
+- [x] DS-605 — Basic/Advanced split: Quality selector (fast/balanced/
+  best_quality/low_memory) in Basic; ASR/translation providers + VAD +
+  caption mode behind an Advanced collapsible
+- [x] DS-700 — recognition plan types (RecognitionRequest/RecognitionPlan)
+- [x] DS-701 — hardware capability snapshot (OS/arch/CUDA visibility vs
+  usable runtime/VRAM/Apple Silicon/CPU class/installed models)
+- [x] DS-702 — deterministic routing table: language first, then hardware
+  and quality; missing models degrade to documented fallbacks; unsupported
+  languages never route to an unrelated decoder
+- [x] DS-703 — RoutingAsrProvider orchestration: provisional provider A,
+  final provider B, stale provisionals can never supply finals
+- [x] DS-704 — Paraformer honesty: labeled a fast whole-utterance provider
+  (not true streaming) in code + catalog
+- [x] DS-705 — SenseVoice language-aware: per-language recognizer cache
+  (zh/en forced from source modes, auto otherwise)
+- [x] DS-707/708/709 — fallback eligibility signals, bounded fallback
+  execution on finals only (primary retained on failure), deterministic
+  primary-vs-fallback selection (non-empty, repetition, confidence gap)
 
 ## Next task
 
-DS-604 — simplify Home screen quick-start from saved profiles (Phase 6 UI).
+DS-706 — contextual Whisper configuration (bounded prompt/hotwords).
 
 ## Decisions that must not be reversed
 

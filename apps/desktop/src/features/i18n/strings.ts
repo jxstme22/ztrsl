@@ -33,6 +33,12 @@ const UI_STRINGS = {
     en: "Transcribed input",
     zh: "转写原文",
   },
+  profilesTitle: { en: "Saved profiles", zh: "已保存的配置" },
+  profilesStart: { en: "Start", zh: "开始" },
+  profilesNeedAttention: {
+    en: "Needs attention",
+    zh: "需要处理",
+  },
   historyEmpty: {
     en: "No finished captions yet. Start a live session — only finalized captions are saved here.",
     zh: "暂无已完成字幕。启动实时会话后，只有最终确定的字幕会被保存到这里。",
@@ -427,6 +433,12 @@ const UI_STRINGS = {
 
   // Live API config
   liveGroqApiKey: { en: "Groq API key", zh: "Groq API 密钥" },
+  liveQuality: { en: "Quality", zh: "质量" },
+  liveQualityfast: { en: "Fast", zh: "快速" },
+  liveQualitybalanced: { en: "Balanced", zh: "均衡" },
+  liveQualitybest_quality: { en: "Best quality", zh: "最佳质量" },
+  liveQualitylow_memory: { en: "Low memory", zh: "低内存" },
+  liveAdvanced: { en: "Advanced", zh: "高级" },
   liveLibreTranslateUrl: {
     en: "LibreTranslate endpoint URL",
     zh: "LibreTranslate 端点 URL",

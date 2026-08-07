@@ -550,8 +550,15 @@ class SenseVoiceProvider:
                 "sherpa-onnx and numpy are required for local ASR"
             ) from error
         self._numpy: Any = numpy
+        self._model_path = str(model)
+        self._tokens_path = str(tokens)
+        self._num_threads = num_threads
+        # DS-705: recognizers are language-specific, so cache one per
+        # language. "auto" covers unknown/full-auto profiles; explicit
+        # source languages force the matching recognizer.
+        self._recognizers: dict[str, Any] = {}
         try:
-            self._recognizer: Any = sherpa.OfflineRecognizer.from_sense_voice(
+            self._recognizers["auto"] = sherpa.OfflineRecognizer.from_sense_voice(
                 model=str(model),
                 tokens=str(tokens),
                 num_threads=num_threads,
@@ -566,12 +573,33 @@ class SenseVoiceProvider:
                 "SenseVoice model could not load (ONNX export required)"
             ) from error
 
+    def _recognizer_for(self, source_mode: str) -> Any:
+        """SenseVoice language for a source mode: explicit zh/en when the
+        intent is known, otherwise auto (never an unrelated language)."""
+        language = {"chinese": "zh", "english": "en"}.get(source_mode, "auto")
+        recognizer = self._recognizers.get(language)
+        if recognizer is None:
+            importlib.import_module("sherpa_onnx")
+            recognizer = importlib.import_module("sherpa_onnx").OfflineRecognizer.from_sense_voice(
+                model=self._model_path,
+                tokens=self._tokens_path,
+                num_threads=self._num_threads,
+                language=language,
+                use_itn=True,
+                decoding_method="greedy_search",
+                provider="cpu",
+                debug=False,
+            )
+            self._recognizers[language] = recognizer
+        return recognizer
+
     def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
         started = time.perf_counter()
-        stream = self._recognizer.create_stream()
+        recognizer = self._recognizer_for(source_mode)
+        stream = recognizer.create_stream()
         samples = self._numpy.asarray(utterance.pcm_f32, dtype=self._numpy.float32)
         stream.accept_waveform(utterance.sample_rate, samples)
-        self._recognizer.decode_stream(stream)
+        recognizer.decode_stream(stream)
         text = str(stream.result.text).strip()
         elapsed_ms = (time.perf_counter() - started) * 1_000
         # SenseVoice results expose the detected language ("zh", "en", "ja",

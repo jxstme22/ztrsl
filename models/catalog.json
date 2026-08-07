@@ -237,11 +237,11 @@
     },
     {
       "id": "paraformer-zh-streaming",
-      "name": "FunASR Paraformer zh (streaming)",
+      "name": "FunASR Paraformer zh (fast utterance)",
       "kind": "asr",
       "runtime": "sherpa-onnx",
       "recommended": false,
-      "description": "Streaming Mandarin/English speech recognition from the FunASR paraformer-zh-streaming architecture (~240 MB installed, int8). Runs locally via sherpa-onnx — a fast low-latency alternative to Whisper for Chinese voice chat.",
+      "description": "Fast Mandarin/English speech recognition from the FunASR paraformer-zh-streaming architecture (~237 MB installed, int8). Each VAD-segmented utterance is decoded as a complete segment — a fast utterance provider, not a true chunked streaming decoder.",
       "license": {
         "spdx": "Apache-2.0",
         "notice": "Model derived from FunASR paraformer-zh-streaming (Apache-2.0); ONNX export published by sherpa-onnx on Hugging Face (Apache-2.0)."

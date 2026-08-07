@@ -11,6 +11,12 @@ import type {
   TranslationProvider,
 } from "../live/bridge";
 import type { ModelUiState } from "../models/useModels";
+import {
+  QUALITY_PROFILE_IDS,
+  loadQualityProfileId,
+  saveQualityProfileId,
+  type QualityProfileId,
+} from "../presets/quality";
 import { useT } from "../features/i18n/store";
 import type { UIKey } from "../features/i18n/strings";
 import { loadSourceConfigs } from "../sources/storage";
@@ -199,6 +205,9 @@ export function LiveTranslationPanel({
   const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
   const [vadSensitivity, setVadSensitivity] =
     useState<number>(loadVadSensitivity);
+  const [qualityProfileId, setQualityProfileId] = useState<QualityProfileId>(
+    loadQualityProfileId,
+  );
   const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
@@ -677,6 +686,27 @@ export function LiveTranslationPanel({
         </div>
 
         <div className="field">
+          <label htmlFor="live-quality">{t("liveQuality")}</label>
+          <Select
+            id="live-quality"
+            label={t("liveQuality")}
+            value={qualityProfileId}
+            disabled={listening || busy}
+            onChange={(value) => {
+              const id = value as QualityProfileId;
+              setQualityProfileId(id);
+              saveQualityProfileId(id);
+            }}
+            options={QUALITY_PROFILE_IDS.map((id) => ({
+              value: id,
+              label: t(("liveQuality" + id) as UIKey),
+            }))}
+          />
+        </div>
+
+        <details className="live-advanced">
+          <summary>{t("liveAdvanced")}</summary>
+        <div className="field">
           <label htmlFor="live-asr">{t("liveSpeechRecognition")}</label>
           <Select
             id="live-asr"
@@ -867,6 +897,7 @@ export function LiveTranslationPanel({
           />
           <small className="field-note">{t("liveCaptionModeNote")}</small>
         </div>
+        </details>
       </div>
 
       {asrProvider === "groq-whisper" && (

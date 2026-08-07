@@ -587,14 +587,42 @@ def test_sensevoice_provider_transcribes_utterance(
     assert result.language == "zh"
     assert result.model_id == "sensevoice-small"
     assert result.is_final is True
-    config, decoded = modules["sherpa"].calls
-    assert decoded == {"decoded": True}
-    assert config["language"] == "auto"
-    assert config["use_itn"] is True
-    assert config["num_threads"] == 4
-    assert config["provider"] == "cpu"
-    assert config["model"].endswith("model.int8.onnx")
-    assert config["tokens"].endswith("tokens.txt")
+    calls = modules["sherpa"].calls
+    # DS-705: an explicit Chinese source requests the "zh" recognizer.
+    zh_config = next(call for call in calls if call.get("language") == "zh")
+    assert zh_config["use_itn"] is True
+    assert zh_config["num_threads"] == 4
+    assert zh_config["provider"] == "cpu"
+    assert zh_config["model"].endswith("model.int8.onnx")
+    assert zh_config["tokens"].endswith("tokens.txt")
+    assert calls[-1] == {"decoded": True}
+
+
+def test_sensevoice_uses_auto_recognizer_for_unknown_languages(
+    sensevoice_env: tuple[dict[str, Any], Path],
+) -> None:
+    from local_squad_inference.providers import SenseVoiceProvider
+    from local_squad_inference.vad import AudioUtterance
+
+    modules, model_dir = sensevoice_env
+    modules["sherpa"].set_result("hello", lang=None)
+    provider = SenseVoiceProvider(model_dir)
+    result = provider.transcribe(
+        AudioUtterance(
+            utterance_id="u1",
+            pcm_f32=(0.0, 0.1, 0.0),
+            sample_rate=16_000,
+            started_ns=0,
+            ended_ns=1_000_000_000,
+            is_final=True,
+            forced_end=True,
+        ),
+        source_mode="filipino",
+    )
+    assert result.text == "hello"
+    assert result.language is None
+    auto_config = next(call for call in modules["sherpa"].calls if call.get("language") == "auto")
+    assert auto_config is not None
 
 
 def test_sensevoice_provider_missing_manifest_is_visible(tmp_path: Path) -> None:

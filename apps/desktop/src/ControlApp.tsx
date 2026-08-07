@@ -24,6 +24,7 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
+import { SavedProfilesPanel } from "./components/SavedProfilesPanel";
 import { ModelsPanel } from "./components/ModelsPanel";
 import { OverlaySettingsPanel } from "./components/OverlaySettingsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
@@ -316,6 +317,8 @@ function LivePage({
           </div>
         </section>
       )}
+
+      <SavedProfilesPanel audio={audio} live={live} />
 
       <LiveTranslationPanel audio={audio} live={live} models={models} />
 
