@@ -261,6 +261,14 @@ describe("visibleHistoryEntries", () => {
     audioSource: "",
     timestampMs: i * 1000,
     uncertain: false,
+    startedAtMs: 0,
+    status: "final",
+    confidenceCategory: "high",
+    provider: "",
+    detectedLanguage: "",
+    warnings: [],
+    preset: "",
+    sessionId: "",
   }));
 
   it("keeps every buffered entry in auto mode", () => {

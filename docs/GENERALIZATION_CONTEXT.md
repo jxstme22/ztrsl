@@ -223,10 +223,35 @@ stamped with per-source tag/color/language profile (`source.registry`).
 - [x] DS-707/708/709 — fallback eligibility signals, bounded fallback
   execution on finals only (primary retained on failure), deterministic
   primary-vs-fallback selection (non-empty, repetition, confidence gap)
+- [x] DS-706/803 — per-source context manager (finals-only, confident,
+  allowed-language, no hallucination/repetition; reset on long silence;
+  never crosses sources) + bounded Whisper prompt builder with glossary
+- [x] DS-800 — generalized VocabularyEntry + adapter for legacy glossary
+  shapes
+- [x] DS-801 — vocabulary packs (valorant shipped; disabled unless
+  selected; custom entries override packs)
+- [x] DS-802 — bounded, deduplicated, domain-preferred hotword set
+- [x] DS-804 — placeholder-based vocabulary preservation through MT
+  (collision-safe, reversible)
+- [x] DS-900 — caption-history strengthened: start/end time, status,
+  confidence category, provider, warnings, preset, session id (defaulted
+  for legacy entries)
+- [x] DS-901 — transcript exporters (TXT/JSON/SRT/VTT/Markdown; finals
+  only, UTF-8, chronological, optional source lines)
+- [x] DS-902 — localhost SSE caption stream (opt-in via
+  LST_CAPTION_STREAM_PORT, bounded clients, no raw audio)
+- [x] DS-1000/1001 — clean-machine matrices (Windows + Apple Silicon)
+- [x] DS-1002 — recovery-state audit (failure → cause → primary recovery
+  → advanced details)
+- [x] DS-1003 — performance budgets per quality profile + warnings
+- [x] DS-1004 — user documentation (quick start, cable setup, VALORANT,
+  Discord, meetings, models/quality, audio troubleshooting, privacy)
+- [x] DS-1005 — v1.0 release gate checklist + scripts/check_release_gate.py
 
-## Next task
+## Status
 
-DS-706 — contextual Whisper configuration (bounded prompt/hotwords).
+**BUILD PLAN COMPLETE** — every DS task in the DeepSeek build plan is
+implemented, tested, and committed on `feat/general-purpose-v0.8`.
 
 ## Decisions that must not be reversed
 

@@ -16,6 +16,14 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
     audioSource: "",
     timestampMs: 1000,
     uncertain: false,
+    startedAtMs: 1000,
+    status: "final",
+    confidenceCategory: "high",
+    provider: "",
+    detectedLanguage: "",
+    warnings: [],
+    preset: "",
+    sessionId: "",
     ...overrides,
   };
 }

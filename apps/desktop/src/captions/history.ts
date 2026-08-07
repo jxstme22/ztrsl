@@ -30,6 +30,23 @@ export const historyEntrySchema = z.object({
   timestampMs: z.number().nonnegative(),
   /** True when the sidecar flagged the final as low-confidence. */
   uncertain: z.boolean(),
+  // DS-900: lifecycle + quality metadata (defaulted for legacy entries).
+  /** Wall-clock first-sighting time (ms); defaults to the final time. */
+  startedAtMs: z.number().nonnegative().default(0),
+  /** Caption status at record time ("final" only ever enters). */
+  status: z.string().default("final"),
+  /** "high" | "low" | "unknown" confidence category. */
+  confidenceCategory: z.string().default("unknown"),
+  /** ASR provider/model id that produced the source text. */
+  provider: z.string().max(64).default(""),
+  /** Detected language token (tl/zh/en/…) when the caption exposed one. */
+  detectedLanguage: z.string().max(16).default(""),
+  /** Warnings attached to the caption (e.g. FORCED_SPLIT). */
+  warnings: z.array(z.string()).default([]),
+  /** Domain preset active when the caption was recorded. */
+  preset: z.string().max(64).default(""),
+  /** Live session id, when the session exposes one. */
+  sessionId: z.string().max(64).default(""),
 });
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
@@ -53,6 +70,12 @@ export type HistoryContext = {
   displayName?: string;
   /** Which audio input the session captures (mic / loopback / system). */
   audioSource?: string;
+  /** ASR provider id that produced the source text (DS-900). */
+  provider?: string;
+  /** Domain preset active for the session (DS-900). */
+  preset?: string;
+  /** Live session id (DS-900). */
+  sessionId?: string;
 };
 
 const DEDUPE_WINDOW_MS = 6_000;
@@ -76,6 +99,7 @@ function entryForCaption(
   context: HistoryContext,
 ): HistoryEntry {
   const text = caption.englishText.trim() || caption.sourceText.trim();
+  const nowMs = Date.now();
   return {
     id: caption.id,
     text,
@@ -85,8 +109,17 @@ function entryForCaption(
     displayName: context.displayName ?? "",
     color: caption.source?.color ?? "",
     audioSource: context.audioSource ?? "",
-    timestampMs: Date.now(),
+    timestampMs: nowMs,
     uncertain: caption.certainty?.state === "uncertain",
+    startedAtMs: caption.createdAtMs,
+    status: caption.status,
+    confidenceCategory:
+      caption.certainty?.state === "uncertain" ? "low" : "high",
+    provider: context.provider ?? "",
+    detectedLanguage: "",
+    warnings: [],
+    preset: context.preset ?? "",
+    sessionId: context.sessionId ?? "",
   };
 }
 
