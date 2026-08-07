@@ -398,7 +398,7 @@ export function LiveTranslationPanel({
     (translationProvider !== "opus-mt-en-zh" ||
       (sourceMode === "english" && targetLanguage === "zh")) &&
     (translationProvider !== "opus-mt-zh-en" ||
-      (sourceMode === "chinese" && targetLanguage === "en"));
+      (sourceMode === "chinese" && targetLanguage === "en")) &&
     (translationProvider !== "baidu-translate" ||
       (baiduAppId.trim().length > 0 && baiduSecret.trim().length > 0));
 
