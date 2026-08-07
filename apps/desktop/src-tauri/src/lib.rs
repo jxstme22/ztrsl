@@ -314,6 +314,9 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "ncspeech-zh-parakeet" => ids.push("ncspeech-zh-parakeet-ctc-0.6b"),
         "paraformer-zh-streaming" => ids.push("paraformer-zh-streaming"),
         "sensevoice-small" | "sense-voice" => ids.push("sensevoice-small"),
+        // Cloud ASR (Groq / NVIDIA NIM): no local model to check.
+        "groq-whisper" | "nvidia-whisper-large-v3" | "nvidia-nemotron-asr-streaming"
+        | "nvidia-parakeet-1.1b" | "nvidia-canary-1b" => {}
         _ => {}
     }
     match translation_provider {
@@ -321,6 +324,11 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "madlad" => ids.push("madlad400-3b-mt"),
         "opus-mt-en-zh" => ids.push("opus-mt-en-zh-ct2-int8"),
         "opus-mt-zh-en" => ids.push("opus-mt-zh-en-ct2-int8"),
+        // Cloud translation (NVIDIA Riva): no local model to check.
+        "nvidia-riva-4b" | "nvidia-riva-1.6b" => {}
+        // Cloud translation (NVIDIA Riva / Baidu): no local model to check.
+        "nvidia-riva-4b" | "nvidia-riva-1.6b" | "baidu-translate" => {}
+
         _ => {}
     }
     ids
@@ -1472,6 +1480,10 @@ async fn start_live_translation(
             | "paraformer-zh-streaming"
             | "sensevoice-small"
             | "sense-voice"
+            | "nvidia-whisper-large-v3"
+            | "nvidia-nemotron-asr-streaming"
+            | "nvidia-parakeet-1.1b"
+            | "nvidia-canary-1b"
             | "groq-whisper"
     ) {
         return Err(format!("unknown ASR provider: {asr_provider}"));
@@ -1482,9 +1494,12 @@ async fn start_live_translation(
             | "madlad"
             | "opus-mt-en-zh"
             | "opus-mt-zh-en"
+            | "nvidia-riva-4b"
+            | "nvidia-riva-1.6b"
             | "libretranslate"
             | "google-translate"
             | "mymemory"
+            | "baidu-translate"
             | "custom-http"
     ) {
         return Err(format!(
@@ -1495,6 +1510,7 @@ async fn start_live_translation(
     // "http" mode so the sidecar keeps the demo flag off and routes through the
     // configured remote provider.
     let provider = if asr_provider == "groq-whisper"
+        || asr_provider.starts_with("nvidia-")
         || !matches!(translation_provider.as_str(), "madlad" | "nllb")
     {
         "http".to_string()
@@ -3141,10 +3157,13 @@ fn set_translation_env(
 ) -> Result<(), String> {
     const ALLOWED: &[&str] = &[
         "LST_GROQ_API_KEY",
+        "LST_NVIDIA_API_KEY",
         "LST_LT_ENDPOINT",
         "LST_LT_API_KEY",
         "LST_CUSTOM_TX_ENDPOINT",
         "LST_CUSTOM_TX_API_KEY",
+        "LST_BAIDU_APPID",
+        "LST_BAIDU_SECRET",
     ];
     let mut env = runtime.env.lock().map_err(lock_error)?;
     for (name, value) in request.pairs {

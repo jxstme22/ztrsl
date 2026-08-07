@@ -1,5 +1,21 @@
 # 23 — Release Notes
 
+## v0.7.2 — NVIDIA NIM cloud providers (feat/side)
+
+- **NVIDIA ASR endpoints (build.nvidia.com)** — Whisper large-v3, Nemotron
+  ASR streaming, Parakeet CTC 1.1B, and Canary 1B are selectable ASR
+  providers. One free `nvapi-…` key unlocks all of them; audio is sent to
+  NVIDIA only while an NVIDIA option is selected. Parakeet/Canary reject
+  unsupported source languages with a visible error (never a silent
+  fallback).
+- **NVIDIA Riva translation** — Riva Translate 4B Instruct and Riva
+  Translate 1.6B via the OpenAI-compatible chat gateway, prompted with the
+  chosen target language.
+- **UX: only installed models + free endpoints** — the Live panel now
+  hides local models that are not downloaded and always shows the
+  cloud/free endpoints (Groq, NVIDIA NIM, translation APIs), so the list
+  reflects what can actually run.
+
 ## v0.7.1 — History page shows the transcribed input
 
 - **Transcribed input toggle on the History page** — a checklist button next

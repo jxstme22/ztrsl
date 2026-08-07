@@ -10,6 +10,7 @@ a time and return a placeholder on any error so the live session never dies.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -83,7 +84,10 @@ def _http_post_json(
 ) -> dict[str, Any]:
     payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
     headers = {
-        "Content-Type": "application/json; charset=utf-8",
+        # NVIDIA's gateway 415s any Content-Type other than exactly
+        # "application/json" (charset suffixes are rejected), and plain
+        # "application/json" is accepted by every other endpoint here.
+        "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
         "User-Agent": "local-squad-translator/0.1 (opt-in translation)",
     }
@@ -332,6 +336,98 @@ class MyMemoryProvider(TranslationProvider):
             )
 
 
+# Target-language display names for NVIDIA Riva chat-completions prompts.
+TARGET_LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "zh": "Chinese",
+    "fil": "Filipino",
+    "ind": "Indonesian",
+    "vie": "Vietnamese",
+    "tha": "Thai",
+    "zsm": "Malay",
+}
+
+# OpenAI-compatible chat gateway; model ids are NVIDIA NIM model names.
+NVIDIA_CHAT_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions"
+NVIDIA_RIVA_MODELS: dict[str, str] = {
+    "nvidia-riva-4b": "nvidia/riva-translate-4b-instruct-v1.1",
+    "nvidia-riva-1.6b": "nvidia/riva-translate-1.6b",
+}
+
+
+class NvidiaRivaProvider(TranslationProvider):
+    """Translate through NVIDIA Riva chat-completions (build.nvidia.com).
+
+    Configure with `LST_NVIDIA_API_KEY` (nvapi-…, free tier). The target
+    language is prompted explicitly; replies are returned verbatim.
+    """
+
+    def __init__(self, model_id: str, target_language: str = "en") -> None:
+        api_key = os.environ.get("LST_NVIDIA_API_KEY", "").strip()
+        if not api_key:
+            raise HttpTranslationError("NVIDIA API key is missing (set LST_NVIDIA_API_KEY)")
+        model = NVIDIA_RIVA_MODELS.get(model_id)
+        if model is None:
+            raise HttpTranslationError(f"unknown NVIDIA Riva model: {model_id}")
+        self._api_key = api_key
+        self._model = model
+        self._model_id = model_id
+        self._target_name = TARGET_LANGUAGE_NAMES.get(target_language, target_language)
+
+    PROVIDER_ID = "nvidia-riva"
+
+    def translate(self, result: AsrResult) -> TranslationResult:
+        if not result.text:
+            return _ok(result, "", inference_ms=0.0, provider_id=self._model_id)
+        body = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are an expert translator. Translate the user text into "
+                        f"{self._target_name}. Reply with only the translation."
+                    ),
+                },
+                {"role": "user", "content": result.text},
+            ],
+            "temperature": 0.2,
+            "top_p": 0.7,
+            "max_tokens": 512,
+        }
+        started = time.perf_counter()
+        try:
+            data = _http_post_json(
+                NVIDIA_CHAT_ENDPOINT,
+                body,
+                timeout_s=30.0,
+                api_key=self._api_key,
+            )
+            choices = data.get("choices") or []
+            content = ""
+            if choices and isinstance(choices[0], dict):
+                message = choices[0].get("message") or {}
+                content = str(message.get("content") or "").strip()
+            if not content:
+                return _placeholder(
+                    result,
+                    "[NVIDIA Riva returned no text]",
+                    provider_id=self._model_id,
+                )
+            return _ok(
+                result,
+                content,
+                inference_ms=(time.perf_counter() - started) * 1_000.0,
+                provider_id=self._model_id,
+            )
+        except (HttpTranslationError, OSError, ValueError, KeyError, TypeError) as error:
+            return _placeholder(
+                result,
+                f"[NVIDIA Riva unavailable: {error}]",
+                provider_id=self._model_id,
+            )
+
+
 class CustomHttpProvider(TranslationProvider):
     """Generic HTTP translation provider — bring your own endpoint.
 
@@ -416,10 +512,111 @@ class CustomHttpProvider(TranslationProvider):
             )
 
 
+# Baidu Translate: free tier API hosted in mainland China (reachable
+# where Google/LibreTranslate instances are blocked). Configure with
+# LST_BAIDU_APPID + LST_BAIDU_SECRET from fanyi-api.baidu.com (free).
+# The request is signed with md5(appid + q + salt + secret); the source
+# language is auto-detected. `to` codes: en/zh/tl/id/vi/th/ms.
+BAIDU_ENDPOINT = "https://fanyi-api.baidu.com/api/trans/vip/translate"
+BAIDU_TARGET_CODES: dict[str, str] = {
+    "en": "en",
+    "zh": "zh",
+    "fil": "tl",
+    "ind": "id",
+    "vie": "vi",
+    "tha": "th",
+    "zsm": "ms",
+}
+
+
+class BaiduTranslateProvider(TranslationProvider):
+    """Translate through the Baidu Translate open platform (free tier).
+
+    The only cloud translation here hosted inside mainland China — Google,
+    MyMemory and the public LibreTranslate instances are blocked or flaky
+    there. Needs a free AppID + secret key (fanyi-api.baidu.com). Text
+    (never audio) is sent to Baidu while this provider is selected.
+    """
+
+    PROVIDER_ID = "baidu-translate"
+    ENDPOINT = BAIDU_ENDPOINT
+
+    def __init__(self, target_language: str = "en") -> None:
+        self._appid = os.environ.get("LST_BAIDU_APPID", "").strip()
+        self._secret = os.environ.get("LST_BAIDU_SECRET", "").strip()
+        if not self._appid or not self._secret:
+            raise HttpTranslationError(
+                "Baidu Translate AppID/secret are missing "
+                "(set LST_BAIDU_APPID and LST_BAIDU_SECRET)"
+            )
+        self._target = BAIDU_TARGET_CODES.get(target_language, target_language)
+
+    def translate(self, result: AsrResult) -> TranslationResult:
+        if not result.text:
+            return _ok(result, "", inference_ms=0.0, provider_id=self.PROVIDER_ID)
+        salt = f"{time.time_ns()}"
+        sign = hashlib.md5(f"{self._appid}{result.text}{salt}{self._secret}".encode()).hexdigest()
+        payload = urllib.parse.urlencode(
+            {
+                "q": result.text,
+                "from": "auto",
+                "to": self._target,
+                "appid": self._appid,
+                "salt": salt,
+                "sign": sign,
+            }
+        ).encode("utf-8")
+        started = time.perf_counter()
+        try:
+            request = urllib.request.Request(
+                self.ENDPOINT,
+                data=payload,
+                method="POST",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": "local-squad-translator/0.1 (opt-in translation)",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=8.0) as response:
+                raw = response.read()
+            if not raw:
+                raise HttpTranslationError("empty response body from Baidu Translate")
+            decoded = raw.decode("utf-8", errors="replace")
+            try:
+                parsed = json.loads(decoded)
+            except json.JSONDecodeError as error:
+                raise HttpTranslationError("Baidu Translate response was not JSON") from error
+            if isinstance(parsed, dict) and parsed.get("error_code"):
+                raise HttpTranslationError(
+                    f"Baidu Translate error {parsed['error_code']}: {parsed.get('error_msg', '')}"
+                )
+            parts = [str(item.get("dst", "")).strip() for item in parsed.get("trans_result") or []]
+            english_text = " ".join(part for part in parts if part)
+            if not english_text:
+                return _placeholder(
+                    result,
+                    "[Baidu Translate returned no text]",
+                    provider_id=self.PROVIDER_ID,
+                )
+            return _ok(
+                result,
+                english_text,
+                inference_ms=(time.perf_counter() - started) * 1_000.0,
+                provider_id=self.PROVIDER_ID,
+            )
+        except (HttpTranslationError, OSError, ValueError, KeyError, TypeError) as error:
+            return _placeholder(
+                result,
+                f"[Baidu Translate unavailable: {error}]",
+                provider_id=self.PROVIDER_ID,
+            )
+
+
 HTTP_PROVIDER_FACTORIES: dict[str, Callable[..., TranslationProvider]] = {
     "libretranslate": LibreTranslateProvider,
     "google-translate": GoogleTranslateProvider,
     "mymemory": MyMemoryProvider,
+    "baidu-translate": BaiduTranslateProvider,
     "custom-http": CustomHttpProvider,
 }
 
