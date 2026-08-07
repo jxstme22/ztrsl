@@ -88,6 +88,7 @@ export async function startLiveTranslation(
   asrProvider: AsrProvider,
   translationProvider: TranslationProvider,
   vadSensitivity = 50,
+  segmentation: "chunk" | "balanced" | "sentence" = "balanced",
   sources: LiveSourceRequest[] = [],
 ): Promise<LiveSnapshot> {
   if (!isTauri()) {
@@ -115,6 +116,7 @@ export async function startLiveTranslation(
         resourceProfile: "quality",
         monitorEnabled,
         vadSensitivity,
+        segmentation,
         sources,
       },
     }),

@@ -142,6 +142,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       asrProvider: AsrProvider,
       translationProvider: TranslationProvider,
       vadSensitivity = 50,
+      segmentation: "chunk" | "balanced" | "sentence" = "balanced",
       sources: LiveSourceRequest[] = [],
     ) => {
       setState("starting");
@@ -160,6 +161,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
             asrProvider,
             translationProvider,
             vadSensitivity,
+            segmentation,
             sources,
           ),
         );

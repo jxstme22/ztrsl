@@ -6,6 +6,7 @@ from local_squad_inference.vad import (
     EnergyUtteranceManager,
     SileroSpeechDetector,
     VadConfig,
+    apply_segmentation,
     vad_config_from_sensitivity,
 )
 
@@ -166,3 +167,19 @@ def test_silero_detector_rejects_non_finite_samples(monkeypatch: pytest.MonkeyPa
     detector = SileroSpeechDetector(threshold=0.5)
 
     assert detector.is_speech((float("nan"),) * 512) is False
+
+
+def test_apply_segmentation_chunk_and_sentence_overrides() -> None:
+    base = vad_config_from_sensitivity(50)
+    chunk = apply_segmentation(vad_config_from_sensitivity(50), "chunk")
+    sentence = apply_segmentation(vad_config_from_sensitivity(50), "sentence")
+    balanced = apply_segmentation(vad_config_from_sensitivity(50), "balanced")
+
+    assert chunk.min_silence_ms == 240
+    assert sentence.min_silence_ms == 900
+    assert sentence.max_utterance_ms == 30_000
+    # Balanced leaves the sensitivity-derived timing untouched.
+    assert balanced.min_silence_ms == base.min_silence_ms
+    assert balanced.max_utterance_ms == base.max_utterance_ms
+    # Unknown segmentation is a no-op, never a crash.
+    assert apply_segmentation(base, "bogus").min_silence_ms == base.min_silence_ms

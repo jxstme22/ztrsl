@@ -50,13 +50,26 @@ const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
 const BAIDU_APPID_KEY = "lst.live.baidu-appid";
 const BAIDU_SECRET_KEY = "lst.live.baidu-secret";
 const CAPTION_MODE_KEY = "lst.live.caption-mode";
+const SEGMENTATION_KEY = "lst.live.segmentation";
 
 /** How the pipeline produces captions: streaming preview vs per-utterance. */
 export type CaptionMode = "streaming" | "final-only";
 
+/** Caption segmentation style: short chunks, balanced, or full sentences. */
+export type Segmentation = "chunk" | "balanced" | "sentence";
+
+const SEGMENTATIONS: readonly Segmentation[] = ["chunk", "balanced", "sentence"];
+
 function loadCaptionMode(): CaptionMode {
   const stored = window.localStorage.getItem(CAPTION_MODE_KEY);
   return stored === "final-only" ? "final-only" : "streaming";
+}
+
+function loadSegmentation(): Segmentation {
+  const stored = window.localStorage.getItem(SEGMENTATION_KEY);
+  return SEGMENTATIONS.includes(stored as Segmentation)
+    ? (stored as Segmentation)
+    : "balanced";
 }
 
 function loadStored(key: string): string | null {
@@ -224,6 +237,9 @@ export function LiveTranslationPanel({
     loadQualityProfileId,
   );
   const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
+  const [segmentation, setSegmentation] = useState<Segmentation>(
+    loadSegmentation,
+  );
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
@@ -480,6 +496,11 @@ export function LiveTranslationPanel({
     window.localStorage.setItem(CAPTION_MODE_KEY, value);
   };
 
+  const changeSegmentation = (value: Segmentation) => {
+    setSegmentation(value);
+    window.localStorage.setItem(SEGMENTATION_KEY, value);
+  };
+
   const changeTranslationProvider = (value: TranslationProvider) => {
     setTranslationProvider(value);
     window.localStorage.setItem(TRANSLATION_PROVIDER_KEY, value);
@@ -586,6 +607,7 @@ export function LiveTranslationPanel({
                     asrProvider,
                     translationProvider,
                     vadSensitivity,
+                    segmentation,
                     activeSources.map((source) => ({
                       sourceId: source.sourceId,
                       endpointId:
@@ -765,8 +787,6 @@ export function LiveTranslationPanel({
           />
         </div>
 
-        <details className="live-advanced">
-          <summary>{t("liveAdvanced")}</summary>
         <div className="field">
           <label htmlFor="live-asr">{t("liveSpeechRecognition")}</label>
           <Select
@@ -980,7 +1000,28 @@ export function LiveTranslationPanel({
           />
           <small className="field-note">{t("liveCaptionModeNote")}</small>
         </div>
-        </details>
+
+        <div className="field">
+          <label htmlFor="live-segmentation">{t("liveSegmentation")}</label>
+          <Select
+            id="live-segmentation"
+            label={t("liveSegmentation")}
+            value={segmentation}
+            disabled={listening || busy}
+            options={SEGMENTATIONS.map((id) => ({
+              value: id,
+              label: t(("liveSegmentation" + id) as UIKey),
+            }))}
+            onChange={(value) => {
+              changeSegmentation(value as Segmentation);
+            }}
+          />
+          <small className="field-note">
+            {t(
+              ("liveSegmentationNote" + segmentation) as UIKey,
+            )}
+          </small>
+        </div>
       </div>
 
       {asrProvider === "groq-whisper" && (

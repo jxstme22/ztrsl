@@ -1230,6 +1230,10 @@ struct LiveStartRequest {
     /// quieter speech as speech and closes utterances sooner.
     #[serde(default = "default_vad_sensitivity")]
     vad_sensitivity: u8,
+    /// Caption segmentation style: "chunk" (short callouts), "balanced"
+    /// (sensitivity-derived), "sentence" (complete sentences).
+    #[serde(default = "default_segmentation")]
+    segmentation: String,
     /// Multi-source mode: one capture per entry, each tagged with its
     /// `source_id` and captioned under its own tag. Empty means the classic
     /// single-channel session driven by `endpoint_id`.
@@ -1239,6 +1243,10 @@ struct LiveStartRequest {
 
 fn default_vad_sensitivity() -> u8 {
     50
+}
+
+fn default_segmentation() -> String {
+    "balanced".to_string()
 }
 
 fn default_target_language() -> String {
@@ -1347,6 +1355,7 @@ struct LiveWorkerConfig {
     loopback: bool,
     monitor_enabled: bool,
     vad_sensitivity: u8,
+    segmentation: String,
     /// Multi-source captures; empty for classic single-channel sessions.
     sources: Vec<LiveSource>,
 }
@@ -1458,6 +1467,7 @@ async fn start_live_translation(
         resource_profile,
         monitor_enabled,
         vad_sensitivity,
+        segmentation,
         sources: request_sources,
     } = request;
     if source_mode != "filipino"
@@ -1534,6 +1544,9 @@ async fn start_live_translation(
     }
     if vad_sensitivity > 100 {
         return Err("vad_sensitivity must be between 0 and 100".to_string());
+    }
+    if !matches!(segmentation.as_str(), "chunk" | "balanced" | "sentence") {
+        return Err("unknown caption segmentation".to_string());
     }
     let endpoints = platform_endpoints(&audio)?;
     let endpoint = endpoints
@@ -1653,6 +1666,7 @@ async fn start_live_translation(
         loopback,
         monitor_enabled,
         vad_sensitivity,
+        segmentation,
         sources,
     };
     tauri::async_runtime::spawn_blocking(move || {
@@ -2393,6 +2407,7 @@ fn run_live_worker(
         loopback,
         monitor_enabled,
         vad_sensitivity,
+        segmentation,
         sources: config_sources,
     } = config;
     let sidecar_config = worker_sidecar_config(&translation_env, bundled.as_ref());
@@ -2411,6 +2426,7 @@ fn run_live_worker(
         &target_language,
         &resource_profile,
         vad_sensitivity,
+        &segmentation,
     ) {
         Ok(detail) => detail,
         Err(error) => {
@@ -2529,6 +2545,7 @@ fn run_live_worker(
                             &target_language,
                             &resource_profile,
                             vad_sensitivity,
+                            &segmentation,
                         )
                         .and_then(|_| {
                             if config_sources.is_empty() {

@@ -88,7 +88,11 @@ from local_squad_inference.scheduler import (
     SchedulerMetrics,
     make_job,
 )
-from local_squad_inference.vad import AudioUtterance, vad_config_from_sensitivity
+from local_squad_inference.vad import (
+    AudioUtterance,
+    apply_segmentation,
+    vad_config_from_sensitivity,
+)
 
 SendJson = Callable[[dict[str, object]], Awaitable[None]]
 
@@ -1649,7 +1653,10 @@ async def handle_connection(
                         asr_provider,
                         translation_provider,
                         source_mode=live_request.source_mode,
-                        vad_config=vad_config_from_sensitivity(live_request.vad_sensitivity),
+                        vad_config=apply_segmentation(
+                            vad_config_from_sensitivity(live_request.vad_sensitivity),
+                            live_request.segmentation,
+                        ),
                         use_silero=live_request.provider != "demo",
                     )
                     live_worker = LivePipelineWorker(

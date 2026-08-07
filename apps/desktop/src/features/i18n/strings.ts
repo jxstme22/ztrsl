@@ -20,6 +20,7 @@ export type UIString = {
 const UI_STRINGS = {
   // Nav
   navLive: { en: "Live", zh: "实时" },
+  navSetup: { en: "Setup", zh: "设置向导" },
   navModels: { en: "Models", zh: "模型" },
   navHistory: { en: "History", zh: "历史" },
   navSources: { en: "Sources", zh: "音频源" },
@@ -387,6 +388,22 @@ const UI_STRINGS = {
   liveCaptionModeNote: {
     en: "Streaming shows a live preview that improves as the speaker continues; final-only waits until the utterance ends and translates the whole chunk once.",
     zh: "流式模式在说话过程中实时预览并逐步修正；仅最终模式等语句说完后一次性翻译整段。",
+  },
+  liveSegmentation: { en: "Caption style", zh: "字幕分段" },
+  liveSegmentationchunk: { en: "Short chunks (fast callouts)", zh: "短句块（快速报点）" },
+  liveSegmentationbalanced: { en: "Balanced (auto)", zh: "均衡（自动）" },
+  liveSegmentationsentence: { en: "Full sentences", zh: "完整句子" },
+  liveSegmentationNotechunk: {
+    en: "Finalizes after a short pause (~0.24 s) — best for quick gaming callouts.",
+    zh: "短暂停顿（约 0.24 秒）后落定——适合快速报点。",
+  },
+  liveSegmentationNotebalanced: {
+    en: "Pause length follows the sensitivity slider.",
+    zh: "停顿长度跟随灵敏度滑块。",
+  },
+  liveSegmentationNotesentence: {
+    en: "Waits for a real pause (~0.9 s) and allows utterances up to 30 s — complete sentences, no mid-phrase cuts.",
+    zh: "等待真正停顿（约 0.9 秒），最长语句 30 秒——完整句子，不会中途截断。",
   },
   liveStopListening: { en: "Stop listening", zh: "停止聆听" },
   liveLoadingModels: { en: "Loading models…", zh: "正在加载模型…" },

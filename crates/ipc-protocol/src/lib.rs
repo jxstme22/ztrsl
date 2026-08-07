@@ -226,10 +226,18 @@ pub struct LiveStartPayload {
     /// quieter speech is treated as speech and utterances close sooner.
     #[serde(default = "default_vad_sensitivity")]
     pub vad_sensitivity: u8,
+    /// Caption segmentation style: "chunk" (short callouts), "balanced"
+    /// (sensitivity-derived), "sentence" (complete sentences).
+    #[serde(default = "default_segmentation")]
+    pub segmentation: String,
 }
 
 pub fn default_vad_sensitivity() -> u8 {
     50
+}
+
+pub fn default_segmentation() -> String {
+    "balanced".to_string()
 }
 
 pub fn default_target_language() -> String {

@@ -303,6 +303,10 @@ class LiveStartPayload(StrictModel):
     ] = "nllb"
     resource_profile: Literal["balanced", "quality"] = "quality"
     vad_sensitivity: int = Field(default=50, ge=0, le=100)
+    # Caption segmentation style: "chunk" (short callouts), "balanced"
+    # (sensitivity-derived), "sentence" (complete sentences). Controls how
+    # long a pause finalizes an utterance.
+    segmentation: Literal["chunk", "balanced", "sentence"] = "balanced"
 
 
 def parse_audio_packet(data: bytes) -> AudioPacket:

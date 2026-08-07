@@ -505,6 +505,7 @@ impl SidecarSupervisor {
         target_language: &str,
         resource_profile: &str,
         vad_sensitivity: u8,
+        segmentation: &str,
     ) -> Result<serde_json::Value, SupervisorError> {
         self.ensure_running()?;
         let request = Envelope {
@@ -521,6 +522,7 @@ impl SidecarSupervisor {
                 target_language: target_language.to_owned(),
                 resource_profile: resource_profile.to_owned(),
                 vad_sensitivity,
+                segmentation: segmentation.to_owned(),
             },
         };
         self.next_sequence = self.next_sequence.saturating_add(1);
@@ -1338,7 +1340,7 @@ mod tests {
         }
         let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
             .expect("live must start");
         let first_session = supervisor.session_id().to_owned();
 
@@ -1361,7 +1363,7 @@ mod tests {
             .expect("restart must re-establish the connection");
         assert_ne!(supervisor.session_id(), first_session);
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
             .expect("live must restart after the crash");
         // A restarted live session routes audio through the real VAD
         // pipeline (not the fake-caption path), so send speech long enough
@@ -1597,7 +1599,7 @@ mod tests {
             ])
             .expect("registry push must succeed");
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
             .expect("live must start");
 
         // Interleave speech and silence on both sources; VAD needs ~450 ms
