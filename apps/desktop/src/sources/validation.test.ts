@@ -7,6 +7,10 @@ import {
   validateSources,
   validateTag,
 } from "./validation";
+import {
+  languageConfigSchema,
+  profileToLanguageConfig,
+} from "./model";
 import type { AudioSourceConfig } from "./model";
 
 function makeSource(
@@ -115,7 +119,7 @@ describe("validateSource", () => {
 describe("validateSources", () => {
   it("collects errors across sources", () => {
     const configs = {
-      schemaVersion: 3 as const,
+      schemaVersion: 4 as const,
       sources: [
         makeSource({ displayName: "  " }),
         makeSource({ captionTag: "T\nEAM" }),
@@ -123,5 +127,89 @@ describe("validateSources", () => {
     };
     const result = validateSources(configs);
     expect(result.errors.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("LanguageConfig validation (DS-201)", () => {
+  it("accepts a valid fixed config", () => {
+    expect(
+      languageConfigSchema.safeParse({
+        primaryLanguage: "zh",
+        secondaryLanguages: [],
+        detectionMode: "fixed",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects fixed/primary_preferred without a primary language", () => {
+    for (const detectionMode of ["fixed", "primary_preferred"]) {
+      expect(
+        languageConfigSchema.safeParse({
+          primaryLanguage: null,
+          secondaryLanguages: [],
+          detectionMode,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects limited_auto without allowed languages", () => {
+    expect(
+      languageConfigSchema.safeParse({
+        primaryLanguage: null,
+        secondaryLanguages: [],
+        detectionMode: "limited_auto",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a primary language duplicated in secondary", () => {
+    expect(
+      languageConfigSchema.safeParse({
+        primaryLanguage: "tl",
+        secondaryLanguages: ["tl", "en"],
+        detectionMode: "primary_preferred",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts full_auto with no hints", () => {
+    expect(
+      languageConfigSchema.safeParse({
+        primaryLanguage: null,
+        secondaryLanguages: [],
+        detectionMode: "full_auto",
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe("profileToLanguageConfig adapter (DS-201)", () => {
+  it("maps every profile deterministically", () => {
+    expect(profileToLanguageConfig("mandarin")).toEqual({
+      primaryLanguage: "zh",
+      secondaryLanguages: [],
+      detectionMode: "fixed",
+    });
+    expect(profileToLanguageConfig("chinese_english")).toEqual({
+      primaryLanguage: "zh",
+      secondaryLanguages: ["en"],
+      detectionMode: "primary_preferred",
+    });
+    expect(profileToLanguageConfig("tagalog")).toEqual({
+      primaryLanguage: "tl",
+      secondaryLanguages: [],
+      detectionMode: "fixed",
+    });
+    expect(profileToLanguageConfig("cebuano")).toEqual({
+      primaryLanguage: "ceb",
+      secondaryLanguages: ["en"],
+      detectionMode: "primary_preferred",
+    });
+    expect(profileToLanguageConfig("auto")).toEqual({
+      primaryLanguage: null,
+      secondaryLanguages: [],
+      detectionMode: "full_auto",
+    });
   });
 });

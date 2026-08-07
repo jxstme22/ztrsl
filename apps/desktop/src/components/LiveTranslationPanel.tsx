@@ -528,6 +528,8 @@ export function LiveTranslationPanel({
                       strictness: source.strictness,
                       labelStyle: source.labelStyle,
                       color: source.color,
+                      sourceOrigin: source.sourceOrigin,
+                      languageConfig: source.languageConfig,
                     })),
                   );
                 })();

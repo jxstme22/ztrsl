@@ -238,6 +238,27 @@ pub fn default_target_language() -> String {
 
 /// One entry of the `source.registry` control (IPC v2 freeze §4.2). The
 /// desktop pushes the full registry right after `live.start` so the sidecar
+/// DS-201: explicit recognition language intent crossing IPC. Validated by
+/// the sidecar; `fixed`/`primary_preferred` require a primary language and
+/// `limited_auto` requires at least one allowed language.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LanguageConfig {
+    pub primary_language: Option<String>,
+    #[serde(default)]
+    pub secondary_languages: Vec<String>,
+    #[serde(default = "default_detection_mode")]
+    pub detection_mode: String,
+}
+
+fn default_detection_mode() -> String {
+    "full_auto".to_owned()
+}
+
+/// DS-200: audio origin for policy selection. Never replaces the capture
+/// endpoint; users can always edit it.
+pub const DEFAULT_SOURCE_ORIGIN: &str = "virtual_voice_channel";
+
 /// can resolve `source.presentation.update` targets.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SourceRegistryEntry {
@@ -253,6 +274,16 @@ pub struct SourceRegistryEntry {
     /// the final/provisional tiers. Never derived from names or tags.
     #[serde(default = "default_source_priority")]
     pub priority: u32,
+    /// DS-200: audio origin; defaulted so older v2 payloads still parse.
+    #[serde(default = "default_source_origin")]
+    pub source_origin: String,
+    /// DS-201: explicit language configuration (optional, older payloads).
+    #[serde(default)]
+    pub language_config: Option<LanguageConfig>,
+}
+
+fn default_source_origin() -> String {
+    DEFAULT_SOURCE_ORIGIN.to_owned()
 }
 
 fn default_source_priority() -> u32 {

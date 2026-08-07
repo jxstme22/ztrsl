@@ -9,7 +9,7 @@ type PersistedSource = {
 };
 
 function readPersistedSources(): PersistedSource[] {
-  const raw = window.localStorage.getItem("local-squad-translator.sources.v3");
+  const raw = window.localStorage.getItem("local-squad-translator.sources.v4");
   const parsed = JSON.parse(raw ?? "{}") as {
     sources: PersistedSource[];
   };

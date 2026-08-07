@@ -1,6 +1,7 @@
 import asyncio
 import json
 import math
+import threading
 import time
 import wave
 from array import array
@@ -343,6 +344,108 @@ def test_worker_survives_slow_inference_with_bounded_drops() -> None:
     assert dropped > 0
 
 
+def test_worker_metrics_report_zero_loss_on_normal_operation() -> None:
+    class FastPipeline:
+        def feed_utterances(self, _packet: AudioPacket) -> tuple[()]:
+            return ()
+
+        def infer_utterances(self, utterances: list[object]) -> tuple[()]:
+            return ()
+
+        def flush_utterances(self) -> tuple[()]:
+            return ()
+
+        def flush(self) -> tuple[()]:
+            return ()
+
+        def note_utterances_dropped(self, count: int) -> None:
+            pass
+
+        def provisional_utterance(self, _source_key: object = None) -> None:
+            return None
+
+    worker = LivePipelineWorker(FastPipeline(), max_pending=8)  # type: ignore[arg-type]
+    for sequence in range(1, 7):
+        worker.submit(
+            AudioPacket(
+                session_id=b"0123456789abcdef",
+                sequence=sequence,
+                capture_monotonic_ns=sequence * 20_000_000,
+                sample_rate=16_000,
+                channels=1,
+                flags=0,
+                samples=(0.1,) * 5120,
+            )
+        )
+    deadline = time.monotonic() + 2.0
+    while True:
+        metrics = worker.worker_queue_metrics()
+        if metrics.packets_consumed == 6:
+            break
+        assert time.monotonic() < deadline, "worker never consumed the packets"
+        time.sleep(0.02)
+    worker.stop()
+    metrics = worker.worker_queue_metrics()
+    assert metrics.packets_submitted == 6
+    assert metrics.packets_consumed == 6
+    assert metrics.packets_dropped == 0
+    assert metrics.max_queue_depth >= 1
+
+
+def test_worker_counts_raw_packet_drops_under_overload() -> None:
+    class BlockingPipeline:
+        def __init__(self) -> None:
+            self.release = threading.Event()
+
+        def feed_utterances(self, _packet: AudioPacket) -> tuple[()]:
+            # Simulate a stalled VAD consumer so the bounded input queue
+            # overflows; releases on the test's signal.
+            self.release.wait(timeout=3.0)
+            return ()
+
+        def infer_utterances(self, utterances: list[object]) -> tuple[()]:
+            return ()
+
+        def flush_utterances(self) -> tuple[()]:
+            return ()
+
+        def flush(self) -> tuple[()]:
+            return ()
+
+        def note_utterances_dropped(self, count: int) -> None:
+            pass
+
+        def provisional_utterance(self, _source_key: object = None) -> None:
+            return None
+
+    pipeline = BlockingPipeline()
+    worker = LivePipelineWorker(pipeline, max_pending=4)  # type: ignore[arg-type]
+    for sequence in range(1, 13):
+        worker.submit(
+            AudioPacket(
+                session_id=b"0123456789abcdef",
+                sequence=sequence,
+                capture_monotonic_ns=sequence * 20_000_000,
+                sample_rate=16_000,
+                channels=1,
+                flags=0,
+                samples=(0.1,) * 5120,
+            )
+        )
+    time.sleep(0.2)
+    metrics = worker.worker_queue_metrics()
+    assert metrics.packets_dropped > 0
+    assert metrics.packets_submitted == 12
+    assert metrics.packets_consumed + metrics.packets_dropped <= 12
+    pipeline.release.set()
+    worker.stop()
+    # Accounting stays consistent: nothing disappears.
+    final = worker.worker_queue_metrics()
+    assert final.packets_submitted == 12
+    assert final.packets_consumed + final.packets_dropped == 12
+    assert final.max_queue_depth <= 4
+
+
 @dataclass
 class FakeUtterance:
     sequence: int
@@ -367,7 +470,7 @@ def test_worker_delivers_results_in_order_and_never_blocks() -> None:
         def note_utterances_dropped(self, count: int) -> None:
             pass
 
-        def provisional_utterance(self) -> None:
+        def provisional_utterance(self, _source_key: object = None) -> None:
             return None
 
     worker = LivePipelineWorker(EmittingPipeline(), max_pending=4, num_inference=1)  # type: ignore[arg-type]
@@ -418,7 +521,7 @@ def test_worker_vad_stays_realtime_while_inference_is_slow() -> None:
         def note_utterances_dropped(self, count: int) -> None:
             pass
 
-        def provisional_utterance(self) -> None:
+        def provisional_utterance(self, _source_key: object = None) -> None:
             return None
 
     pipeline = SlowInferPipeline()

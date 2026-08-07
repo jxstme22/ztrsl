@@ -1256,6 +1256,14 @@ struct LiveSourceRequest {
     color: Option<String>,
     #[serde(default = "default_source_priority")]
     priority: u32,
+    #[serde(default = "default_source_origin_value")]
+    source_origin: String,
+    #[serde(default)]
+    language_config: Option<ipc_protocol::LanguageConfig>,
+}
+
+fn default_source_origin_value() -> String {
+    ipc_protocol::DEFAULT_SOURCE_ORIGIN.to_owned()
 }
 
 fn default_source_strictness() -> String {
@@ -1284,6 +1292,8 @@ struct LiveSource {
     label_style: String,
     color: Option<String>,
     priority: u32,
+    source_origin: String,
+    language_config: Option<ipc_protocol::LanguageConfig>,
 }
 
 impl LiveSource {
@@ -1308,6 +1318,8 @@ impl LiveSource {
             },
             color: self.color.clone(),
             priority: self.priority,
+            source_origin: self.source_origin.clone(),
+            language_config: self.language_config.clone(),
         }
     }
 }
@@ -1607,6 +1619,8 @@ async fn start_live_translation(
                 label_style: source.label_style.clone(),
                 color: source.color.clone(),
                 priority: source.priority,
+                source_origin: source.source_origin.clone(),
+                language_config: source.language_config.clone(),
             });
         }
         resolved

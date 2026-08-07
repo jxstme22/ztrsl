@@ -17,9 +17,15 @@ from local_squad_inference.providers import (
 
 
 class FakeSegment:
-    def __init__(self, text: str, no_speech_prob: float = 0.0) -> None:
+    def __init__(
+        self,
+        text: str,
+        no_speech_prob: float = 0.0,
+        avg_logprob: float | None = None,
+    ) -> None:
         self.text = text
         self.no_speech_prob = no_speech_prob
+        self.avg_logprob = avg_logprob
 
 
 def test_is_hallucination_matches_known_phrases() -> None:
@@ -42,6 +48,45 @@ def test_keep_asr_segment_drops_non_speech_and_hallucinations() -> None:
     assert keep_asr_segment(FakeSegment("", no_speech_prob=0.0)) is False
     assert keep_asr_segment(FakeSegment("let's go", no_speech_prob=0.95)) is False
     assert keep_asr_segment(FakeSegment("push now", no_speech_prob=0.1)) is True
+
+
+def test_keep_asr_segment_joint_no_speech_decision() -> None:
+    # High no_speech_prob with STRONG logprob is confident speech: keep.
+    assert (
+        keep_asr_segment(
+            FakeSegment("rotate B, they are on A", no_speech_prob=0.95, avg_logprob=-0.2)
+        )
+        is True
+    )
+    # High no_speech_prob with POOR logprob is noise: drop.
+    assert keep_asr_segment(FakeSegment("let's go", no_speech_prob=0.95, avg_logprob=-1.5)) is False
+    # Short high-confidence Chinese text survives.
+    assert keep_asr_segment(FakeSegment("上A点", no_speech_prob=0.3, avg_logprob=-0.1)) is True
+    # One-word tactical speech survives.
+    assert keep_asr_segment(FakeSegment("rush", no_speech_prob=0.2, avg_logprob=-0.4)) is True
+    # Normal speech with punctuation survives.
+    assert (
+        keep_asr_segment(
+            FakeSegment("Rotate A, they're on B.", no_speech_prob=0.4, avg_logprob=-0.3)
+        )
+        is True
+    )
+    # Exact hallucination phrases are dropped even with a strong logprob.
+    assert (
+        keep_asr_segment(
+            FakeSegment("Thank you for watching", no_speech_prob=0.1, avg_logprob=-0.2)
+        )
+        is False
+    )
+    # Non-finite metrics are never trusted.
+    assert (
+        keep_asr_segment(FakeSegment("hello", no_speech_prob=float("nan"), avg_logprob=-0.2))
+        is False
+    )
+    assert (
+        keep_asr_segment(FakeSegment("hello", no_speech_prob=0.2, avg_logprob=float("inf")))
+        is False
+    )
 
 
 class FakeTranslator:

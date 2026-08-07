@@ -1,13 +1,14 @@
 import { sourceConfigsSchema, type SourceConfigs } from "./model";
-import { migrateFromV02 } from "./migration";
+import { migrateFromV02, migrateFromV03 } from "./migration";
 import { loadOverlaySettings } from "../overlay/storage";
 
 /**
- * Schema v3 persistence (spec §1.4). Separate key from overlay settings:
- * overlay placement/hotkeys stay versioned independently.
+ * Schema v4 persistence (spec §1.4, DS-204). v3 documents under the legacy
+ * key are migrated on load; the generated source ids stay stable.
  */
 
-export const SOURCE_CONFIGS_KEY = "local-squad-translator.sources.v3";
+export const SOURCE_CONFIGS_KEY = "local-squad-translator.sources.v4";
+const LEGACY_V3_KEY = "local-squad-translator.sources.v3";
 
 export function loadSourceConfigs(
   storage: Pick<Storage, "getItem" | "setItem"> = window.localStorage,
@@ -26,7 +27,24 @@ export function loadSourceConfigs(
     }
   }
 
-  // First run (or corrupt v3 payload): migrate from v0.2 state and persist so
+  // v3 payload under the legacy key: migrate it (DS-204) and persist.
+  const legacy = storage.getItem(LEGACY_V3_KEY);
+  if (legacy !== null) {
+    try {
+      const parsed: unknown = JSON.parse(legacy);
+      const v3 = sourceConfigsSchema.safeParse(
+        migrateFromV03(parsed as SourceConfigs),
+      );
+      if (v3.success) {
+        storage.setItem(SOURCE_CONFIGS_KEY, JSON.stringify(v3.data));
+        return v3.data;
+      }
+    } catch {
+      // fall through to v0.2 migration
+    }
+  }
+
+  // First run (or corrupt payload): migrate from v0.2 state and persist so
   // the generated source id stays stable across restarts.
   const overlay = loadOverlaySettings(storage);
   const { configs } = migrateFromV02(null, overlay);

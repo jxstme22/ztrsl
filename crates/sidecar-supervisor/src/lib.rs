@@ -15,7 +15,7 @@ use ipc_protocol::{
     CaptionPayload, CaptionStrictness, ClipComparePayload, ClipProcessPayload, ClipResultPayload,
     Envelope, HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
     SourceControlPayload, SourcePresentationUpdatePayload, SourceRegistryEntry,
-    SourceRegistryPayload, SourceSnapshot, source_id_from_hex,
+    SourceRegistryPayload, SourceSnapshot, DEFAULT_SOURCE_ORIGIN, source_id_from_hex,
 };
 use thiserror::Error;
 use tungstenite::{Message, WebSocket};
@@ -347,6 +347,8 @@ impl SidecarSupervisor {
                 label_style: CaptionLabelStyle::Brackets,
                 color: team_snapshot.color.clone(),
                 priority: 200,
+                source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                language_config: None,
             },
             SourceRegistryEntry {
                 source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -361,6 +363,8 @@ impl SidecarSupervisor {
                 label_style: CaptionLabelStyle::Brackets,
                 color: discord_snapshot.color.clone(),
                 priority: 100,
+                source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                language_config: None,
             },
         ])?;
 
@@ -1281,6 +1285,7 @@ mod tests {
     };
     use ipc_protocol::{
         CaptionLabelStyle, CaptionPayload, CaptionStrictness, Envelope, SourceRegistryEntry,
+        DEFAULT_SOURCE_ORIGIN,
     };
     use std::time::Duration;
 
@@ -1570,6 +1575,8 @@ mod tests {
                     label_style: CaptionLabelStyle::Brackets,
                     color: Some("#7dd3fc".to_owned()),
                     priority: 200,
+                    source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                    language_config: None,
                 },
                 SourceRegistryEntry {
                     source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -1584,6 +1591,8 @@ mod tests {
                     label_style: CaptionLabelStyle::Brackets,
                     color: Some("#fda4af".to_owned()),
                     priority: 100,
+                    source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                    language_config: None,
                 },
             ])
             .expect("registry push must succeed");

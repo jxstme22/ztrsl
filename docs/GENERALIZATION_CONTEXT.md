@@ -145,10 +145,25 @@ stamped with per-source tag/color/language profile (`source.registry`).
 - [x] DS-003 — benchmark fixture schema
 - [x] DS-100 — language-routing regression tests (11 tests, failing first)
 - [x] DS-101 — explicit profile→source-mode table (no silent Filipino fallback)
+- [x] DS-102 — joint no-speech segment-filter tests (confident speech kept)
+- [x] DS-103 — joint no-speech decision (`no_speech_prob` AND poor logprob)
+- [x] DS-104 — worker queue instrumentation (submitted/consumed/dropped/max
+  depth + provisional/final job drops), exposed via `scheduler.metrics`
+- [x] DS-105 — overload shed: provisionals suppressed at queue high-water
+  before raw audio eviction; raw drops counted; finals never suppressed
+- [x] DS-200 — `sourceOrigin` enum (desktop schema v4, sidecar protocol,
+  Rust registry entry; default `virtual_voice_channel`)
+- [x] DS-201 — `LanguageConfig` (fixed/primary_preferred/limited_auto/
+  full_auto) with validation + profile adapter, crossing desktop ↔ IPC
+- [x] DS-202 — data-only domain preset catalog (8 presets, zod-validated)
+- [x] DS-203 — quality profiles (fast/balanced/best_quality/low_memory)
+  with persisted selection
+- [x] DS-204 — source settings v3→v4 migration (adds sourceOrigin +
+  languageConfig, preserves everything, idempotent)
 
 ## Next task
 
-DS-102 — tests for Whisper segment filtering (joint no-speech decision).
+DS-300 — per-source audio health metrics (Phase 3).
 
 ## Decisions that must not be reversed
 

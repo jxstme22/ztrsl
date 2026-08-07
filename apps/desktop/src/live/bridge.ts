@@ -63,6 +63,12 @@ export type LiveSourceRequest = {
   labelStyle?: string;
   color?: string | null;
   priority?: number;
+  sourceOrigin?: string;
+  languageConfig?: {
+    primaryLanguage: string | null;
+    secondaryLanguages: string[];
+    detectionMode: string;
+  } | null;
 };
 
 export async function startLiveTranslation(

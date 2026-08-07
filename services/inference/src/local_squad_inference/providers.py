@@ -77,10 +77,14 @@ HALLUCINATION_PHRASES: frozenset[str] = frozenset(
     }
 )
 
-# Faster-whisper reports per-segment no_speech_prob; segments above this are
-# overwhelmingly not speech (silence, clicks, fan noise) and only feed the
-# hallucination patterns above.
+# Faster-whisper reports per-segment no_speech_prob; a high value alone is
+# NOT enough to drop a segment — confident speech (strong avg_logprob) can
+# legitimately score high on noisy but speechy audio. The joint decision
+# drops only when BOTH no_speech_prob is high AND the logprob is poor.
+# Segments without a logprob (absent field) default to "poor" so the
+# conservative drop still applies.
 NO_SPEECH_PROB_LIMIT = 0.6
+STRONG_LOGPROB_LIMIT = -0.5
 
 
 def is_hallucination(text: str) -> bool:
@@ -91,15 +95,25 @@ def is_hallucination(text: str) -> bool:
 def keep_asr_segment(segment: object) -> bool:
     """Drop empty, non-speech, and pure-hallucination ASR segments.
 
-    ``segment`` is any object exposing ``text`` (whisper-style) and an
-    optional ``no_speech_prob``; kept separate so it can be unit-tested
-    without loading whisper.
+    ``segment`` is any object exposing ``text`` (whisper-style) plus
+    optional ``no_speech_prob``/``avg_logprob``; kept separate so it can be
+    unit-tested without loading whisper. A segment is dropped when:
+
+    - the text is empty;
+    - ``no_speech_prob`` is high AND ``avg_logprob`` is poor (joint noise
+      decision, DS-103) — confident speech survives;
+    - the text is an exact known hallucination phrase;
+    - either metric is non-finite (never trusted).
     """
     text = str(getattr(segment, "text", "") or "").strip()
     if not text:
         return False
     no_speech_prob = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
-    if no_speech_prob >= NO_SPEECH_PROB_LIMIT:
+    raw_logprob = getattr(segment, "avg_logprob", None)
+    avg_logprob = -1.0 if raw_logprob is None else float(raw_logprob or -1.0)
+    if not math.isfinite(no_speech_prob) or not math.isfinite(avg_logprob):
+        return False
+    if no_speech_prob >= NO_SPEECH_PROB_LIMIT and avg_logprob < STRONG_LOGPROB_LIMIT:
         return False
     return not is_hallucination(text)
 

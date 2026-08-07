@@ -677,6 +677,26 @@ def fake_captions_v2(
     )
 
 
+@dataclass(frozen=True)
+class WorkerQueueMetrics:
+    """Session-wide raw-audio + inference-job accounting (DS-104).
+
+    ``packets_dropped`` counts raw audio evicted from the bounded input
+    queue (latest-wins under overload); supported load reports zero.
+    ``provisionals_suppressed`` counts provisional jobs skipped by the
+    DS-105A overload shed before any raw audio is evicted.
+    """
+
+    packets_submitted: int
+    packets_consumed: int
+    packets_dropped: int
+    max_queue_depth: int
+    provisionals_suppressed: int
+    provisionals_dropped: int
+    finals_dropped: int
+    overload_events: int
+
+
 class LivePipelineWorker:
     """Runs the pipeline so the websocket handler never blocks on inference.
 
@@ -732,6 +752,14 @@ class LivePipelineWorker:
         )
         self._results: queue.Queue[tuple[CaptionPayload, ...] | Exception] = queue.Queue()
         self._dropped_packets = 0
+        self._packets_submitted = 0
+        self._packets_consumed = 0
+        self._max_queue_depth = 0
+        # DS-105A: when the raw packet queue is near-full (the VAD thread is
+        # falling behind), new provisional jobs are suppressed before raw
+        # audio is ever evicted. Finals are never suppressed.
+        self._provisional_high_water = max(2, max_pending - 2)
+        self._provisionals_suppressed = 0
         self._stopped = False
         self._thread = threading.Thread(
             target=self._run_vad,
@@ -753,6 +781,10 @@ class LivePipelineWorker:
     def submit(self, packet: AudioPacket | AudioPacketV2) -> None:
         # Latest-wins: when the VAD is behind, keep the most recent audio
         # (the speech that is happening right now) instead of the oldest.
+        # Raw drops are counted and only happen after provisional jobs are
+        # suppressed (DS-105A) — supported load never evicts raw audio.
+        self._packets_submitted += 1
+        self._max_queue_depth = max(self._max_queue_depth, self._input.qsize())
         while True:
             try:
                 self._input.put_nowait(packet)
@@ -763,6 +795,22 @@ class LivePipelineWorker:
                 except queue.Empty:
                     return
                 self._dropped_packets += 1
+
+    def worker_queue_metrics(self) -> WorkerQueueMetrics:
+        """Session-wide raw-audio queue + inference-job accounting. Every
+        dropped packet is measurable here; supported load reports zero
+        raw drops (DS-104/DS-105)."""
+        scheduler = self._scheduler.metrics()
+        return WorkerQueueMetrics(
+            packets_submitted=self._packets_submitted,
+            packets_consumed=self._packets_consumed,
+            packets_dropped=self._dropped_packets,
+            max_queue_depth=self._max_queue_depth,
+            provisionals_suppressed=self._provisionals_suppressed,
+            provisionals_dropped=scheduler.provisionals_dropped,
+            finals_dropped=scheduler.finals_dropped,
+            overload_events=scheduler.overload_events,
+        )
 
     def poll(self) -> tuple[CaptionPayload, ...] | Exception | None:
         try:
@@ -906,6 +954,7 @@ class LivePipelineWorker:
             self._drain_controls()
             if packet is None:
                 break
+            self._packets_consumed += 1
             try:
                 utterances = self._pipeline.feed_utterances(packet)
             except Exception as error:  # surfaced to the client as live.error
@@ -933,8 +982,14 @@ class LivePipelineWorker:
                 due_ns = next_provisional_at_ns.get(source_key)
                 due = due_ns is None or now_ns >= due_ns
                 if speech_elapsed_ns >= PROVISIONAL_MIN_SPEECH_NS and due:
-                    self._enqueue_provisional(snapshot)
-                    next_provisional_at_ns[source_key] = now_ns + PROVISIONAL_CADENCE_NS
+                    if self._input.qsize() >= self._provisional_high_water:
+                        # DS-105A overload shed: the VAD thread is falling
+                        # behind; skip the provisional job (counted) so raw
+                        # audio is not evicted. Finals still schedule.
+                        self._provisionals_suppressed += 1
+                    else:
+                        self._enqueue_provisional(snapshot)
+                        next_provisional_at_ns[source_key] = now_ns + PROVISIONAL_CADENCE_NS
             else:
                 next_provisional_at_ns[source_key] = None
         self._drain_controls()
@@ -1512,13 +1567,17 @@ async def handle_connection(
                     )
                     continue
                 scheduler_metrics = await asyncio.to_thread(live_worker.scheduler_metrics)
+                queue_metrics = await asyncio.to_thread(live_worker.worker_queue_metrics)
                 await connection.send(
                     json.dumps(
                         envelope(
                             "scheduler.metrics",
                             control.message_id,
                             control.session_id,
-                            asdict(scheduler_metrics),
+                            {
+                                "scheduler": asdict(scheduler_metrics),
+                                "queue": asdict(queue_metrics),
+                            },
                             version=negotiated_version,
                         )
                     )
