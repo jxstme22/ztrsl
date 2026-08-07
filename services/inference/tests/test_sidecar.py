@@ -870,3 +870,59 @@ def test_model_artifact_dir_resolves_both_layouts(tmp_path: Path) -> None:
     os.environ["LST_MODEL_DIR"] = str(rust_layout)
     assert _model_artifact_dir("missing-model") == (rust_layout / "artifacts" / "missing-model")
     _model_artifact_dir.cache_clear()
+
+
+def test_worker_skips_provisionals_when_disabled() -> None:
+    """provisionals=False (remote ASR) must never schedule a provisional
+    decode — each would be an HTTP round trip per ~600 ms of speech,
+    flooding the API and starving finals."""
+
+    class SnapshotUtterance(FakeUtterance):
+        started_ns: int = 0
+        ended_ns: int = 10_000_000_000
+        is_final: bool = False
+
+    class ProvisionalPipeline:
+        def __init__(self) -> None:
+            self.snapshot = SnapshotUtterance(
+                sequence=0, utterance_id="prov", source_id=None
+            )
+
+        def feed_utterances(self, packet: AudioPacket) -> list[FakeUtterance]:
+            return []
+
+        def infer_utterances(self, utterances: list[FakeUtterance]) -> tuple[FakeUtterance, ...]:
+            return tuple(utterances)
+
+        def provisional_utterance(self, source_id: str | None = None) -> SnapshotUtterance:
+            return self.snapshot
+
+    disabled = LivePipelineWorker(
+        ProvisionalPipeline(),  # type: ignore[arg-type]
+        max_pending=8,
+        num_inference=1,
+        provisionals=False,
+    )
+    for sequence in range(1, 80):  # ~25 s of speech — many provisional windows
+        disabled.submit(
+            AudioPacket(
+                session_id=b"0123456789abcdef",
+                sequence=sequence,
+                capture_monotonic_ns=sequence * 20_000_000,
+                sample_rate=16_000,
+                channels=1,
+                flags=0,
+                samples=(0.1,) * 5120,
+            )
+        )
+        time.sleep(0.005)
+    time.sleep(0.5)
+    saw: list[str] = []
+    while True:
+        result = disabled.poll()
+        if result is None:
+            break
+        if not isinstance(result, Exception):
+            saw.extend(getattr(item, "utterance_id", "") for item in result)
+    disabled.stop()
+    assert "prov" not in saw
