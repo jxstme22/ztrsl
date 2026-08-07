@@ -529,7 +529,7 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
         {state.step !== "saved" && (
           <button
             type="button"
-            className="button"
+            className="button btn-shine"
             disabled={!canNext}
             onClick={() => {
               dispatch({ type: "next" });

@@ -343,7 +343,7 @@ export function ControlApp() {
             </p>
             <div className="lst-modal-actions">
               <button
-                className="button primary"
+                className="button primary btn-shine"
                 type="button"
                 autoFocus
                 onClick={() => { resolveStop(true); }}

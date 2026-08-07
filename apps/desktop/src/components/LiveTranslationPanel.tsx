@@ -567,7 +567,7 @@ export function LiveTranslationPanel({
           </button>
         ) : (
           <button
-            className="button primary live-start"
+            className="button primary live-start btn-shine"
             type="button"
             disabled={!canStart}
             aria-busy={busy}

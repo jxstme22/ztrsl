@@ -441,7 +441,7 @@ function ModelCard({
         ) : (
           <button
             type="button"
-            className={`button primary ${instantiating ? "disabled" : ""}`}
+            className={`button primary btn-shine ${instantiating ? "disabled" : ""}`}
             disabled={instantiating}
             onClick={() => {
               onInstallClick(model);

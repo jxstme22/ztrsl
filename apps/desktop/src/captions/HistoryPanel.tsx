@@ -334,7 +334,7 @@ export function HistoryPanel({
             )}
           </div>
 
-          <div className="history-menu-anchor">
+          <div className="history-menu-anchor history-menu-anchor-right">
             <button
               className="button quiet history-toolbar-button"
               type="button"

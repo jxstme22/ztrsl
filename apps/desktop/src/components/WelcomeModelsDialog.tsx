@@ -69,7 +69,7 @@ function ChoiceRow({
         ) : (
           <button
             type="button"
-            className="button primary"
+            className="button primary btn-shine"
             onClick={() => {
               onInstall(model.id);
             }}

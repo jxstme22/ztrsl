@@ -196,7 +196,7 @@ export function AccuracyLabPanel() {
 
       <div className="action-row">
         <button
-          className="button primary"
+          className="button primary btn-shine"
           type="button"
           disabled={path === null || chosen.length === 0 || state === "running"}
           aria-busy={state === "running"}

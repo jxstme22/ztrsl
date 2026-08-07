@@ -52,6 +52,11 @@
   --accent: #7dd3fc;
   --focus-ring: rgba(12, 16, 26, 0.45);
   --primary: #dc4d5e;
+  /* CTA buttons: orange shading on dark, blue gradient on light. */
+  --cta-gradient: linear-gradient(180deg, #ff7a1a, #ff5c00);
+  --cta-ring: rgba(255, 92, 0, 0.5);
+  --cta-glow: rgba(255, 92, 0, 0.35);
+  --cta-glow-strong: rgba(255, 92, 0, 0.55);
   /* Solid popups (select listbox, color picker) and the modal. */
   --popup: rgba(22, 22, 26, 0.97);
   --modal-backdrop: rgba(8, 10, 14, 0.55);
@@ -95,6 +100,10 @@
   --accent: #0284c7;
   --focus-ring: rgba(22, 26, 34, 0.28);
   --primary: #dc4d5e;
+  --cta-gradient: linear-gradient(180deg, #3b82f6, #2563eb);
+  --cta-ring: rgba(29, 78, 216, 0.4);
+  --cta-glow: rgba(37, 99, 235, 0.3);
+  --cta-glow-strong: rgba(59, 130, 246, 0.4);
   --popup: rgba(255, 255, 255, 0.97);
   --modal-backdrop: rgba(10, 12, 18, 0.32);
   --modal: #f5f6fa;
@@ -409,9 +418,12 @@ select:disabled {
 }
 
 .nav-button.active {
-  background: var(--glass-strong);
-  border-color: var(--stroke);
-  color: var(--fg-strong);
+  background: var(--cta-gradient);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 1px var(--cta-ring),
+    0 4px 12px -2px var(--cta-glow);
 }
 
 /* Content column */
@@ -536,6 +548,77 @@ select:disabled {
 .button.quiet:hover:not(:disabled) {
   background: var(--glass);
   border-color: var(--stroke);
+}
+
+/* CTA buttons: vertical gradient, soft colored glow, ring outline and a
+   diagonal shine sweep on hover. Blue in the light theme, orange shading in
+   the dark theme (via --cta-* variables). */
+.btn-shine,
+.button.btn-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--cta-gradient);
+  border: 0;
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow:
+    0 0 0 1px var(--cta-ring),
+    0 4px 12px -2px var(--cta-glow);
+  transition:
+    box-shadow 150ms ease,
+    filter 150ms ease,
+    transform 60ms ease;
+}
+
+.btn-shine:hover:not(:disabled),
+.button.btn-shine:hover:not(:disabled) {
+  background: var(--cta-gradient);
+  box-shadow:
+    0 0 0 1px var(--cta-ring),
+    0 8px 18px -2px var(--cta-glow-strong);
+  filter: brightness(1.1);
+}
+
+.btn-shine:active:not(:disabled),
+.button.btn-shine:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-shine svg {
+  transition: transform 150ms ease;
+}
+
+.btn-shine:hover:not(:disabled) svg {
+  transform: translateX(2px);
+}
+
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgb(255 255 255 / 0.5) 50%,
+    transparent 62%
+  );
+  transform: translateX(-130%);
+  transition: transform 550ms ease;
+}
+
+.btn-shine:hover:not(:disabled)::after {
+  transform: translateX(130%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-shine::after {
+    display: none;
+  }
 }
 
 .pill {
@@ -2517,6 +2600,13 @@ input[type="range"]::-moz-range-thumb {
 
 .history-menu[aria-expanded] {
   display: flex;
+}
+
+/* Right-edge toolbar menus (e.g. Settings) open leftward so they stay
+   inside the card. */
+.history-menu-anchor-right .history-menu {
+  left: auto;
+  right: 0;
 }
 
 .history-menu-row {
