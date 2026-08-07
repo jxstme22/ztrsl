@@ -1,5 +1,22 @@
 # 23 — Release Notes
 
+## v0.7.4 — live-pipeline performance fixes (provisional throttling)
+
+- **Remote ASR decodes once per utterance** — Groq/NVIDIA previously ran a
+  provisional ASR+translation job every ~600 ms of speech (~19 HTTP calls
+  per 12 s callout, ~1.1 s ASR + ~0.8 s Riva each), flooding the APIs,
+  hitting rate limits, and delaying the final caption by tens of seconds.
+  Cloud providers now mark `provisional_supported = False`; the worker
+  decodes the completed utterance once. Local ASR is unchanged.
+- **Per-utterance provisional latch for local ASR** — the 600 ms cadence
+  assumes tens-of-ms decodes; whisper-large-v3-turbo int8 on CPU takes
+  ~1 s, so phrases stacked stale provisional decodes ahead of the final
+  (captions froze mid-phrase, CPU pegged). At most one provisional per
+  utterance is now queued or decoding, so the cadence self-adapts to the
+  ASR's real cost. Finals still jump the queue.
+- Regression tests: cloud ASR never schedules provisionals; slow local
+  ASR keeps streaming but never stacks more than one decode per utterance.
+
 ## v0.7.3 — working free endpoints (Parakeet / Riva / Baidu) on main
 
 - **NVIDIA ASR trimmed to what the free tier actually serves** — the Live
