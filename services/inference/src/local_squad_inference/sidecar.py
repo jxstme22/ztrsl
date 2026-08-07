@@ -51,6 +51,7 @@ from local_squad_inference.protocol import (
     HelloPayload,
     LiveStartPayload,
     SourceControlPayload,
+    SourceMode,
     SourcePresentationUpdatePayload,
     SourceRegistryEntry,
     SourceRegistryPayload,
@@ -95,14 +96,34 @@ logger = logging.getLogger("local_squad_inference.sidecar")
 
 def profile_source_mode(
     language_profile: str,
-) -> Literal["filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"]:
-    """Map a registry language profile to the ASR source mode. Only Chinese
-    diverges today; Filipino-family profiles (filipino/tagalog/cebuano) all
-    use the Filipino ASR mode. Per-source strictness and filters land in a
-    later phase."""
-    if language_profile == "chinese":
-        return "chinese"
-    return "filipino"
+) -> SourceMode | None:
+    """Map a registry language profile to the ASR source mode.
+
+    One explicit table (DEC-001): a profile either maps to its own source
+    mode or stays unconstrained (``None``) — it never silently falls back
+    to an unrelated language. ``auto`` and unknown profiles return ``None``
+    so the session's source mode (or the provider's own detection) applies.
+    ``chinese_english`` maps to ``mixed`` (primary-preferred, never
+    Filipino). Filipino-family profiles share the Filipino ASR mode until a
+    dedicated decoder mode exists.
+    """
+    return PROFILE_SOURCE_MODES.get(language_profile)
+
+
+PROFILE_SOURCE_MODES: dict[str, SourceMode] = {
+    "mandarin": "chinese",
+    "chinese": "chinese",
+    "chinese_english": "mixed",
+    "tagalog": "filipino",
+    "taglish": "filipino",
+    "cebuano": "filipino",
+    "bislish": "filipino",
+    "english": "english",
+    "indonesian": "indonesian",
+    "vietnamese": "vietnamese",
+    "thai": "thai",
+    "malay": "malay",
+}
 
 
 def _priority_of_source(

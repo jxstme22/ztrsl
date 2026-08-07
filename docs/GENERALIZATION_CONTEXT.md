@@ -53,10 +53,24 @@ auto-detect), display label, description, and recommended strictness.
 
 ### Profile → ASR source mode (sidecar `sidecar.py::profile_source_mode`)
 
-Only `chinese` maps to the Chinese source mode; every other profile
-(including `auto` and `chinese_english`) currently maps to `filipino`.
-This is the DS-100/DS-101 defect: unknown/auto profiles silently select an
-unrelated language.
+One explicit table `PROFILE_SOURCE_MODES` (DS-101):
+`mandarin`/`chinese` → `chinese`; `chinese_english` → `mixed`;
+`tagalog`/`taglish`/`cebuano`/`bislish` → `filipino`;
+`english`/`indonesian`/`vietnamese`/`thai`/`malay` → their own mode;
+`auto` and unknown profiles → `None` (unconstrained, never Filipino — DEC-001).
+
+## Completed tasks
+
+- [x] DS-000 — implementation branch created, baseline recorded
+- [x] DS-001 — canonical verification commands discovered, baseline run
+- [x] DS-002 — behavior inventory recorded
+- [x] DS-003 — benchmark fixture schema
+- [x] DS-100 — language-routing regression tests (11 tests, failing first)
+- [x] DS-101 — explicit profile→source-mode table (no silent Filipino fallback)
+
+## Next task
+
+DS-102 — tests for Whisper segment filtering (joint no-speech decision).
 
 ### ASR providers (`services/inference/src/local_squad_inference/providers.py`)
 
@@ -129,10 +143,12 @@ stamped with per-source tag/color/language profile (`source.registry`).
 - [x] DS-001 — canonical verification commands discovered, baseline run
 - [x] DS-002 — behavior inventory recorded
 - [x] DS-003 — benchmark fixture schema
+- [x] DS-100 — language-routing regression tests (11 tests, failing first)
+- [x] DS-101 — explicit profile→source-mode table (no silent Filipino fallback)
 
 ## Next task
 
-DS-100 — regression tests for language routing (write failing tests first).
+DS-102 — tests for Whisper segment filtering (joint no-speech decision).
 
 ## Decisions that must not be reversed
 
