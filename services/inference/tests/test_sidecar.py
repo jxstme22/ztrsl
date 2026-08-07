@@ -1029,3 +1029,64 @@ def test_worker_skips_provisionals_when_disabled() -> None:
             saw.extend(getattr(item, "utterance_id", "") for item in result)
     disabled.stop()
     assert "prov" not in saw
+
+
+def test_slow_local_asr_never_stacks_provisionals_for_one_utterance() -> None:
+    """A slow local ASR (decode > cadence) must never run more than one
+    provisional decode per utterance concurrently — stacking them keeps the
+    pool busy decoding stale snapshots while the final waits, the reported
+    'stuck mid-phrase' behavior on CPU."""
+
+    class SlowSnapshot(FakeUtterance):
+        started_ns: int = 0
+        ended_ns: int = 10_000_000_000
+        is_final: bool = False
+
+    state = {"max_concurrent": 0, "active": 0, "provisionals": 0}
+
+    class SlowPipeline:
+        def __init__(self) -> None:
+            self.snapshot = SlowSnapshot(sequence=0, utterance_id="prov", source_id=None)
+
+        def feed_utterances(self, packet: AudioPacket) -> list[FakeUtterance]:
+            return []
+
+        def infer_utterances(self, utterances: list[FakeUtterance]) -> tuple[FakeUtterance, ...]:
+            for item in utterances:
+                if getattr(item, "utterance_id", "") == "prov":
+                    state["active"] += 1
+                    state["max_concurrent"] = max(state["max_concurrent"], state["active"])
+                    state["provisionals"] += 1
+            time.sleep(0.9)  # decode slower than the 600 ms cadence
+            for item in utterances:
+                if getattr(item, "utterance_id", "") == "prov":
+                    state["active"] -= 1
+            return tuple(utterances)
+
+        def provisional_utterance(self, source_id: str | None = None) -> SlowSnapshot:
+            return self.snapshot
+
+    worker = LivePipelineWorker(
+        SlowPipeline(),  # type: ignore[arg-type]
+        max_pending=8,
+        num_inference=2,
+        provisionals=True,
+    )
+    for sequence in range(1, 13):  # ~3.8 s of speech spread over ~4 s wall
+        worker.submit(
+            AudioPacket(
+                session_id=b"0123456789abcdef",
+                sequence=sequence,
+                capture_monotonic_ns=sequence * 20_000_000,
+                sample_rate=16_000,
+                channels=1,
+                flags=0,
+                samples=(0.1,) * 5120,
+            )
+        )
+        time.sleep(0.35)
+    time.sleep(2.0)
+    worker.stop()
+    # The latch throttles, but does not disable, provisionals entirely.
+    assert state["provisionals"] >= 2
+    assert state["max_concurrent"] <= 1

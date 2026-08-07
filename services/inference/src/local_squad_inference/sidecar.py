@@ -748,6 +748,14 @@ class LivePipelineWorker:
         # Monotonic per-(source, utterance) revision counter for provisional
         # coalescing: the newest snapshot supersedes older queued ones.
         self._provisional_revisions: dict[tuple[str | None, str], int] = {}
+        # Per-(source, utterance) provisional in-flight latch: at most one
+        # provisional decode per utterance is queued or running at a time.
+        # The 600 ms cadence assumes decodes costing tens of ms; a slower
+        # local ASR (e.g. whisper-large-v3-turbo int8 on CPU, ~1 s/decode)
+        # would otherwise keep the pool permanently busy decoding stale
+        # snapshots while the final waits — the "stuck mid-phrase" report.
+        self._provisional_active: set[tuple[str | None, str]] = set()
+        self._provisional_active_lock = threading.Lock()
         # v0.4 Phase 6: per-source overlap tracking, fed on the VAD thread.
         self._overlap = _OverlapTracker()
         self._overlap_policy_of: Callable[[str | None], OverlapPolicy] = lambda source_id: (
@@ -940,6 +948,13 @@ class LivePipelineWorker:
         # an older queued one; at high water the scheduler pauses secondary
         # provisional decoding and counts the refusal.
         key = (utterance.source_id, utterance.utterance_id)
+        with self._provisional_active_lock:
+            if key in self._provisional_active:
+                # The previous provisional for this utterance is still
+                # queued or decoding — scheduling another would only pile
+                # decode work ahead of the final.
+                return
+            self._provisional_active.add(key)
         revision = self._provisional_revisions.get(key, 0) + 1
         self._provisional_revisions[key] = revision
         self._scheduler.submit(
@@ -1048,6 +1063,12 @@ class LivePipelineWorker:
             except Exception as error:  # surfaced to the client as live.error
                 logger.exception("live inference failed: %s", error)
                 self._results.put(error)
+            finally:
+                # Release the per-utterance provisional latch once the job
+                # completes (finals clear it too, so a latch can never
+                # outlive its utterance).
+                with self._provisional_active_lock:
+                    self._provisional_active.discard((job.source_id, job.utterance_id))
 
 
 async def drain_live_results(
