@@ -435,6 +435,18 @@ const UI_STRINGS = {
     en: "One free key from build.nvidia.com unlocks every NVIDIA NIM endpoint. Audio/text is sent to NVIDIA while these options are selected.",
     zh: "在 build.nvidia.com 获取一个免费密钥即可使用所有 NVIDIA NIM 端点。选择这些选项时，音频/文本会发送到 NVIDIA。",
   },
+  liveBaiduAppId: {
+    en: "Baidu Translate AppID (fanyi-api.baidu.com, free)",
+    zh: "百度翻译 AppID（fanyi-api.baidu.com，免费）",
+  },
+  liveBaiduSecret: {
+    en: "Baidu Translate secret key",
+    zh: "百度翻译密钥",
+  },
+  liveBaiduNote: {
+    en: "Free tier from fanyi-api.baidu.com. Hosted in mainland China — works where Google/MyMemory are blocked. Text is sent to Baidu while this provider is selected.",
+    zh: "在 fanyi-api.baidu.com 获取免费密钥。服务部署在中国大陆，Google/MyMemory 被屏蔽时可用。选择此提供方时，文本会发送到百度。",
+  },
   liveLibreTranslateUrl: {
     en: "LibreTranslate endpoint URL",
     zh: "LibreTranslate 端点 URL",

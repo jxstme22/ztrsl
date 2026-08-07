@@ -10,6 +10,7 @@ a time and return a placeholder on any error so the live session never dies.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -511,10 +512,111 @@ class CustomHttpProvider(TranslationProvider):
             )
 
 
+# Baidu Translate: free tier API hosted in mainland China (reachable
+# where Google/LibreTranslate instances are blocked). Configure with
+# LST_BAIDU_APPID + LST_BAIDU_SECRET from fanyi-api.baidu.com (free).
+# The request is signed with md5(appid + q + salt + secret); the source
+# language is auto-detected. `to` codes: en/zh/tl/id/vi/th/ms.
+BAIDU_ENDPOINT = "https://fanyi-api.baidu.com/api/trans/vip/translate"
+BAIDU_TARGET_CODES: dict[str, str] = {
+    "en": "en",
+    "zh": "zh",
+    "fil": "tl",
+    "ind": "id",
+    "vie": "vi",
+    "tha": "th",
+    "zsm": "ms",
+}
+
+
+class BaiduTranslateProvider(TranslationProvider):
+    """Translate through the Baidu Translate open platform (free tier).
+
+    The only cloud translation here hosted inside mainland China — Google,
+    MyMemory and the public LibreTranslate instances are blocked or flaky
+    there. Needs a free AppID + secret key (fanyi-api.baidu.com). Text
+    (never audio) is sent to Baidu while this provider is selected.
+    """
+
+    PROVIDER_ID = "baidu-translate"
+    ENDPOINT = BAIDU_ENDPOINT
+
+    def __init__(self, target_language: str = "en") -> None:
+        self._appid = os.environ.get("LST_BAIDU_APPID", "").strip()
+        self._secret = os.environ.get("LST_BAIDU_SECRET", "").strip()
+        if not self._appid or not self._secret:
+            raise HttpTranslationError(
+                "Baidu Translate AppID/secret are missing "
+                "(set LST_BAIDU_APPID and LST_BAIDU_SECRET)"
+            )
+        self._target = BAIDU_TARGET_CODES.get(target_language, target_language)
+
+    def translate(self, result: AsrResult) -> TranslationResult:
+        if not result.text:
+            return _ok(result, "", inference_ms=0.0, provider_id=self.PROVIDER_ID)
+        salt = f"{time.time_ns()}"
+        sign = hashlib.md5(f"{self._appid}{result.text}{salt}{self._secret}".encode()).hexdigest()
+        payload = urllib.parse.urlencode(
+            {
+                "q": result.text,
+                "from": "auto",
+                "to": self._target,
+                "appid": self._appid,
+                "salt": salt,
+                "sign": sign,
+            }
+        ).encode("utf-8")
+        started = time.perf_counter()
+        try:
+            request = urllib.request.Request(
+                self.ENDPOINT,
+                data=payload,
+                method="POST",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": "local-squad-translator/0.1 (opt-in translation)",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=8.0) as response:
+                raw = response.read()
+            if not raw:
+                raise HttpTranslationError("empty response body from Baidu Translate")
+            decoded = raw.decode("utf-8", errors="replace")
+            try:
+                parsed = json.loads(decoded)
+            except json.JSONDecodeError as error:
+                raise HttpTranslationError("Baidu Translate response was not JSON") from error
+            if isinstance(parsed, dict) and parsed.get("error_code"):
+                raise HttpTranslationError(
+                    f"Baidu Translate error {parsed['error_code']}: {parsed.get('error_msg', '')}"
+                )
+            parts = [str(item.get("dst", "")).strip() for item in parsed.get("trans_result") or []]
+            english_text = " ".join(part for part in parts if part)
+            if not english_text:
+                return _placeholder(
+                    result,
+                    "[Baidu Translate returned no text]",
+                    provider_id=self.PROVIDER_ID,
+                )
+            return _ok(
+                result,
+                english_text,
+                inference_ms=(time.perf_counter() - started) * 1_000.0,
+                provider_id=self.PROVIDER_ID,
+            )
+        except (HttpTranslationError, OSError, ValueError, KeyError, TypeError) as error:
+            return _placeholder(
+                result,
+                f"[Baidu Translate unavailable: {error}]",
+                provider_id=self.PROVIDER_ID,
+            )
+
+
 HTTP_PROVIDER_FACTORIES: dict[str, Callable[..., TranslationProvider]] = {
     "libretranslate": LibreTranslateProvider,
     "google-translate": GoogleTranslateProvider,
     "mymemory": MyMemoryProvider,
+    "baidu-translate": BaiduTranslateProvider,
     "custom-http": CustomHttpProvider,
 }
 
