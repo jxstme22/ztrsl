@@ -178,10 +178,24 @@ stamped with per-source tag/color/language profile (`source.registry`).
   audio
 - [x] DS-402 — deterministic calibration recommendations (rules, not
   generated text)
+- [x] DS-500 — virtual-cable detection (playback/recording candidates,
+  confidence, warnings; multi-cable, renamed, missing, inactive cases)
+- [x] DS-501 — setup-wizard state machine (pure reducer; forward/back/
+  cancel/refresh/save; per-step validation)
+- [x] DS-502 — use-case selection catalog (VALORANT/Discord/Meeting/
+  Browser call/Other) with suggested presets, origins, VAD profiles
+- [x] DS-503 — device refresh keeps the use case and re-runs detection
+- [x] DS-504 — routing instructions per use case + critical CABLE copy
+- [x] DS-505 — capture/monitoring selection validation (loop prevention:
+  monitoring must not route into the cable)
+- [x] DS-506 — voice-signal test decision (silent/very_quiet/healthy/
+  clipping, deterministic thresholds)
+- [x] DS-507 — isolation test decision (passed/inconclusive/
+  non_voice_leak/no_voice)
 
 ## Next task
 
-DS-500 — virtual-cable device detection (Phase 5).
+DS-508 — save reusable routing profiles (Phase 5 remaining).
 
 ## Decisions that must not be reversed
 

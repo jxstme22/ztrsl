@@ -1,80 +1,120 @@
 import type { AudioEndpoint, EndpointCatalog } from "../audio/model";
 
 /**
- * VB-CABLE detection (Phase 4). VB-CABLE is a separately installed virtual
- * audio driver from its official source (vb-audio.com); this app never
- * bundles it (ADR-014). Detection is purely name-based over the ordinary
- * endpoint catalog — no driver access, no game interaction.
+ * DS-500: virtual-cable device detection (VB-CABLE, BlackHole, …).
  *
- * VB-CABLE installs one "CABLE Input" RENDER (playback) endpoint — the device
- * games/voice apps play INTO — and one "CABLE Output" CAPTURE (recording)
- * endpoint — the device the app records FROM. We treat it as installed only
- * when both are present and usable, because a half-installed driver cannot
- * route game voice into the app.
+ * A virtual audio cable appears as an ordinary endpoint pair: a RENDER
+ * device that apps play INTO and a CAPTURE device the app records FROM.
+ * Detection is purely name-based over the ordinary endpoint catalog — no
+ * driver access, no game interaction. Names are detection hints only:
+ * stable endpoint ids are stored, never names, and a manual override
+ * always remains available.
  */
 
-export type VbCableDetection = {
-  installed: boolean;
-  /** The render endpoint named like "CABLE Input" (what apps play into), or null. */
-  input: AudioEndpoint | null;
-  /** The capture endpoint named like "CABLE Output" (what the app records from), or null. */
-  output: AudioEndpoint | null;
-  /**
-   * True when a matching endpoint exists but is not usable (disabled,
-   * unplugged, or not present). The wizard must surface this instead of
-   * silently proceeding.
-   */
-  degraded: boolean;
-  /** Human-readable guidance for the wizard, in order of relevance. */
-  issues: string[];
+export type VirtualCableDetection = {
+  /** Render devices the user can route application audio INTO. */
+  playbackCandidates: AudioEndpoint[];
+  /** Capture devices the app can record FROM. */
+  recordingCandidates: AudioEndpoint[];
+  confidence: "high" | "medium" | "low";
+  warnings: string[];
 };
 
-const INPUT_NAME = /cable\s+input/i;
-const OUTPUT_NAME = /cable\s+output/i;
+const CABLE_PLAYBACK_PATTERNS = [/cable\s+input/i, /vb-audio\s+virtual\s+cable/i];
+const CABLE_CAPTURE_PATTERNS = [/cable\s+output/i, /vb-audio\s+virtual\s+cable/i];
+/** macOS virtual devices expose their input as a capture endpoint. */
+const BLACKHOLE_PATTERN = /blackhole|black\s+hole/i;
 
 export function isUsableState(endpoint: AudioEndpoint): boolean {
   return endpoint.state === "active";
 }
 
+export function detectVirtualCables(
+  catalog: EndpointCatalog,
+): VirtualCableDetection {
+  const playbackCandidates: AudioEndpoint[] = [];
+  const recordingCandidates: AudioEndpoint[] = [];
+  const warnings: string[] = [];
+  let matchedAny = false;
+
+  for (const endpoint of catalog.endpoints) {
+    const name = endpoint.friendlyName;
+    if (
+      endpoint.kind === "render" &&
+      (CABLE_PLAYBACK_PATTERNS.some((pattern) => pattern.test(name)) ||
+        BLACKHOLE_PATTERN.test(name))
+    ) {
+      matchedAny = true;
+      playbackCandidates.push(endpoint);
+    } else if (
+      endpoint.kind === "capture" &&
+      (CABLE_CAPTURE_PATTERNS.some((pattern) => pattern.test(name)) ||
+        BLACKHOLE_PATTERN.test(name))
+    ) {
+      matchedAny = true;
+      recordingCandidates.push(endpoint);
+    }
+  }
+
+  const usablePlayback = playbackCandidates.filter(isUsableState);
+  const usableRecording = recordingCandidates.filter(isUsableState);
+
+  if (playbackCandidates.length === 0 && recordingCandidates.length === 0) {
+    warnings.push(
+      "A virtual audio cable was not found. Install VB-CABLE (vb-audio.com) " +
+        "or BlackHole (macOS) separately and refresh devices.",
+    );
+  } else {
+    if (usablePlayback.length === 0 && playbackCandidates.length > 0) {
+      warnings.push("The cable playback device is present but not active.");
+    }
+    if (usableRecording.length === 0 && recordingCandidates.length > 0) {
+      warnings.push("The cable recording device is present but not active.");
+    }
+  }
+
+  // Multiple cables are legitimate: list every candidate and let the user
+  // pick. High confidence only when at least one usable pair exists.
+  const confidence: "high" | "medium" | "low" =
+    usablePlayback.length > 0 && usableRecording.length > 0
+      ? "high"
+      : matchedAny
+        ? "medium"
+        : "low";
+
+  return {
+    playbackCandidates: usablePlayback,
+    recordingCandidates: usableRecording,
+    confidence,
+    warnings,
+  };
+}
+
+/** Strict single-cable view for the Sources page card (v0.6.x behavior). */
+export type VbCableDetection = {
+  installed: boolean;
+  input: AudioEndpoint | null;
+  output: AudioEndpoint | null;
+  degraded: boolean;
+  issues: string[];
+};
+
 export function detectVbCable(catalog: EndpointCatalog): VbCableDetection {
-  // "CABLE Input" is a render (playback) endpoint; "CABLE Output" is a
-  // capture (recording) endpoint. VB-CABLE names these by the direction of
-  // the signal: input = where audio goes in, output = where it comes out.
+  const { playbackCandidates, recordingCandidates, warnings } =
+    detectVirtualCables(catalog);
   const input =
-    catalog.endpoints.find(
-      (endpoint) =>
-        endpoint.kind === "render" && INPUT_NAME.test(endpoint.friendlyName),
+    playbackCandidates.find((endpoint) =>
+      /cable\s+input/i.test(endpoint.friendlyName),
     ) ?? null;
   const output =
-    catalog.endpoints.find(
-      (endpoint) =>
-        endpoint.kind === "capture" && OUTPUT_NAME.test(endpoint.friendlyName),
+    recordingCandidates.find((endpoint) =>
+      /cable\s+output/i.test(endpoint.friendlyName),
     ) ?? null;
-
-  const issues: string[] = [];
-  if (
-    input !== null &&
-    output !== null &&
-    isUsableState(input) &&
-    isUsableState(output)
-  ) {
-    return { installed: true, input, output, degraded: false, issues };
-  }
-  if (input === null || output === null) {
-    issues.push(
-      "VB-CABLE was not found. Install it separately from its official source " +
-        "(vb-audio.com) and restart the app.",
-    );
-  }
-  if (input !== null && !isUsableState(input)) {
-    issues.push(
-      `"${input.friendlyName}" is not active (state: ${input.state}). Enable the driver in Windows sound settings.`,
-    );
-  }
-  if (output !== null && !isUsableState(output)) {
-    issues.push(
-      `"${output.friendlyName}" is not active (state: ${output.state}). Enable the driver in Windows sound settings.`,
-    );
-  }
-  return { installed: false, input, output, degraded: true, issues };
+  return {
+    installed: input !== null && output !== null,
+    input,
+    output,
+    degraded: input !== null && output !== null ? false : true,
+    issues: warnings,
+  };
 }
