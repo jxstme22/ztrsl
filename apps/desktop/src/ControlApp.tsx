@@ -6,6 +6,7 @@ import {
   Minus,
   ScrollText,
   Settings,
+  Wand2,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
+import { SetupWizard } from "./setup/SetupWizard";
 import { SavedProfilesPanel } from "./components/SavedProfilesPanel";
 import { ModelsPanel } from "./components/ModelsPanel";
 import { OverlaySettingsPanel } from "./components/OverlaySettingsPanel";
@@ -48,6 +50,7 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
   | "live"
+  | "setup"
   | "models"
   | "history"
   | "settings"
@@ -69,6 +72,7 @@ function navItems(
 ): readonly { id: SectionId; label: string }[] {
   return [
     { id: "live", label: t("navLive") },
+    { id: "setup", label: t("navSetup") },
     { id: "history", label: t("navHistory") },
     { id: "models", label: t("navModels") },
     ...(multiSourceEnabled()
@@ -81,6 +85,7 @@ function navItems(
 
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
+  setup: Wand2,
   models: Boxes,
   history: ScrollText,
   sources: Mic,
@@ -218,6 +223,11 @@ export function ControlApp() {
               live={live}
               models={models}
             />
+          )}
+          {section === "setup" && (
+            <div className="page-stack">
+              <SetupWizard audio={audio} />
+            </div>
           )}
           {section === "models" && (
             <ModelsPage models={models} gpuRuntime={gpuRuntime} />

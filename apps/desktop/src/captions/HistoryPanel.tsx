@@ -56,7 +56,10 @@ export function HistoryPanel({
   };
 
   return (
-    <section className="card lst-section-card" aria-labelledby="history-title">
+    <section
+      className="card lst-section-card history-panel"
+      aria-labelledby="history-title"
+    >
       <div className="card-head">
         <h3 className="card-title" id="history-title">
           {t("historyTitle")}
