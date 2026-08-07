@@ -688,8 +688,14 @@ class LivePipelineWorker:
         num_inference: int = 2,
         priority_of: Callable[[str | None], int] | None = None,
         language_profile_of: Callable[[str | None], str] | None = None,
+        provisionals: bool = True,
     ) -> None:
         self._pipeline = pipeline
+        # Remote ASR providers (Groq / NVIDIA NIM) decode once per completed
+        # utterance: each provisional would be an HTTP round trip, flooding
+        # the API and starving finals (spec §7 provisional cadence assumes
+        # local decodes costing tens of ms).
+        self._provisionals = provisionals
         self._input: queue.Queue[AudioPacket | object | None] = queue.Queue(maxsize=max_pending)
         # One shared scheduler for every source's decode work: models are
         # loaded once per process (shared VRAM), and scheduling keys on the
@@ -912,7 +918,7 @@ class LivePipelineWorker:
                 self._results.put(error)
                 continue
             now_ns = time.monotonic_ns()
-            if snapshot is not None and not FINAL_ONLY_MODE:
+            if snapshot is not None and not FINAL_ONLY_MODE and self._provisionals:
                 speech_elapsed_ns = snapshot.ended_ns - snapshot.started_ns
                 due_ns = next_provisional_at_ns.get(source_key)
                 due = due_ns is None or now_ns >= due_ns
@@ -1540,6 +1546,8 @@ async def handle_connection(
                         language_profile_of=lambda source_key: _language_profile_of_source(
                             source_key, source_registry
                         ),
+                        provisionals=live_request.provider == "demo"
+                        or getattr(asr_provider, "provisional_supported", True),
                     )
                     drain_task = asyncio.create_task(
                         drain_live_results(
