@@ -74,31 +74,31 @@ export const ROUTING_STEPS: Record<UseCaseId, RoutingStep[]> = {
   valorant: [
     { from: "Game sound output", to: "Headphones" },
     { from: "Voice chat output", to: "CABLE Input" },
-    { from: "yTSRL capture source", to: "CABLE Output" },
-    { from: "yTSRL monitor output", to: "Headphones" },
+    { from: "yTRSL capture source", to: "CABLE Output" },
+    { from: "yTRSL monitor output", to: "Headphones" },
   ],
   discord: [
     { from: "Discord output", to: "CABLE Input" },
-    { from: "yTSRL capture source", to: "CABLE Output" },
-    { from: "yTSRL monitor output", to: "Headphones" },
+    { from: "yTRSL capture source", to: "CABLE Output" },
+    { from: "yTRSL monitor output", to: "Headphones" },
   ],
   meeting: [
     { from: "Meeting app output", to: "CABLE Input" },
-    { from: "yTSRL capture source", to: "CABLE Output" },
-    { from: "yTSRL monitor output", to: "Headphones" },
+    { from: "yTRSL capture source", to: "CABLE Output" },
+    { from: "yTRSL monitor output", to: "Headphones" },
   ],
   browser_call: [
     { from: "Browser output", to: "CABLE Input" },
-    { from: "yTSRL capture source", to: "CABLE Output" },
-    { from: "yTSRL monitor output", to: "Headphones" },
+    { from: "yTRSL capture source", to: "CABLE Output" },
+    { from: "yTRSL monitor output", to: "Headphones" },
   ],
   other: [
     { from: "Application output", to: "CABLE Input" },
-    { from: "yTSRL capture source", to: "CABLE Output" },
-    { from: "yTSRL monitor output", to: "Headphones" },
+    { from: "yTRSL capture source", to: "CABLE Output" },
+    { from: "yTRSL monitor output", to: "Headphones" },
   ],
 };
 
 /** Critical copy: the two names that must never be confused. */
 export const CRITICAL_ROUTING_COPY =
-  "Select CABLE Input inside the application. Select CABLE Output as the recording source inside yTSRL.";
+  "Select CABLE Input inside the application. Select CABLE Output as the recording source inside yTRSL.";

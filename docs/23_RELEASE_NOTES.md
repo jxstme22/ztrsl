@@ -3,7 +3,7 @@
 ## v0.8.0 — general-purpose release (feat/general-purpose-v0.8)
 
 First release of the generalization train — the build plan
-(`yTSRL_DEEPSEEK_BUILD_PLAN.md`) shipped in full. Key highlights:
+(`yTRSL_DEEPSEEK_BUILD_PLAN.md`) shipped in full. Key highlights:
 
 - **Language routing** — source-language routing matrix with per-source
   modes; unknown languages are gated honestly (DEC-001: never a silent
@@ -67,8 +67,8 @@ First release of the generalization train — the build plan
   now download file-by-file from the official sherpa-onnx Hugging Face
   mirrors (byte-identical, checksum-verified), so the hf-mirror → modelscope
   failover chain works.
-- **Rebranded title bar** — app renamed to **yTSRL**; the title bar now
-  shows one rounded brand card — `yTSRL (BETA) v0.7` — white text on dark
+- **Rebranded title bar** — app renamed to **yTRSL**; the title bar now
+  shows one rounded brand card — `yTRSL (BETA) v0.7` — white text on dark
   mode, black text on light mode. Title bar height and sidebar icons
   tightened.
 - **Models page can no longer be blanked by a stale capability value** — a

@@ -16,53 +16,36 @@ export function AboutPanel({ version = "0.8.0" }: { version?: string }) {
           </h2>
           <span className="lst-model-count pill">v{version}</span>
         </div>
-        <p className="card-note">
-          yTSRL is a privacy-first accessibility companion: it listens to voice
-          chat on your computer and shows near-live English captions for what
-          your teammates say. Everything runs on your own machine — nothing
-          you say is uploaded unless you choose a cloud provider.
-        </p>
+        <p className="card-note">{t("aboutIntro")}</p>
       </section>
 
       <section className="card lst-section-card" aria-labelledby="about-pages-title">
         <div className="card-head">
           <h3 className="card-title" id="about-pages-title">
-            The pages, simply explained
+            {t("aboutPagesTitle")}
           </h3>
         </div>
         <ul className="about-list">
           <li>
-            <strong>Live</strong> — the main screen. Pick an audio channel, a
-            speech-to-text model, and a translation provider, then press Start.
-            Captions appear on the overlay above your game.
+            <strong>{t("aboutPageLiveTitle")}</strong> — {t("aboutPageLiveText")}
           </li>
           <li>
-            <strong>Profile</strong> — saved setups. Run the guided setup once
-            (or edit settings manually) and every profile is one click to
-            start later. This is the page you want if you play on different
-            machines or with different friends.
+            <strong>{t("aboutPageProfileTitle")}</strong> — {t("aboutPageProfileText")}
           </li>
           <li>
-            <strong>History</strong> — a transcript of everything that has been
-            translated this session, with export buttons for saving it.
+            <strong>{t("aboutPageHistoryTitle")}</strong> — {t("aboutPageHistoryText")}
           </li>
           <li>
-            <strong>Models</strong> — download and manage the local AI models
-            used for speech recognition and translation, with license and
-            checksum details.
+            <strong>{t("aboutPageModelsTitle")}</strong> — {t("aboutPageModelsText")}
           </li>
           <li>
-            <strong>Sources</strong> — advanced multi-channel setup: give each
-            voice channel (team chat, Discord, a meeting) its own color, tag,
-            and language profile.
+            <strong>{t("aboutPageSourcesTitle")}</strong> — {t("aboutPageSourcesText")}
           </li>
           <li>
-            <strong>Settings</strong> — appearance (dark/light), overlay
-            behavior, hotkeys, and language.
+            <strong>{t("aboutPageSettingsTitle")}</strong> — {t("aboutPageSettingsText")}
           </li>
           <li>
-            <strong>Diagnostics</strong> — latency and health graphs for the
-            audio, speech, and translation pipeline when something feels slow.
+            <strong>{t("aboutPageDiagnosticsTitle")}</strong> — {t("aboutPageDiagnosticsText")}
           </li>
         </ul>
       </section>
@@ -70,83 +53,71 @@ export function AboutPanel({ version = "0.8.0" }: { version?: string }) {
       <section className="card lst-section-card" aria-labelledby="about-models-title">
         <div className="card-head">
           <h3 className="card-title" id="about-models-title">
-            Local models vs cloud models
+            {t("aboutModelsTitle")}
           </h3>
         </div>
         <table className="about-table">
           <thead>
             <tr>
               <th></th>
-              <th>Local (on your PC)</th>
-              <th>Cloud (API)</th>
+              <th>{t("aboutModelsLocal")}</th>
+              <th>{t("aboutModelsCloud")}</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <th>Privacy</th>
-              <td>Audio never leaves your machine</td>
-              <td>Speech is sent to the provider</td>
+              <th>{t("aboutRowPrivacy")}</th>
+              <td>{t("aboutPrivacyLocal")}</td>
+              <td>{t("aboutPrivacyCloud")}</td>
             </tr>
             <tr>
-              <th>Cost</th>
-              <td>Free, after the one-time model download</td>
-              <td>Usually free tiers, then pay-per-use</td>
+              <th>{t("aboutRowCost")}</th>
+              <td>{t("aboutCostLocal")}</td>
+              <td>{t("aboutCostCloud")}</td>
             </tr>
             <tr>
-              <th>Speed</th>
-              <td>Great on a good GPU; slower on CPU</td>
-              <td>Fast, needs a stable internet connection</td>
+              <th>{t("aboutRowSpeed")}</th>
+              <td>{t("aboutSpeedLocal")}</td>
+              <td>{t("aboutSpeedCloud")}</td>
             </tr>
             <tr>
-              <th>Offline</th>
-              <td>Works with no internet</td>
-              <td>Does not work offline</td>
+              <th>{t("aboutRowOffline")}</th>
+              <td>{t("aboutOfflineLocal")}</td>
+              <td>{t("aboutOfflineCloud")}</td>
             </tr>
             <tr>
-              <th>Quality</th>
-              <td>Very good (Whisper family)</td>
-              <td>State-of-the-art (NVIDIA Parakeet, Groq Whisper)</td>
+              <th>{t("aboutRowQuality")}</th>
+              <td>{t("aboutQualityLocal")}</td>
+              <td>{t("aboutQualityCloud")}</td>
             </tr>
             <tr>
-              <th>Setup</th>
-              <td>Download models once, then just click Start</td>
-              <td>Create an API key and paste it in Live</td>
+              <th>{t("aboutRowSetup")}</th>
+              <td>{t("aboutSetupLocal")}</td>
+              <td>{t("aboutSetupCloud")}</td>
             </tr>
           </tbody>
         </table>
-        <p className="card-note">
-          Best of both: use local Whisper + NLLB for privacy, and switch to
-          cloud (NVIDIA Parakeet + Riva, or Groq) when you want maximum
-          accuracy or when your machine cannot keep up.
-        </p>
+        <p className="card-note">{t("aboutBestBoth")}</p>
       </section>
 
       <section className="card lst-section-card" aria-labelledby="about-specs-title">
         <div className="card-head">
           <h3 className="card-title" id="about-specs-title">
-            Recommended specs for local models
+            {t("aboutSpecsTitle")}
           </h3>
         </div>
         <ul className="about-list">
           <li>
-            <strong>Minimum (everything works, slower)</strong> — 4-core CPU,
-            16 GB RAM. Whisper runs on CPU with a bit of delay; NLLB
-            translation still feels responsive.
+            <strong>{t("aboutSpecsMinTitle")}</strong> — {t("aboutSpecsMinText")}
           </li>
           <li>
-            <strong>Recommended (best latency)</strong> — NVIDIA GPU with 8 GB
-            VRAM or more (GTX 2060 / RTX 3060 class and up). Speech is
-            recognized within about a second of a sentence ending.
+            <strong>{t("aboutSpecsRecommendedTitle")}</strong> — {t("aboutSpecsRecommendedText")}
           </li>
           <li>
-            <strong>macOS / Apple Silicon</strong> — M1 with 16 GB RAM works
-            well; M-series GPU is used automatically by the MLX Whisper
-            model.
+            <strong>{t("aboutSpecsAppleTitle")}</strong> — {t("aboutSpecsAppleText")}
           </li>
           <li>
-            <strong>Disk space</strong> — about 3 GB for the standard Whisper
-            + NLLB pair (larger Whisper model: ~6 GB total). Downloads happen
-            once in the Models page.
+            <strong>{t("aboutSpecsDiskTitle")}</strong> — {t("aboutSpecsDiskText")}
           </li>
         </ul>
       </section>

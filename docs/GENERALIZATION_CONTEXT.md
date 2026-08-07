@@ -1,11 +1,11 @@
 # Generalization Context
 
-Repository context for the yTSRL generalization program (v0.8 train).
+Repository context for the yTRSL generalization program (v0.8 train).
 Read this file and `docs/GENERALIZATION_DECISIONS.md` before every task.
 
 ## Product goal
 
-Generalize yTSRL from a VALORANT-first translator into a clean, reliable,
+Generalize yTRSL from a VALORANT-first translator into a clean, reliable,
 general-purpose real-time subtitle and translation application. VALORANT
 remains available as a domain preset; game-specific assumptions must not
 leak into General Conversation behavior.

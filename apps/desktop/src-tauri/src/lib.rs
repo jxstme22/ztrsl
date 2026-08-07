@@ -188,7 +188,7 @@ fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
     } else {
         app.path()
             .app_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir().join("yTSRL"))
+            .unwrap_or_else(|_| std::env::temp_dir().join("yTRSL"))
             .join("models")
     }
 }

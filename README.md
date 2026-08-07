@@ -1,4 +1,4 @@
-# yTSRL
+# yTRSL
 
 **Real-time subtitles for your VALORANT voice chat — 100% local.**
 
@@ -18,7 +18,7 @@ and never send a second of audio to the cloud.
 ## What it does
 
 ```
-"Rush B!"            yTSRL               "Rush B!" → "Rush B!"
+"Rush B!"            yTRSL               "Rush B!" → "Rush B!"
 (Tagalog voice)  ─────────────►  (English subtitle on screen)
 ```
 
@@ -108,7 +108,7 @@ flowchart TB
     V[VALORANT voice chat]
   end
 
-  subgraph yTSRL desktop
+  subgraph yTRSL desktop
     C[Audio capture<br/>WASAPI / virtual cable]
     R[16 kHz mono ring buffer]
     O[Transparent overlay window]
@@ -161,11 +161,11 @@ output for the session on the **Live** tab.
 
 ---
 
-## VB-CABLE: how voice chat reaches yTSRL
+## VB-CABLE: how voice chat reaches yTRSL
 
 A **virtual audio cable** is a free, user-installed Windows driver that acts as
 a "software wire": whatever an app plays to its **Input** can be *captured*
-from its **Output**. That's how yTSRL hears exactly the voice-chat mix — and
+from its **Output**. That's how yTRSL hears exactly the voice-chat mix — and
 nothing else.
 
 ```mermaid
@@ -173,7 +173,7 @@ flowchart TB
   subgraph Your PC
     VC[VALORANT voice chat] --> CI["CABLE Input<br/>(virtual cable)"]
     DC[Discord voice chat] --> CI
-    CO["CABLE Output"] --> APP["yTSRL audio core"]
+    CO["CABLE Output"] --> APP["yTRSL audio core"]
     APP --> HP[("Headphones")]
   end
   GAME[VALORANT game audio] --> HP
@@ -191,7 +191,7 @@ Your teammates' voices now play *into the cable only*.
 
 **3. VALORANT game audio → headphones** — in VALORANT `Settings → Audio`,
 keep **Speaker / Output Device** on your **headphones**. Game effects must
-never go to the cable, or yTSRL will hear explosions as speech.
+never go to the cable, or yTRSL will hear explosions as speech.
 
 **4. Discord voice → the same cable** (or a second one) — in Discord
 `Settings → Voice & Video`, set **Output Device** to **CABLE Input**. Route
@@ -201,13 +201,13 @@ second cable for a separate `[DISCORD]` lane.
 **5. Keep hearing your team** — because voice now plays into the cable, turn
 on **Monitor source** for the source on the **Sources** page and pick your
 **headphones** as the headphone output (blend 100%). Avoid echo by letting
-yTSRL be the *only* path replaying voice to your headset.
+yTRSL be the *only* path replaying voice to your headset.
 
 **6. Sanity check** — in **Diagnostics**, run **Isolation check**. When only
 game sounds play and nobody speaks, the voice capture meter should stay
 near-silent. If it jumps, game audio is leaking into the cable.
 
-> VB-CABLE is a **separate install** — yTSRL never bundles, installs, or
+> VB-CABLE is a **separate install** — yTRSL never bundles, installs, or
 > patches the driver; it only detects and routes to it when you choose to.
 
 > **Mainland China?** All catalog models download from pinned Hugging Face
@@ -222,7 +222,7 @@ near-silent. If it jumps, game audio is leaking into the cable.
 Configure every channel you care about on the **Sources** page — each with its
 own device (cable, mic, or loopback), **caption tag** (`TEAM`, `DISCORD`, …),
 **language profile**, and color. Then on the **Live** tab switch **Capture
-mode → All sources** and start listening: yTSRL captures every configured
+mode → All sources** and start listening: yTRSL captures every configured
 source simultaneously, VADs and translates each independently, and every
 caption lands with its own tag in the overlay and History.
 
@@ -418,7 +418,7 @@ chat-history overlay, full i18n, multi-source live). Working toward 1.0:
 
 ## License
 
-Copyright (c) 2026 the yTSRL contributors. Licensed under the
+Copyright (c) 2026 the yTRSL contributors. Licensed under the
 [Apache License 2.0](LICENSE).
 
 *VALORANT is a trademark of Riot Games, Inc. This project is not affiliated

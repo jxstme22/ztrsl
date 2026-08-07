@@ -8,11 +8,11 @@ A virtual cable is a "software wire": apps play into **CABLE Input**
    a meeting app) to **CABLE Input** in its sound settings.
 3. Keep the game/application *music* output on your headphones — never on
    the cable.
-4. In yTSRL: **Sources** → pick **CABLE Output** as the source's audio
+4. In yTRSL: **Sources** → pick **CABLE Output** as the source's audio
    input; turn on monitoring and choose your headphones to keep hearing
    voice.
 5. Use the Live page's **Capture mode: All sources** to caption multiple
    cables at once.
 
 > Select **CABLE Input** inside the application. Select **CABLE Output**
-> as the recording source inside yTSRL.
+> as the recording source inside yTRSL.

@@ -28,11 +28,7 @@ export function ProfilePage({
             {t("navSetup")}
           </h2>
         </div>
-        <p className="card-note">
-          Saved profiles remember which audio channel to capture, how it is
-          monitored, and how it should be translated. Start one from the list
-          below, or create a new one with the guided setup.
-        </p>
+        <p className="card-note">{t("profileIntro")}</p>
       </section>
       <SavedProfilesPanel audio={audio} live={live} />
       <SetupWizard audio={audio} />

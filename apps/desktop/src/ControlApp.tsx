@@ -1,4 +1,4 @@
-import { Activity, Boxes, Gauge, IdCard, Info, Mic, Minus, ScrollText, Settings, X, type LucideIcon } from "lucide-react";
+import { Activity, Boxes, Gauge, Info, Mic, Minus, ScrollText, Settings, SlidersHorizontal, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -62,12 +62,12 @@ function navItems(
 ): readonly { id: SectionId; label: string }[] {
   return [
     { id: "live", label: t("navLive") },
-    { id: "profile", label: t("navSetup") },
     { id: "history", label: t("navHistory") },
-    { id: "models", label: t("navModels") },
+    { id: "profile", label: t("navSetup") },
     ...(multiSourceEnabled()
       ? [{ id: "sources" as SectionId, label: t("navSources") }]
       : []),
+    { id: "models", label: t("navModels") },
     { id: "settings", label: t("navSettings") },
     { id: "diagnostics", label: t("navDiagnostics") },
   ];
@@ -75,10 +75,10 @@ function navItems(
 
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
-  profile: IdCard,
-  models: Boxes,
   history: ScrollText,
+  profile: SlidersHorizontal,
   sources: Mic,
+  models: Boxes,
   settings: Settings,
   diagnostics: Gauge,
   about: Info,
