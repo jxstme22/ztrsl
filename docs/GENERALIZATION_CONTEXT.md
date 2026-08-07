@@ -253,6 +253,11 @@ stamped with per-source tag/color/language profile (`source.registry`).
 **BUILD PLAN COMPLETE** — every DS task in the DeepSeek build plan is
 implemented, tested, and committed on `feat/general-purpose-v0.8`.
 
+**NVIDIA providers merged in** (`b25da18`): the feat/side NVIDIA NIM ASR
+endpoints (invocation API with verified function-ids) + Riva translation
+(chat gateway) + Live panel NVIDIA key/provider options + installed-only/
+free-endpoint filtering are now part of this branch.
+
 ## Decisions that must not be reversed
 
 - Hard safety boundaries (no injection, no memory reads, no automation) —
