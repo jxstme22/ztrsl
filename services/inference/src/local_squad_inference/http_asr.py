@@ -39,32 +39,52 @@ class GroqConfig:
 
 @dataclass(frozen=True)
 class NvidiaAsrConfig:
-    """NVIDIA NIM ASR endpoint (build.nvidia.com). One API key serves every
-    endpoint; configure with `LST_NVIDIA_API_KEY` (nvapi-…, free tier)."""
+    """NVIDIA ASR invocation endpoint (build.nvidia.com). Each model is a
+    function; the same id works for gRPC metadata and the HTTP invocation
+    URL. One API key serves every endpoint — configure with
+    `LST_NVIDIA_API_KEY` (nvapi-…, free tier)."""
 
     endpoint: str
     # Language codes the endpoint supports; empty means any. A source mode
     # outside the set is reported as a visible error — never silently
     # rerouted to an unrelated language (DEC-001).
     supported_languages: tuple[str, ...] = ()
+    # NVIDIA docs use plain codes for Whisper (en) and BCP-47 region codes
+    # for the Riva ASR models (en-US). `simple` sends the 2-letter code.
+    language_style: str = "simple"
     timeout_s: float = 30.0
 
 
+# Function-ids from each model's build.nvidia.com "Try API" page. The HTTP
+# endpoint pattern is https://<function-id>.invocation.api.nvcf.nvidia.com/
+# v1/audio/transcriptions (multipart: file + language).
 NVIDIA_ASR_ENDPOINTS: dict[str, NvidiaAsrConfig] = {
     "nvidia-whisper-large-v3": NvidiaAsrConfig(
-        "https://ai.api.nvidia.com/v1/audio/asr/openai/whisper-large-v3"
+        "https://b702f636-f60c-4a3d-a6f4-f3568c13bd7d.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions",
+        language_style="simple",
     ),
     "nvidia-nemotron-asr-streaming": NvidiaAsrConfig(
-        "https://ai.api.nvidia.com/v1/audio/asr/nvidia/nemotron-asr-streaming"
+        "https://bb0837de-8c7b-481f-9ec8-ef5663e9c1fa.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions",
+        language_style="region",
     ),
     "nvidia-parakeet-1.1b": NvidiaAsrConfig(
-        "https://ai.api.nvidia.com/v1/audio/asr/nvidia/parakeet-ctc-1.1b-asr",
+        "https://1598d209-5e27-4d3c-8079-4751568b1081.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions",
         supported_languages=("en", "de", "es", "fr"),
+        language_style="region",
     ),
     "nvidia-canary-1b": NvidiaAsrConfig(
-        "https://ai.api.nvidia.com/v1/audio/asr/nvidia/canary-1b-asr",
+        "https://b0e8b4a5-217c-40b7-9b96-17d84e666317.invocation.api.nvcf.nvidia.com/v1/audio/transcriptions",
         supported_languages=("en", "de", "es", "fr"),
+        language_style="region",
     ),
+}
+
+# NVIDIA Riva ASR docs use BCP-47 region codes for the non-Whisper models.
+RIVA_REGION_CODES: dict[str, str] = {
+    "en": "en-US",
+    "de": "de-DE",
+    "es": "es-US",
+    "fr": "fr-FR",
 }
 
 
@@ -187,6 +207,8 @@ class NvidiaAsrProvider(AsrProvider):
                 ),
                 model_id=self._model_id,
             )
+        if self._config.language_style == "region":
+            language = RIVA_REGION_CODES.get(language, language)
         wav_bytes = _pcm_f32_to_wav(utterance.pcm_f32, utterance.sample_rate)
         started = time.perf_counter()
         try:
@@ -197,7 +219,7 @@ class NvidiaAsrProvider(AsrProvider):
                 api_key=self._api_key,
                 timeout_s=self._config.timeout_s,
             )
-            text = str(data.get("text", "")).strip()
+            text = _nvidia_transcript_text(data)
         except (HttpAsrError, OSError, ValueError, KeyError, TypeError) as error:
             reason = getattr(error, "message", str(error)) or str(type(error).__name__)
             return _empty_result(utterance, source_mode, error=reason, model_id=self._model_id)
@@ -210,6 +232,21 @@ class NvidiaAsrProvider(AsrProvider):
             model_id=self._model_id,
             confidence=None,
         )
+
+
+def _nvidia_transcript_text(data: dict[str, Any]) -> str:
+    """Extract the transcript from NVIDIA invocation responses. The shape
+    varies by model: a top-level ``text`` field or a ``transcriptions``
+    list (Riva-style). Never returns a placeholder silently."""
+    text = data.get("text")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    for item in data.get("transcriptions") or []:
+        if isinstance(item, dict):
+            candidate = item.get("text")
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+    return ""
 
 
 def _nvidia_multipart_upload(

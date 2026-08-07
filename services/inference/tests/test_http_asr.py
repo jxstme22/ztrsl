@@ -162,6 +162,7 @@ def test_nvidia_transcribe_posts_multipart_with_language(
     result = provider.transcribe(make_utterance(), "filipino")
     assert result.text == "say it"
     assert captured["url"] == NVIDIA_ASR_ENDPOINTS["nvidia-whisper-large-v3"].endpoint
+    assert "invocation.api.nvcf.nvidia.com" in str(captured["url"])
     assert captured["language"] == "tl"
     assert captured["api_key"] == "nvapi_test"
     assert captured["wav_has_riif"] is True
@@ -199,7 +200,7 @@ def test_nvidia_parakeet_accepts_supported_language(
     provider = NvidiaAsrProvider("nvidia-parakeet-1.1b")
     result = provider.transcribe(make_utterance(), "english")
     assert result.text == "hello"
-    assert captured["language"] == "en"
+    assert captured["language"] == "en-US"
 
 
 def test_nvidia_transcribe_failure_returns_empty_not_crash(
@@ -216,3 +217,15 @@ def test_nvidia_transcribe_failure_returns_empty_not_crash(
     assert result.text == ""
     assert result.error is not None
     assert "401" in result.error
+
+
+def test_nvidia_transcript_text_extracts_nested_transcriptions() -> None:
+    from local_squad_inference.http_asr import _nvidia_transcript_text
+
+    assert _nvidia_transcript_text({"text": "hi"}) == "hi"
+    assert (
+        _nvidia_transcript_text({"transcriptions": [{"text": "nested"}, {"text": "second"}]})
+        == "nested"
+    )
+    assert _nvidia_transcript_text({}) == ""
+    assert _nvidia_transcript_text({"transcriptions": [{"text": ""}]}) == ""
