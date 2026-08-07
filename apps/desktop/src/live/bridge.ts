@@ -16,6 +16,7 @@ export type TranslationProvider =
   | "libretranslate"
   | "google-translate"
   | "mymemory"
+  | "baidu-translate"
   | "custom-http";
 
 export type AsrProvider =

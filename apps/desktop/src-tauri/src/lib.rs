@@ -390,8 +390,8 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
     match translation_provider {
         "nllb" => ids.push("nllb-200-distilled-600M-ct2-int8"),
         "madlad" => ids.push("madlad400-3b-mt"),
-        // Cloud translation (NVIDIA Riva): no local model to check.
-        "nvidia-riva-4b" | "nvidia-riva-1.6b" => {}
+        // Cloud translation (NVIDIA Riva / Baidu): no local model to check.
+        "nvidia-riva-4b" | "nvidia-riva-1.6b" | "baidu-translate" => {}
         _ => {}
     }
     ids
@@ -1771,6 +1771,7 @@ async fn start_live_translation(
             | "libretranslate"
             | "google-translate"
             | "mymemory"
+            | "baidu-translate"
             | "custom-http"
     ) {
         return Err(format!(
@@ -3165,6 +3166,8 @@ fn set_translation_env(
         "LST_LT_API_KEY",
         "LST_CUSTOM_TX_ENDPOINT",
         "LST_CUSTOM_TX_API_KEY",
+        "LST_BAIDU_APPID",
+        "LST_BAIDU_SECRET",
     ];
     let mut env = runtime.env.lock().map_err(lock_error)?;
     for (name, value) in request.pairs {

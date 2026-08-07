@@ -263,6 +263,7 @@ class LiveStartPayload(StrictModel):
         "libretranslate",
         "google-translate",
         "mymemory",
+        "baidu-translate",
         "custom-http",
     ] = "nllb"
     resource_profile: Literal["balanced", "quality"] = "quality"

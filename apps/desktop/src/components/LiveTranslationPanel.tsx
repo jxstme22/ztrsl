@@ -42,6 +42,8 @@ const LT_ENDPOINT_KEY = "lst.live.lt-endpoint";
 const LT_API_KEY_KEY = "lst.live.lt-api-key";
 const CUSTOM_TX_ENDPOINT_KEY = "lst.live.custom-tx-endpoint";
 const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
+const BAIDU_APPID_KEY = "lst.live.baidu-appid";
+const BAIDU_SECRET_KEY = "lst.live.baidu-secret";
 const CAPTION_MODE_KEY = "lst.live.caption-mode";
 
 /** How the pipeline produces captions: streaming preview vs per-utterance. */
@@ -161,6 +163,8 @@ async function pushProviderEnv(
     ltApiKey: string;
     customTxEndpoint: string;
     customTxApiKey: string;
+    baiduAppId: string;
+    baiduSecret: string;
     captionMode: CaptionMode;
   },
 ): Promise<void> {
@@ -178,6 +182,9 @@ async function pushProviderEnv(
   if (translationProvider === "libretranslate") {
     pairs.push(["LST_LT_ENDPOINT", config.ltEndpoint]);
     pairs.push(["LST_LT_API_KEY", config.ltApiKey]);
+  } else if (translationProvider === "baidu-translate") {
+    pairs.push(["LST_BAIDU_APPID", config.baiduAppId]);
+    pairs.push(["LST_BAIDU_SECRET", config.baiduSecret]);
   } else if (translationProvider === "custom-http") {
     pairs.push(["LST_CUSTOM_TX_ENDPOINT", config.customTxEndpoint]);
     pairs.push(["LST_CUSTOM_TX_API_KEY", config.customTxApiKey]);
@@ -242,6 +249,12 @@ export function LiveTranslationPanel({
   const [customTxApiKey, setCustomTxApiKey] = useState<string>(
     () => window.localStorage.getItem(CUSTOM_TX_API_KEY_KEY) ?? "",
   );
+  const [baiduAppId, setBaiduAppId] = useState<string>(
+    () => window.localStorage.getItem(BAIDU_APPID_KEY) ?? "",
+  );
+  const [baiduSecret, setBaiduSecret] = useState<string>(
+    () => window.localStorage.getItem(BAIDU_SECRET_KEY) ?? "",
+  );
   // Persist API keys and custom endpoints on change: the inputs below only
   // set React state, and navigating away unmounts the panel — without these
   // effects everything typed would be lost on the next page switch.
@@ -263,6 +276,12 @@ export function LiveTranslationPanel({
   useEffect(() => {
     setEnvVar(CUSTOM_TX_API_KEY_KEY, customTxApiKey);
   }, [customTxApiKey]);
+  useEffect(() => {
+    setEnvVar(BAIDU_APPID_KEY, baiduAppId);
+  }, [baiduAppId]);
+  useEffect(() => {
+    setEnvVar(BAIDU_SECRET_KEY, baiduSecret);
+  }, [baiduSecret]);
   const t = useT();
   const isSimulator = audio.catalog?.platform === "development";
   const busy = live.state === "starting" || live.state === "stopping";
@@ -412,7 +431,9 @@ export function LiveTranslationPanel({
     (translationProvider !== "libretranslate" ||
       ltEndpoint.trim().length > 0) &&
     (translationProvider !== "custom-http" ||
-      customTxEndpoint.trim().length > 0);
+      customTxEndpoint.trim().length > 0) &&
+    (translationProvider !== "baidu-translate" ||
+      (baiduAppId.trim().length > 0 && baiduSecret.trim().length > 0));
 
   const sameEndpoint =
     monitorEnabled &&
@@ -567,6 +588,8 @@ export function LiveTranslationPanel({
                     ltApiKey,
                     customTxEndpoint,
                     customTxApiKey,
+                    baiduAppId,
+                    baiduSecret,
                     captionMode,
                   });
                   await live.start(
@@ -825,6 +848,10 @@ export function LiveTranslationPanel({
                 label: cloud("MyMemory (free, daily quota)"),
               },
               {
+                value: "baidu-translate",
+                label: cloud("Baidu Translate (free, mainland China)"),
+              },
+              {
                 value: "nvidia-riva-4b",
                 label: cloud("NVIDIA Riva Translate 4B (NIM)"),
               },
@@ -933,6 +960,40 @@ export function LiveTranslationPanel({
             }}
           />
           <small className="field-note">{t("liveNvidiaApiKeyNote")}</small>
+        </div>
+      )}
+
+      {translationProvider === "baidu-translate" && (
+        <div className="live-http-config">
+          <div className="field">
+            <label htmlFor="baidu-appid">{t("liveBaiduAppId")}</label>
+            <input
+              id="baidu-appid"
+              type="text"
+              placeholder="2025..."
+              value={baiduAppId}
+              disabled={listening || busy}
+              onChange={(event) => {
+                setBaiduAppId(event.currentTarget.value);
+                setEnvVar("LST_BAIDU_APPID", event.currentTarget.value);
+              }}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="baidu-secret">{t("liveBaiduSecret")}</label>
+            <input
+              id="baidu-secret"
+              type="password"
+              placeholder="••••••••"
+              value={baiduSecret}
+              disabled={listening || busy}
+              onChange={(event) => {
+                setBaiduSecret(event.currentTarget.value);
+                setEnvVar("LST_BAIDU_SECRET", event.currentTarget.value);
+              }}
+            />
+          </div>
+          <small className="field-note">{t("liveBaiduNote")}</small>
         </div>
       )}
 

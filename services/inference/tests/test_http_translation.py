@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 
 from local_squad_inference.http_translation import (
+    BaiduTranslateProvider,
     CustomHttpProvider,
     GoogleTranslateProvider,
     HttpTranslationError,
@@ -225,3 +226,83 @@ def test_nvidia_riva_failure_returns_placeholder(
     result = provider.translate(_result())
     assert result.english_text.startswith("[NVIDIA Riva unavailable")
     assert result.is_final is True
+
+
+class _FakeResponse:
+    def __init__(self, raw: bytes) -> None:
+        self._raw = raw
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._raw
+
+
+def test_baidu_requires_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LST_BAIDU_APPID", raising=False)
+    monkeypatch.delenv("LST_BAIDU_SECRET", raising=False)
+    with pytest.raises(HttpTranslationError):
+        BaiduTranslateProvider(target_language="zh")
+
+
+def test_baidu_translates_with_sign_and_zh_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    import hashlib
+    import urllib.parse
+
+    monkeypatch.setenv("LST_BAIDU_APPID", "20250101")
+    monkeypatch.setenv("LST_BAIDU_SECRET", "secret")
+    captured: dict[str, object] = {}
+
+    def fake_open(request: object, timeout: float = 8.0) -> _FakeResponse:
+        captured["url"] = str(getattr(request, "full_url", ""))
+        data = getattr(request, "data", b"")
+        assert isinstance(data, bytes)
+        captured["form"] = dict(urllib.parse.parse_qsl(data.decode("utf-8")))
+        return _FakeResponse(
+            (
+                '{"from":"en","to":"zh","trans_result":['
+                '{"src":"Push A site now","dst":"现在推进A点"},'
+                '{"src":"Careful","dst":"小心"}]}'
+            ).encode()
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_open)
+    provider = BaiduTranslateProvider(target_language="zh")
+    result = provider.translate(_result())
+    assert result.english_text == "现在推进A点 小心"
+    form = captured["form"]
+    assert isinstance(form, dict)
+    assert form.get("to") == "zh"
+    assert form.get("from") == "auto"
+    assert form.get("appid") == "20250101"
+    salt = str(form.get("salt", ""))
+    expected = hashlib.md5(f"20250101Push A site now{salt}secret".encode()).hexdigest()
+    assert form.get("sign") == expected
+
+
+def test_baidu_error_code_returns_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LST_BAIDU_APPID", "20250101")
+    monkeypatch.setenv("LST_BAIDU_SECRET", "secret")
+
+    def fake_open(request: object, timeout: float = 8.0) -> _FakeResponse:
+        return _FakeResponse(
+            b'{"error_code":"54001","error_msg":"Invalid Sign or Invalid MD5 Value"}'
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_open)
+    provider = BaiduTranslateProvider(target_language="zh")
+    result = provider.translate(_result())
+    assert result.english_text.startswith(
+        "[Baidu Translate unavailable: Baidu Translate error 54001"
+    )
+
+
+def test_baidu_factory_is_registered(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LST_BAIDU_APPID", "20250101")
+    monkeypatch.setenv("LST_BAIDU_SECRET", "secret")
+    provider = http_translation_provider("baidu-translate", target_language="zh")
+    assert isinstance(provider, BaiduTranslateProvider)
