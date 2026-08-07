@@ -180,6 +180,9 @@ class NvidiaAsrProvider(AsrProvider):
     fallback.
     """
 
+    # Remote ASR: see GroqWhisperProvider.provisional_supported.
+    provisional_supported = False
+
     def __init__(self, model_id: str) -> None:
         api_key = os.environ.get("LST_NVIDIA_API_KEY", "").strip()
         if not api_key:
@@ -324,6 +327,10 @@ class GroqWhisperProvider(AsrProvider):
     """
 
     PROVIDER_ID = "groq-whisper"
+    # Remote ASR: every decode is an HTTP round trip (~1s+), so the
+    # 600 ms provisional cadence would flood the API and starve finals.
+    # Decode once per completed utterance instead.
+    provisional_supported = False
 
     def __init__(self, config: GroqConfig | None = None) -> None:
         api_key = os.environ.get("LST_GROQ_API_KEY", "").strip()
