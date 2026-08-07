@@ -180,7 +180,7 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
   return (
     <section className="card lst-section-card setup-wizard">
       <div className="card-head">
-        <h3 className="card-title">Setup wizard</h3>
+        <h3 className="card-title">Create a profile</h3>
         <span className="lst-model-count pill">
           Step{" "}
           {state.step === "saved"

@@ -20,7 +20,8 @@ export type UIString = {
 const UI_STRINGS = {
   // Nav
   navLive: { en: "Live", zh: "实时" },
-  navSetup: { en: "Setup", zh: "设置向导" },
+  navSetup: { en: "Profile", zh: "配置文件" },
+  navAbout: { en: "About", zh: "关于" },
   navModels: { en: "Models", zh: "模型" },
   navHistory: { en: "History", zh: "历史" },
   navSources: { en: "Sources", zh: "音频源" },
@@ -511,6 +512,10 @@ const UI_STRINGS = {
   liveAllSourcesNote: {
     en: "Every configured source is captured and captioned with its own tag.",
     zh: "将捕获所有已配置的来源，并分别用各自的标签进行字幕翻译。",
+  },
+  liveAllSourcesDisabledNote: {
+    en: "All sources needs 2+ sources with an audio input — add them on the Sources page.",
+    zh: "全部来源需要至少 2 个已配置音频输入的来源——请在“音频源”页面添加。",
   },
   liveSourcesBeingCaptured: {
     en: "Sources being captured",

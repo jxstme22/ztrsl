@@ -666,41 +666,41 @@ export function LiveTranslationPanel({
       )}
 
       <div className="live-grid">
-        {configurableSources.length >= 2 && (
-          <div className="field span-2">
-            <label htmlFor="live-channel-mode">{t("liveChannelMode")}</label>
-            <div className="segmented" id="live-channel-mode">
-              <button
-                type="button"
-                className={channelMode === "channel" ? "on" : ""}
-                disabled={listening || busy}
-                onClick={() => {
-                  setChannelMode("channel");
-                }}
-              >
-                {t("liveOneChannel")}
-              </button>
-              <button
-                type="button"
-                className={channelMode === "all" ? "on" : ""}
-                disabled={listening || busy}
-                onClick={() => {
-                  setChannelMode("all");
-                }}
-              >
-                {t("liveAllSources").replace(
-                  "{count}",
-                  String(configurableSources.length),
-                )}
-              </button>
-            </div>
-            <small className="field-note">
-              {channelMode === "all"
-                ? t("liveAllSourcesNote")
-                : t("liveOneChannelNote")}
-            </small>
+        <div className="field span-2">
+          <label htmlFor="live-channel-mode">{t("liveChannelMode")}</label>
+          <div className="segmented" id="live-channel-mode">
+            <button
+              type="button"
+              className={channelMode === "channel" ? "on" : ""}
+              disabled={listening || busy}
+              onClick={() => {
+                setChannelMode("channel");
+              }}
+            >
+              {t("liveOneChannel")}
+            </button>
+            <button
+              type="button"
+              className={channelMode === "all" ? "on" : ""}
+              disabled={listening || busy || configurableSources.length < 2}
+              onClick={() => {
+                setChannelMode("all");
+              }}
+            >
+              {t("liveAllSources").replace(
+                "{count}",
+                String(configurableSources.length),
+              )}
+            </button>
           </div>
-        )}
+          <small className="field-note">
+            {channelMode === "all"
+              ? t("liveAllSourcesNote")
+              : configurableSources.length < 2
+                ? t("liveAllSourcesDisabledNote")
+                : t("liveOneChannelNote")}
+          </small>
+        </div>
         {channelMode === "all" ? (
           <div className="field span-2">
             <label>{t("liveSourcesBeingCaptured")}</label>

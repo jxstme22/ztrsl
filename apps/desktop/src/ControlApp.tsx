@@ -1,15 +1,4 @@
-import {
-  Activity,
-  Boxes,
-  Gauge,
-  Mic,
-  Minus,
-  ScrollText,
-  Settings,
-  Wand2,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { Activity, Boxes, Gauge, IdCard, Info, Mic, Minus, ScrollText, Settings, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -25,8 +14,8 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
-import { SetupWizard } from "./setup/SetupWizard";
-import { SavedProfilesPanel } from "./components/SavedProfilesPanel";
+import { ProfilePage } from "./setup/ProfilePage";
+import { AboutPanel } from "./components/AboutPanel";
 import { ModelsPanel } from "./components/ModelsPanel";
 import { OverlaySettingsPanel } from "./components/OverlaySettingsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
@@ -50,14 +39,15 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
   | "live"
-  | "setup"
+  | "profile"
   | "models"
   | "history"
   | "settings"
   | "diagnostics"
-  | "sources";
+  | "sources"
+  | "about";
 
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.8.0";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -72,7 +62,7 @@ function navItems(
 ): readonly { id: SectionId; label: string }[] {
   return [
     { id: "live", label: t("navLive") },
-    { id: "setup", label: t("navSetup") },
+    { id: "profile", label: t("navSetup") },
     { id: "history", label: t("navHistory") },
     { id: "models", label: t("navModels") },
     ...(multiSourceEnabled()
@@ -85,12 +75,13 @@ function navItems(
 
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
-  setup: Wand2,
+  profile: IdCard,
   models: Boxes,
   history: ScrollText,
   sources: Mic,
   settings: Settings,
   diagnostics: Gauge,
+  about: Info,
 };
 
 export function ControlApp() {
@@ -167,9 +158,13 @@ export function ControlApp() {
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
         <span className="titlebar-brand-card" data-tauri-drag-region>
-          <span className="titlebar-title">yTSRL</span>
+          <img
+            className="titlebar-icon"
+            src="app-icon.png"
+            alt=""
+            draggable={false}
+          />
           <span className="titlebar-beta">BETA</span>
-          <span className="titlebar-version">v0.7</span>
         </span>
         {desktop && (
           <div className="window-actions">
@@ -212,6 +207,19 @@ export function ControlApp() {
                 </button>
               );
             })}
+            <span className="sidebar-nav-spacer" aria-hidden="true" />
+            <button
+              type="button"
+              className={`nav-button ${section === "about" ? "active" : ""}`}
+              aria-label={language.t("navAbout")}
+              aria-current={section === "about" ? "page" : undefined}
+              title={language.t("navAbout")}
+              onClick={() => {
+                setSection("about");
+              }}
+            >
+              <Info aria-hidden="true" size={20} strokeWidth={1.9} />
+            </button>
           </nav>
         </aside>
 
@@ -224,11 +232,10 @@ export function ControlApp() {
               models={models}
             />
           )}
-          {section === "setup" && (
-            <div className="page-stack">
-              <SetupWizard audio={audio} />
-            </div>
+          {section === "profile" && (
+            <ProfilePage audio={audio} live={live} />
           )}
+          {section === "about" && <AboutPanel version={APP_VERSION} />}
           {section === "models" && (
             <ModelsPage models={models} gpuRuntime={gpuRuntime} />
           )}
@@ -327,8 +334,6 @@ function LivePage({
           </div>
         </section>
       )}
-
-      <SavedProfilesPanel audio={audio} live={live} />
 
       <LiveTranslationPanel audio={audio} live={live} models={models} />
 
