@@ -3160,6 +3160,7 @@ fn set_translation_env(
 ) -> Result<(), String> {
     const ALLOWED: &[&str] = &[
         "LST_GROQ_API_KEY",
+        "LST_NVIDIA_API_KEY",
         "LST_LT_ENDPOINT",
         "LST_LT_API_KEY",
         "LST_CUSTOM_TX_ENDPOINT",
