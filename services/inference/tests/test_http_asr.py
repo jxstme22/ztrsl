@@ -7,8 +7,10 @@ import pytest
 
 from local_squad_inference import http_asr
 from local_squad_inference.http_asr import (
+    NVIDIA_ASR_ENDPOINTS,
     GroqWhisperProvider,
     HttpAsrError,
+    NvidiaAsrProvider,
     _pcm_f32_to_wav,
 )
 from local_squad_inference.vad import AudioUtterance
@@ -127,3 +129,103 @@ def test_groq_transcribe_failure_returns_empty_not_crash(
     assert result.text == ""
     assert result.error == "network down"
     assert result.utterance_id == "u-groq-1"
+
+
+def test_nvidia_provider_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LST_NVIDIA_API_KEY", raising=False)
+    with pytest.raises(HttpAsrError):
+        NvidiaAsrProvider("nvidia-whisper-large-v3")
+
+
+def test_nvidia_transcribe_posts_multipart_with_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LST_NVIDIA_API_KEY", "nvapi_test")
+    captured: dict[str, object] = {}
+
+    def fake_upload(
+        url: str,
+        *,
+        wav_bytes: bytes,
+        language: str,
+        api_key: str,
+        timeout_s: float,
+    ) -> dict[str, object]:
+        captured["url"] = url
+        captured["language"] = language
+        captured["api_key"] = api_key
+        captured["wav_has_riif"] = wav_bytes.startswith(b"RIFF")
+        return {"text": "say it"}
+
+    monkeypatch.setattr(http_asr, "_nvidia_multipart_upload", fake_upload)
+    provider = NvidiaAsrProvider("nvidia-whisper-large-v3")
+    result = provider.transcribe(make_utterance(), "filipino")
+    assert result.text == "say it"
+    assert captured["url"] == NVIDIA_ASR_ENDPOINTS["nvidia-whisper-large-v3"].endpoint
+    assert "invocation.api.nvcf.nvidia.com" in str(captured["url"])
+    assert captured["language"] == "tl"
+    assert captured["api_key"] == "nvapi_test"
+    assert captured["wav_has_riif"] is True
+
+
+def test_nvidia_parakeet_rejects_unsupported_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LST_NVIDIA_API_KEY", "nvapi_test")
+    provider = NvidiaAsrProvider("nvidia-parakeet-1.1b")
+    result = provider.transcribe(make_utterance(), "filipino")
+    assert result.text == ""
+    assert result.error is not None
+    assert "does not support" in result.error
+
+
+def test_nvidia_parakeet_accepts_supported_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LST_NVIDIA_API_KEY", "nvapi_test")
+    captured: dict[str, object] = {}
+
+    def fake_upload(
+        url: str,
+        *,
+        wav_bytes: bytes,
+        language: str,
+        api_key: str,
+        timeout_s: float,
+    ) -> dict[str, object]:
+        captured["language"] = language
+        return {"text": "hello"}
+
+    monkeypatch.setattr(http_asr, "_nvidia_multipart_upload", fake_upload)
+    provider = NvidiaAsrProvider("nvidia-parakeet-1.1b")
+    result = provider.transcribe(make_utterance(), "english")
+    assert result.text == "hello"
+    assert captured["language"] == "en-US"
+
+
+def test_nvidia_transcribe_failure_returns_empty_not_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LST_NVIDIA_API_KEY", "nvapi_test")
+
+    def failing_upload(url: str, **_: object) -> dict[str, object]:
+        raise HttpAsrError("HTTP 401")
+
+    monkeypatch.setattr(http_asr, "_nvidia_multipart_upload", failing_upload)
+    provider = NvidiaAsrProvider("nvidia-whisper-large-v3")
+    result = provider.transcribe(make_utterance(), "english")
+    assert result.text == ""
+    assert result.error is not None
+    assert "401" in result.error
+
+
+def test_nvidia_transcript_text_extracts_nested_transcriptions() -> None:
+    from local_squad_inference.http_asr import _nvidia_transcript_text
+
+    assert _nvidia_transcript_text({"text": "hi"}) == "hi"
+    assert (
+        _nvidia_transcript_text({"transcriptions": [{"text": "nested"}, {"text": "second"}]})
+        == "nested"
+    )
+    assert _nvidia_transcript_text({}) == ""
+    assert _nvidia_transcript_text({"transcriptions": [{"text": ""}]}) == ""
