@@ -1254,7 +1254,20 @@ async def handle_connection(
                         )
                         if live_pipeline is None or live_worker is None:
                             continue
-                        live_pipeline.start_source(source_hex, source_mode=source_mode)
+                        # DS-303: per-source processing policy from the
+                        # registry's audio origin (user overrides later).
+                        from local_squad_inference.audio_health import (
+                            policy_for_origin,
+                        )
+
+                        processing = (
+                            policy_for_origin(entry.source_origin) if entry is not None else None
+                        )
+                        live_pipeline.start_source(
+                            source_hex,
+                            source_mode=source_mode,
+                            processing=processing,
+                        )
                         live_worker.submit(packet_v2)
                         continue
                     snapshot, strictness = snapshot_for(packet_v2.source_id)

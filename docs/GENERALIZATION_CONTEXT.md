@@ -160,10 +160,28 @@ stamped with per-source tag/color/language profile (`source.registry`).
   with persisted selection
 - [x] DS-204 — source settings v3→v4 migration (adds sourceOrigin +
   languageConfig, preserves everything, idempotent)
+- [x] DS-300 — per-source audio health metrics (RMS/peak/clipping/zero/
+  non-finite/speech ratio/packets), computed in the VAD feed, surfaced in
+  per-source diagnostics
+- [x] DS-301 — deterministic source-health states (ready/silent/
+  very_quiet/clipping/format_error/overloaded/disconnected/
+  monitoring_loop_suspected) with explanation + recommended action
+- [x] DS-302 — conservative normalization (bounded gain, cap, never
+  touches non-finite/loud, records whether applied)
+- [x] DS-303 — source-origin processing policies (virtual channel off,
+  microphone light normalize, system mix strict validation, recorded file
+  no VAD) with explicit user overrides
+- [x] DS-400 — named VAD profiles (fast_callouts/natural_conversation/
+  meeting) as a catalog producing VadConfig
+- [x] DS-401 — segmentation diagnostics (forced splits, short fragments,
+  rapid segments, trailing silence, empty-high-speech) without storing raw
+  audio
+- [x] DS-402 — deterministic calibration recommendations (rules, not
+  generated text)
 
 ## Next task
 
-DS-300 — per-source audio health metrics (Phase 3).
+DS-500 — virtual-cable device detection (Phase 5).
 
 ## Decisions that must not be reversed
 

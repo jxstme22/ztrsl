@@ -314,3 +314,69 @@ class EnergyUtteranceManager:
             forced_end=forced,
             source_id=self.namespace or None,
         )
+
+
+# --- DS-400: named VAD profiles ---------------------------------------------
+# A catalog that produces low-level VadConfig values; users pick a use case,
+# not raw timings (Advanced Mode keeps the sensitivity slider).
+
+
+@dataclass(frozen=True)
+class VadProfile:
+    id: str
+    display_name: str
+    config: VadConfig
+
+
+def _profile_config(
+    *,
+    pre_roll_ms: int,
+    min_silence_ms: int,
+    max_utterance_ms: int,
+) -> VadConfig:
+    return VadConfig(
+        pre_roll_ms=pre_roll_ms,
+        min_silence_ms=min_silence_ms,
+        max_utterance_ms=max_utterance_ms,
+    )
+
+
+VAD_PROFILES: dict[str, VadProfile] = {
+    "fast_callouts": VadProfile(
+        "fast_callouts",
+        "Fast callouts (games)",
+        _profile_config(
+            pre_roll_ms=320,
+            min_silence_ms=450,
+            max_utterance_ms=12_000,
+        ),
+    ),
+    "natural_conversation": VadProfile(
+        "natural_conversation",
+        "Natural conversation",
+        _profile_config(
+            pre_roll_ms=400,
+            min_silence_ms=750,
+            max_utterance_ms=25_000,
+        ),
+    ),
+    "meeting": VadProfile(
+        "meeting",
+        "Meeting",
+        _profile_config(
+            pre_roll_ms=450,
+            min_silence_ms=1_100,
+            max_utterance_ms=40_000,
+        ),
+    ),
+}
+
+
+def vad_config_for_profile(profile_id: str) -> VadConfig:
+    """Resolve a named profile; unknown ids raise ValueError so callers
+    surface a visible configuration error instead of silently using
+    defaults."""
+    profile = VAD_PROFILES.get(profile_id)
+    if profile is None:
+        raise ValueError(f"unknown VAD profile: {profile_id}")
+    return profile.config
