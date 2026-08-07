@@ -785,20 +785,8 @@ export function LiveTranslationPanel({
                 ),
               },
               {
-                value: "nvidia-whisper-large-v3",
-                label: cloud("NVIDIA Whisper large-v3 (NIM)"),
-              },
-              {
-                value: "nvidia-nemotron-asr-streaming",
-                label: cloud("NVIDIA Nemotron ASR streaming (NIM)"),
-              },
-              {
                 value: "nvidia-parakeet-1.1b",
                 label: cloud("NVIDIA Parakeet CTC 1.1B (NIM)"),
-              },
-              {
-                value: "nvidia-canary-1b",
-                label: cloud("NVIDIA Canary 1B (NIM)"),
               },
               { value: "groq-whisper", label: cloud("Groq Whisper (API)") },
             ].filter((option) => {
@@ -864,10 +852,6 @@ export function LiveTranslationPanel({
               {
                 value: "nvidia-riva-4b",
                 label: cloud("NVIDIA Riva Translate 4B (NIM)"),
-              },
-              {
-                value: "nvidia-riva-1.6b",
-                label: cloud("NVIDIA Riva Translate 1.6B (NIM)"),
               },
               { value: "custom-http", label: cloud(t("liveCustomHttp")) },
             ].filter((option) => {
