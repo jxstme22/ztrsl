@@ -83,7 +83,10 @@ def _http_post_json(
 ) -> dict[str, Any]:
     payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
     headers = {
-        "Content-Type": "application/json; charset=utf-8",
+        # NVIDIA's gateway 415s any Content-Type other than exactly
+        # "application/json" (charset suffixes are rejected), and plain
+        # "application/json" is accepted by every other endpoint here.
+        "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
         "User-Agent": "local-squad-translator/0.1 (opt-in translation)",
     }
