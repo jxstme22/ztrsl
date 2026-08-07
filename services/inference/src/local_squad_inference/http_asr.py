@@ -171,11 +171,13 @@ class NvidiaAsrProvider(AsrProvider):
     """Transcribe utterances through NVIDIA NIM ASR APIs (build.nvidia.com).
 
     Configure with `LST_NVIDIA_API_KEY` (nvapi-…, free tier). One provider
-    instance per model id; endpoints follow the documented gateway format
-    `https://ai.api.nvidia.com/v1/audio/asr/<org>/<model>`. The streaming
-    endpoint is used utterance-by-utterance like the others (best-effort:
-    a model change in NVIDIA's API is surfaced as a visible error, never
-    as a silent fallback).
+    instance per model id; endpoints follow the invocation-gateway format
+    `https://<function-id>.invocation.api.nvcf.nvidia.com/v1/audio/
+    transcriptions` (multipart: file + language + response_format). Note
+    the free tier only exposes a subset of ASR functions per account —
+    an unauthorized function fails with HTTP 500 "inference connection
+    error", which is surfaced as a visible error, never as a silent
+    fallback.
     """
 
     def __init__(self, model_id: str) -> None:
