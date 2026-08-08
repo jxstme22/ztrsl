@@ -2,7 +2,6 @@ import { LoaderCircle, Play, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
-import { requestMicrophonePermission } from "../audio/bridge";
 import { useLiveTranslation } from "../live/useLiveTranslation";
 import { setTranslationEnv } from "../live/bridge";
 import { loadSourceConfigs } from "../sources/storage";
@@ -132,8 +131,6 @@ function loadAsrProvider(): AsrProvider {
     stored === "ncspeech-zh-parakeet" ||
     stored === "paraformer-zh-streaming" ||
     stored === "sensevoice-small" ||
-    stored === "mlx" ||
-    stored === "mlx-whisper" ||
     stored === "groq-whisper"
   ) {
     return stored;
@@ -278,8 +275,6 @@ export function LiveTranslationPanel({
   const LOCAL_ASR_MODELS: Partial<Record<string, string>> = {
     "whisper-turbo": "whisper-large-v3-turbo",
     "whisper-full": "whisper-large-v3",
-    mlx: "mlx-whisper-large-v3-turbo-q4",
-    "mlx-whisper": "mlx-whisper-large-v3-turbo-q4",
     ncspeech: "ncspeech-tl-fastconformer-hybrid-large",
     "ncspeech-zh": "ncspeech-zh-citrinet-1024-gamma",
     "ncspeech-zh-parakeet": "ncspeech-zh-parakeet-ctc-0.6b",
@@ -343,31 +338,15 @@ export function LiveTranslationPanel({
   const listening = live.state === "listening";
 
   const endpoints = audio.catalog?.endpoints ?? [];
-  const isMacos = audio.catalog?.platform === "macos";
-  // On Windows, loopback captures a render endpoint (WASAPI loopback). On
-  // macOS, loopback is either the input of a virtual device (BlackHole) the
-  // game routes voice-chat output to, or the ScreenCaptureKit "system-audio"
-  // pseudo-endpoint that taps the whole output mix — no install needed.
-  const SYSTEM_AUDIO_ID = "system-audio";
+  // Windows loopback captures a render endpoint (WASAPI loopback); capture
+  // endpoints are microphones.
   const captureInputs = useMemo(
-    () =>
-      endpoints.filter(
-        (endpoint) =>
-          endpoint.kind === "capture" && endpoint.id !== SYSTEM_AUDIO_ID,
-      ),
+    () => endpoints.filter((endpoint) => endpoint.kind === "capture"),
     [endpoints],
   );
   const loopbackInputs = useMemo(
-    () =>
-      isMacos
-        ? endpoints.filter(
-            (endpoint) =>
-              endpoint.kind === "capture" &&
-              (endpoint.id === SYSTEM_AUDIO_ID ||
-                /blackhole|black hole/i.test(endpoint.friendlyName)),
-          )
-        : endpoints.filter((endpoint) => endpoint.kind === "render"),
-    [endpoints, isMacos],
+    () => endpoints.filter((endpoint) => endpoint.kind === "render"),
+    [endpoints],
   );
 
   // Installed local model ids (whisper/nllb/madlad on disk) plus the known
@@ -402,14 +381,12 @@ export function LiveTranslationPanel({
       if (endpoint === undefined) {
         return null;
       }
-      // macOS render endpoints (multi-output devices etc.) cannot be
-      // captured — never offer a configured source built on one.
       return {
         name: endpoint.friendlyName,
-        capturable: endpoint.kind === "capture" || !isMacos,
+        capturable: true,
       };
     },
-    [endpoints, isMacos],
+    [endpoints],
   );
 
   const channelOptions = useMemo<SelectOption[]>(() => {
@@ -640,24 +617,6 @@ export function LiveTranslationPanel({
                   : inputEndpointId !== null
               ) {
                 void (async () => {
-                  // Never start a capture without the microphone grant:
-                  // macOS delivers silent zeros (or hangs) on input without
-                  // it. Ask while the app is frontmost, and abort with a
-                  // clear message when the grant is missing or denied.
-                  const permissionStatus = await requestMicrophonePermission().catch(
-                    () => "notDetermined" as const,
-                  );
-                  if (
-                    permissionStatus === "denied" ||
-                    permissionStatus === "restricted" ||
-                    permissionStatus === "notDetermined"
-                  ) {
-                    setPermissionError(
-                      "yTSRL needs Microphone permission — without it every capture is silent. " +
-                        "Open System Settings → Privacy & Security → Microphone and enable yTSRL, then retry.",
-                    );
-                    return;
-                  }
                   setPermissionError(null);
                   await pushProviderEnv(asrProvider, translationProvider, {
                     groqApiKey,
@@ -940,17 +899,6 @@ export function LiveTranslationPanel({
                   installedModelIds.has("whisper-large-v3"),
                 ),
               },
-              ...(audio.catalog?.platform === "macos"
-                ? [
-                    {
-                      value: "mlx" as const,
-                      label: tag(
-                        "Apple Silicon Whisper (Metal, recommended on Mac)",
-                        installedModelIds.has("mlx-whisper-large-v3-turbo-q4"),
-                      ),
-                    },
-                  ]
-                : []),
               {
                 value: "ncspeech",
                 label: tag(

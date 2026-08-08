@@ -25,8 +25,6 @@ export type AsrProvider =
   | "local"
   | "whisper-turbo"
   | "whisper-full"
-  | "mlx"
-  | "mlx-whisper"
   | "ncspeech"
   | "ncspeech-zh"
   | "ncspeech-zh-parakeet"

@@ -74,7 +74,6 @@ from local_squad_inference.providers import (
     DemoTranslationProvider,
     FasterWhisperProvider,
     MadladTranslationProvider,
-    MlxWhisperProvider,
     NemoCtcProvider,
     NllbCTranslate2Provider,
     OpusMtEnZhProvider,
@@ -440,13 +439,6 @@ def local_whisper_provider(requested_model_id: str) -> FasterWhisperProvider:
     return FasterWhisperProvider(_whisper_model_dir(requested_model_id))
 
 
-@lru_cache(maxsize=2)
-def local_mlx_whisper_provider(
-    requested_model_id: str = "mlx-whisper-large-v3-turbo-q4",
-) -> MlxWhisperProvider:
-    return MlxWhisperProvider(_model_artifact_dir(requested_model_id))
-
-
 NCSpeech_MODEL_DIRS: dict[str, str] = {
     "ncspeech": "ncspeech-tl-fastconformer-hybrid-large",
     "ncspeech-zh": "ncspeech-zh-citrinet-1024-gamma",
@@ -547,13 +539,9 @@ def build_asr_provider(name: str) -> AsrProvider:
     audio to Groq's Whisper endpoint. A missing API key raises before the
     session starts so misconfiguration is visible.
 
-    On Apple Silicon (macOS), `mlx` / `mlx-whisper` selects the Metal-accelerated
-    mlx-whisper provider; `whisper-turbo`/`whisper-full` still pick the
-    CTranslate2 build (CPU-only on macOS) for users who installed those weights.
+    `whisper-turbo`/`whisper-full` pick the CTranslate2 build (CPU-only on
+    macOS) for users who installed those weights.
     """
-    if name in {"mlx", "mlx-whisper"}:
-        requested = os.environ.get("LST_MLX_WHISPER_MODEL_ID", "mlx-whisper-large-v3-turbo-q4")
-        return local_mlx_whisper_provider(requested)
     if name in {"", "local", "whisper-turbo"}:
         requested = os.environ.get("LST_WHISPER_MODEL_ID", "whisper-large-v3-turbo")
         if name == "whisper-turbo":

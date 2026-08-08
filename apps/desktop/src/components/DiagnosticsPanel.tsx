@@ -1,14 +1,11 @@
-import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
   Download,
   Gauge,
   Layers,
-  MonitorSpeaker,
   ShieldCheck,
   ShieldX,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 
 import { type DiagnosticsSnapshot } from "../diagnostics/model";
 import { schedulerCoalescingRate } from "../diagnostics/model";
@@ -95,42 +92,6 @@ export function DiagnosticsPanel({
   onRunLeakage?: () => void;
 }) {
   const t = useT();
-  const [screenRecordingError, setScreenRecordingError] = useState<
-    string | null
-  >(null);
-  const [microphoneStatus, setMicrophoneStatus] = useState<string | null>(
-    null,
-  );
-
-  useEffect(() => {
-    let disposed = false;
-    void invoke("microphone_auth_status")
-      .then((status: unknown) => {
-        if (!disposed) {
-          setMicrophoneStatus(String(status));
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-    };
-  }, []);
-  const openScreenRecordingSettings = () => {
-    setScreenRecordingError(null);
-    void invoke("open_screen_recording_settings").catch((cause: unknown) => {
-      setScreenRecordingError(
-        cause instanceof Error ? cause.message : String(cause),
-      );
-    });
-  };
-  const openMicrophoneSettings = () => {
-    setScreenRecordingError(null);
-    void invoke("open_microphone_settings").catch((cause: unknown) => {
-      setScreenRecordingError(
-        cause instanceof Error ? cause.message : String(cause),
-      );
-    });
-  };
   const displayName = new Map(
     (sourceConfigs?.sources ?? []).map((source) => [
       source.sourceId,
@@ -276,50 +237,6 @@ export function DiagnosticsPanel({
               <p>{snapshot.leakage.detail}</p>
             </div>
           </div>
-        </div>
-      )}
-
-      {platform === "macos" && (
-        <div className="diag-block">
-          <div className="section-heading">
-            <MonitorSpeaker aria-hidden="true" size={16} />
-            <h3>{t("diagnosticsScreenRecordingTitle")}</h3>
-            <button
-              className="button quiet"
-              type="button"
-              onClick={openScreenRecordingSettings}
-            >
-              {t("diagnosticsScreenRecordingOpen")}
-            </button>
-          </div>
-          <p className="diag-hint">{t("diagnosticsScreenRecordingHint")}</p>
-          {screenRecordingError !== null && (
-            <p className="diag-hint warn">{screenRecordingError}</p>
-          )}
-        </div>
-      )}
-
-      {platform === "macos" && (
-        <div className="diag-block">
-          <div className="section-heading">
-            <MonitorSpeaker aria-hidden="true" size={16} />
-            <h3>{t("diagnosticsMicrophoneTitle")}</h3>
-            <button
-              className="button quiet"
-              type="button"
-              onClick={openMicrophoneSettings}
-            >
-              {t("diagnosticsScreenRecordingOpen")}
-            </button>
-          </div>
-          <p className="diag-hint">{t("diagnosticsMicrophoneHint")}</p>
-          <p
-            className={`diag-hint ${microphoneStatus === "authorized" ? "" : "warn"}`}
-            data-testid="mic-status"
-          >
-            Microphone permission status:{" "}
-            <strong>{microphoneStatus ?? "checking…"}</strong>
-          </p>
         </div>
       )}
 

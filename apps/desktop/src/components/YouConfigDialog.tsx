@@ -52,7 +52,6 @@ function loadStored(key: string): string | null {
 const LIVE_ASR_OPTIONS: readonly { value: string; modelId: string | null }[] = [
   { value: "whisper-turbo", modelId: "whisper-large-v3-turbo" },
   { value: "whisper-full", modelId: "whisper-large-v3" },
-  { value: "mlx-whisper", modelId: "mlx-whisper-large-v3-turbo-q4" },
   { value: "ncspeech", modelId: "ncspeech-tl-fastconformer-hybrid-large" },
   { value: "ncspeech-zh", modelId: "ncspeech-zh-citrinet-1024-gamma" },
   { value: "ncspeech-zh-parakeet", modelId: "ncspeech-zh-parakeet-ctc-0.6b" },

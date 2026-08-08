@@ -101,7 +101,6 @@ LANGUAGE_PROVIDER_MAP: dict[str, tuple[str, ...]] = {
 
 PROVIDER_MODELS: dict[str, str] = {
     "faster-whisper": "whisper-large-v3-turbo",
-    "mlx-whisper": "mlx-whisper-large-v3-turbo-q4",
     "sensevoice": "sensevoice-small",
     "paraformer": "paraformer-zh-streaming",
     "ncspeech": "ncspeech-tl-fastconformer-hybrid-large",
@@ -163,20 +162,14 @@ def route_recognition(
         if candidates is not None
         else [
             "faster-whisper",
-            "mlx-whisper",
             "sensevoice",
             "groq-whisper",
             "nvidia-whisper-large-v3",
         ]
     )
-    if "faster-whisper" in ordered:
-        # Whisper is the multilingual workhorse; on Apple Silicon prefer
-        # MLX when the model is installed, and fast quality prefers
-        # faster-whisper directly.
-        if hardware.apple_silicon and "mlx-whisper-large-v3-turbo-q4" in hardware.installed_models:
-            ordered.insert(0, "mlx-whisper")
-        elif quality == "fast":
-            ordered = ["faster-whisper", *[p for p in ordered if p != "faster-whisper"]]
+    if quality == "fast" and "faster-whisper" in ordered:
+        # Whisper is the multilingual workhorse; fast quality prefers it.
+        ordered = ["faster-whisper", *[p for p in ordered if p != "faster-whisper"]]
 
     primary = next(
         (provider for provider in ordered if _provider_installed(provider, hardware)), None

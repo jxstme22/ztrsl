@@ -32,7 +32,7 @@ export class RootErrorBoundary extends Component<
         <p className="eyebrow">Startup diagnostic</p>
         <h1>The interface could not start</h1>
         <p>
-          yTRSL hit a frontend error. Reload the window to try again; your
+          yTSRL hit a frontend error. Reload the window to try again; your
           clips and local settings were not changed.
         </p>
         <pre>{this.state.error.message}</pre>

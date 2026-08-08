@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "yTRSL",
+  "productName": "yTSRL",
   "version": "0.8.1",
   "identifier": "app.localsquadtranslator.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "control",
-        "title": "yTRSL",
+        "title": "yTSRL",
         "width": 1000,
         "height": 904,
         "minWidth": 920,
@@ -27,7 +27,7 @@
       },
       {
         "label": "overlay",
-        "title": "yTRSL Captions",
+        "title": "yTSRL Captions",
         "url": "index.html?window=overlay",
         "width": 900,
         "height": 150,
@@ -45,8 +45,7 @@
     ],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost"
-    },
-    "macOSPrivateApi": true
+    }
   },
   "bundle": {
     "active": true,
@@ -60,7 +59,6 @@
     ],
     "macOS": {
       "signingIdentity": "-",
-      "entitlements": "Entitlements.macOS.plist",
       "infoPlist": "Info.plist"
     },
     "resources": ["sidecars/"]

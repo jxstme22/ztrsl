@@ -170,7 +170,6 @@ export const YOU_ASR_OPTIONS: readonly {
 }[] = [
   { value: "whisper-turbo", modelId: "whisper-large-v3-turbo" },
   { value: "whisper-full", modelId: "whisper-large-v3" },
-  { value: "mlx-whisper", modelId: "mlx-whisper-large-v3-turbo-q4" },
   { value: "sensevoice-small", modelId: "sensevoice-small" },
 ];
 

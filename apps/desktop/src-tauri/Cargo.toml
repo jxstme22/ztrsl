@@ -20,7 +20,7 @@ model-manager = { path = "../../../crates/model-manager" }
 serde.workspace = true
 serde_json.workspace = true
 sidecar-supervisor = { path = "../../../crates/sidecar-supervisor" }
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2" }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "=2.4.0"
 tokio = { version = "1", features = ["sync", "time"] }
@@ -37,11 +37,6 @@ windows = { version = "0.61", features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
-objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSColor", "NSView"] }
-objc2-foundation = { version = "0.3" }
-objc2-av-foundation = { version = "0.3", features = ["AVMediaFormat", "block2"] }
-window-vibrancy = "0.7"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

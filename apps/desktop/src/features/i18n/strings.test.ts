@@ -17,7 +17,7 @@ describe("i18n strings", () => {
   it("returns the key for an unknown string", () => {
     // translate is typed to known keys, but a runtime cast still resolves
     // through the Record lookup without throwing.
-    expect(translate("welcomeTitle", "en")).toBe("Welcome to yTRSL");
+    expect(translate("welcomeTitle", "en")).toBe("Welcome to yTSRL");
   });
 
   it("has a Chinese welcome title", () => {

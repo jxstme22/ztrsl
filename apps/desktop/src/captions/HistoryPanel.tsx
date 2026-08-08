@@ -80,7 +80,6 @@ export function HistoryPanel({
   onToggleMic,
   onSendChat,
   onOpenYouConfig,
-  onOpenMicSettings,
   separatedState,
   separatedError,
   onStartSeparatedLive,
@@ -103,8 +102,6 @@ export function HistoryPanel({
    * or null when nothing was recorded (translation failed / no session). */
   onSendChat: (text: string) => Promise<string | null>;
   onOpenYouConfig: () => void;
-  /** Open the macOS Microphone privacy pane (denied-mic recovery). */
-  onOpenMicSettings: () => void;
   /** Separated live session status (started from this page). */
   separatedState: "idle" | "starting" | "listening" | "stopping" | "error";
   separatedError: string | null;
@@ -886,13 +883,6 @@ export function HistoryPanel({
         {micError !== null && (
           <div className="history-mic-error" role="alert">
             <span>{micError}</span>
-            <button
-              type="button"
-              className="button quiet history-mic-error-action"
-              onClick={onOpenMicSettings}
-            >
-              {t("chatMicOpenSettings")}
-            </button>
           </div>
         )}
       </form>

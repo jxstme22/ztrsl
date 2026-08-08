@@ -41,11 +41,6 @@ import { Select } from "./components/Select";
 import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
 import { useAudioMeter } from "./audio/useAudioMeter";
-import {
-  microphoneAuthStatus,
-  openMicrophoneSettings,
-  requestMicrophonePermission,
-} from "./audio/bridge";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useT } from "./features/i18n/store";
@@ -227,24 +222,6 @@ export function ControlApp() {
   });
   separatedLiveRef.current = separatedLive;
 
-  // On macOS, ask for microphone access once per launch (only while the
-  // status is still undetermined — a denied grant must go through System
-  // Settings, not a re-prompt). Without a granted TCC entry, cpal opens the
-  // mic but CoreAudio delivers silence (no error, no prompt). wry's webview
-  // delegate auto-grants the getUserMedia request, so this is what surfaces
-  // the real macOS permission prompt.
-  useEffect(() => {
-    if (audio.catalog?.platform !== "macos") {
-      return;
-    }
-    void (async () => {
-      const status = await microphoneAuthStatus();
-      if (status === "notDetermined") {
-        await requestMicrophonePermission().catch(() => undefined);
-      }
-    })();
-  }, [audio.catalog?.platform]);
-
   // Keep the overlay window's history view in sync (it also boots from the
   // same localStorage, so this only needs to run when entries change).
   useEffect(() => {
@@ -296,29 +273,12 @@ export function ControlApp() {
   );
 
   // The "you" mic toggle: flips the shared flag the Rust live loop watches.
-  // Requires a running live session with a configured mic stream. On macOS
-  // the TCC gate must be granted first — request it now (user action, window
-  // focused) so the prompt reliably presents instead of silently no-opping.
+  // Requires a running live session with a configured mic stream.
   const toggleMic = useCallback(async (): Promise<boolean> => {
-    if (audio.catalog?.platform === "macos") {
-      const status = await microphoneAuthStatus();
-      if (status === "notDetermined") {
-        const requested = await requestMicrophonePermission();
-        if (requested !== "authorized") {
-          throw new Error(
-            "Microphone permission is required to translate your voice — open System Settings → Privacy & Security → Microphone and enable yTSRL.",
-          );
-        }
-      } else if (status === "denied" || status === "restricted") {
-        throw new Error(
-          "Microphone permission was denied — open System Settings → Privacy & Security → Microphone and enable yTSRL, then try again.",
-        );
-      }
-    }
     const next = !live.snapshot.micEnabled;
     const applied = await live.setMicEnabled(next);
     return applied === next;
-  }, [audio.catalog?.platform, live]);
+  }, [live]);
 
   // Typed-chat translation: translate on demand (standalone sidecar), then
   // record the "you" bubble. When no session is open (e.g. chat before any
@@ -646,7 +606,6 @@ export function ControlApp() {
                 onToggleMic={toggleMic}
                 onSendChat={sendChat}
                 onOpenYouConfig={() => { setYouConfigOpen(true); }}
-                onOpenMicSettings={() => { void openMicrophoneSettings(); }}
                 separatedState={separatedLive.state}
                 separatedError={separatedLive.error}
                 onStartSeparatedLive={startSeparatedLive}

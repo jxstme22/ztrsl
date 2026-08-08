@@ -300,8 +300,6 @@ class LiveStartPayload(StrictModel):
         "ncspeech",
         "ncspeech-zh",
         "ncspeech-zh-parakeet",
-        "mlx",
-        "mlx-whisper",
         "paraformer-zh-streaming",
         "sensevoice-small",
         "nvidia-whisper-large-v3",

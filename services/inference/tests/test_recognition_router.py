@@ -31,7 +31,7 @@ MACOS = HardwareCapabilities(
     vram_class="low",
     apple_silicon=True,
     cpu_thread_class="high",
-    installed_models=frozenset({"mlx-whisper-large-v3-turbo-q4", "sensevoice-small"}),
+    installed_models=frozenset({"sensevoice-small"}),
 )
 
 CPU_ONLY = HardwareCapabilities(
@@ -106,19 +106,6 @@ class TestRoutingTable:
         )
         assert plan.language_hint == "tl"
         assert plan.primary_provider_id == "faster-whisper"
-
-    def test_apple_silicon_prefers_mlx(self) -> None:
-        plan = route_recognition(
-            request(
-                {
-                    "primary_language": "zh",
-                    "secondary_languages": ["en"],
-                    "detection_mode": "primary_preferred",
-                },
-                hardware=MACOS,
-            )
-        )
-        assert plan.primary_provider_id == "mlx-whisper"
 
     def test_missing_preferred_model_degrades_to_documented_fallback(self) -> None:
         plan = route_recognition(

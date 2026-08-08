@@ -140,10 +140,6 @@ const UI_STRINGS = {
     en: "The microphone is not available right now",
     zh: "麦克风当前不可用",
   },
-  chatMicOpenSettings: {
-    en: "Open Settings",
-    zh: "打开设置",
-  },
   overlayToggleHistory: {
     en: "Toggle captions history on the overlay",
     zh: "在悬浮窗中切换字幕历史",
@@ -185,7 +181,7 @@ const UI_STRINGS = {
   exportBundle: { en: "Export support bundle", zh: "导出支持包" },
 
   // Welcome
-  welcomeTitle: { en: "Welcome to yTRSL", zh: "欢迎使用 yTRSL" },
+  welcomeTitle: { en: "Welcome to yTSRL", zh: "欢迎使用 yTSRL" },
   welcomeSub: {
     en: "VALORANT voice chat, captioned in English — on this PC.",
     zh: "在本机为 VALORANT 语音聊天生成英文字幕。",
@@ -425,10 +421,6 @@ const UI_STRINGS = {
   sourcesAdd: { en: "Add source", zh: "添加音频源" },
   sourcesRemove: { en: "Remove", zh: "移除" },
   sourcesUnnamed: { en: "Unnamed source", zh: "未命名音源" },
-  sourcesMacosHint: {
-    en: "Install BlackHole (github.com/ExistentialAudio/BlackHole) and route VALORANT voice-chat output to it, so the app can caption the voice channel without using your microphone. Allow microphone access in System Settings when first capturing.",
-    zh: "安装 BlackHole（github.com/ExistentialAudio/BlackHole）并将 VALORANT 语音聊天输出路由到它，应用即可在不使用麦克风的情况下为语音频道生成字幕。首次捕获时请在系统设置中允许麦克风访问。",
-  },
 
   // Diagnostics page
   diagnosticsTitle: { en: "Diagnostics", zh: "诊断" },
@@ -444,26 +436,6 @@ const UI_STRINGS = {
   diagnosticsOldestQueued: { en: "Oldest queued", zh: "最旧排队" },
   diagnosticsAvgDelay: { en: "Avg delay", zh: "平均延迟" },
   diagnosticsMaxDelay: { en: "Max delay", zh: "最大延迟" },
-  diagnosticsScreenRecordingTitle: {
-    en: "Screen Recording permission",
-    zh: "屏幕录制权限",
-  },
-  diagnosticsScreenRecordingHint: {
-    en: "System Audio (all apps) stays silent until this app has Screen Recording permission. Open System Settings and enable yTSRL, then restart the app.",
-    zh: "在授予此应用屏幕录制权限之前，系统音频源将保持静默。请打开系统设置启用 yTSRL，然后重新启动应用。",
-  },
-  diagnosticsScreenRecordingOpen: {
-    en: "Open System Settings",
-    zh: "打开系统设置",
-  },
-  diagnosticsMicrophoneTitle: {
-    en: "Microphone permission",
-    zh: "麦克风权限",
-  },
-  diagnosticsMicrophoneHint: {
-    en: "A denied or missing microphone permission makes mic capture deliver silence with no error. Enable yTSRL under Microphone, then restart the app.",
-    zh: "如果麦克风权限被拒绝或缺失，麦克风采集将静默无声且不报错。请在麦克风设置中启用 yTSRL，然后重新启动应用。",
-  },
   diagnosticsIsolationOk: { en: "Clean", zh: "干净" },
   diagnosticsIsolationLeak: { en: "Leakage detected", zh: "检测到泄漏" },
 
@@ -763,10 +735,6 @@ const UI_STRINGS = {
   ipcStarting: { en: "Starting…", zh: "正在启动…" },
   ipcStartFake: { en: "Start fake sidecar", zh: "启动模拟 sidecar" },
   ipcTitle: { en: "Authenticated fake inference", zh: "认证的模拟推理" },
-  sourcesBlackHoleDetected: {
-    en: "BlackHole detected",
-    zh: "已检测到 BlackHole",
-  },
   liveSameDeviceWarning: {
     en: "Capture and monitor use the same device",
     zh: "捕获与监听使用了同一设备",
@@ -952,8 +920,8 @@ const UI_STRINGS = {
   wizardTitle: { en: "Create a profile", zh: "创建配置" },
   wizardStepCount: { en: "Step {n}/8", zh: "第 {n}/8 步" },
   wizardStepChooseUseCase: {
-    en: "What will you use yTRSL with?",
-    zh: "你打算用 yTRSL 做什么？",
+    en: "What will you use yTSRL with?",
+    zh: "你打算用 yTSRL 做什么？",
   },
   wizardStepDetectCable: { en: "Virtual cable check", zh: "虚拟音频线检测" },
   wizardStepShowRouting: {
@@ -983,8 +951,8 @@ const UI_STRINGS = {
     zh: "正在检测虚拟音频线设备……",
   },
   wizardCableFound: {
-    en: "Found a virtual cable ({ids}). The application you listen to outputs here; yTRSL captures it.",
-    zh: "检测到虚拟音频线（{ids}）。你收听的应用程序输出到这里，yTRSL 会捕获它。",
+    en: "Found a virtual cable ({ids}). The application you listen to outputs here; yTSRL captures it.",
+    zh: "检测到虚拟音频线（{ids}）。你收听的应用程序输出到这里，yTSRL 会捕获它。",
   },
   wizardCableMissing: {
     en: "No virtual cable detected. Install VB-CABLE (Windows) or BlackHole (macOS), then refresh. You can still continue and pick a different input.",
@@ -1014,8 +982,8 @@ const UI_STRINGS = {
   },
   wizardChooseOutput: { en: "Choose an output…", zh: "选择输出……" },
   wizardSignalIntro: {
-    en: "Speak into the captured channel. yTRSL measures your voice level for 2 seconds.",
-    zh: "请对着被捕获的通道说话。yTRSL 会测量你的音量 2 秒钟。",
+    en: "Speak into the captured channel. yTSRL measures your voice level for 2 seconds.",
+    zh: "请对着被捕获的通道说话。yTSRL 会测量你的音量 2 秒钟。",
   },
   wizardMeasuringSignal: {
     en: "Measuring… speak now",
@@ -1084,8 +1052,8 @@ const UI_STRINGS = {
 
   // About page
   aboutIntro: {
-    en: "yTRSL is a privacy-first accessibility companion: it listens to voice chat on your computer and shows near-live English captions for what your teammates say. Everything runs on your own machine — nothing you say is uploaded unless you choose a cloud provider.",
-    zh: "yTRSL 是一个以隐私为先的辅助工具：它监听电脑上的语音聊天，并为队友说的话显示近乎实时的英文字幕。一切都在你自己的机器上运行——除非你选择云端服务商，否则你的声音不会被上传。",
+    en: "yTSRL is a privacy-first accessibility companion: it listens to voice chat on your computer and shows near-live English captions for what your teammates say. Everything runs on your own machine — nothing you say is uploaded unless you choose a cloud provider.",
+    zh: "yTSRL 是一个以隐私为先的辅助工具：它监听电脑上的语音聊天，并为队友说的话显示近乎实时的英文字幕。一切都在你自己的机器上运行——除非你选择云端服务商，否则你的声音不会被上传。",
   },
   aboutPagesTitle: {
     en: "The pages, simply explained",

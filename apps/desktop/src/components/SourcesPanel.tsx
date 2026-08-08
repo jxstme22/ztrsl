@@ -10,7 +10,6 @@ import type { UIKey } from "../features/i18n/strings";
 import { type AsrProvider } from "../live/bridge";
 import { renderLabel } from "../sources/labels";
 import { SOURCE_PRESETS, createSourceFromPreset } from "../sources/presets";
-import { detectBlackHole } from "../setup/blackHole";
 import { detectVbCable } from "../setup/vbCable";
 import {
   MAX_SOURCES,
@@ -118,7 +117,6 @@ export const PRESET_OPTIONS = SOURCE_PRESETS.map((preset) => ({
  */
 function captureOptions(
   catalog: EndpointCatalog | null,
-  isMacos: boolean,
   t: ReturnType<typeof useT>,
 ): readonly { value: string; label: string; group?: string }[] {
   if (catalog === null) {
@@ -132,29 +130,14 @@ function captureOptions(
       continue;
     }
     if (endpoint.kind === "capture") {
-      if (endpoint.id === "system-audio") {
-        loopback.push({
-          value: endpoint.id,
-          label: endpoint.friendlyName,
-          group: t("sourcesLoopbackGroup"),
-        });
-      } else if (isMacos && /blackhole|black hole/i.test(endpoint.friendlyName)) {
-        loopback.push({
-          value: endpoint.id,
-          label: `${endpoint.friendlyName} · loopback`,
-          group: t("sourcesLoopbackGroup"),
-        });
-      } else {
-        microphones.push({
-          value: endpoint.id,
-          label: endpoint.friendlyName,
-          group: t("sourcesMicrophoneGroup"),
-        });
-      }
-    } else if (!isMacos) {
-      // Windows render endpoints are capturable via WASAPI loopback;
-      // macOS render endpoints (multi-output devices etc.) have no input
-      // streams and must never be offered as capture choices.
+      // Capture endpoints are microphones.
+      microphones.push({
+        value: endpoint.id,
+        label: endpoint.friendlyName,
+        group: t("sourcesMicrophoneGroup"),
+      });
+    } else {
+      // Render endpoints are capturable via WASAPI loopback.
       loopback.push({
         value: endpoint.id,
         label: `${endpoint.friendlyName} · loopback`,
@@ -220,10 +203,9 @@ function AudioSourceFields({
   onChange: (patch: Partial<AudioSourceConfig>) => void;
 }) {
   const t = useT();
-  const isMacos = catalog?.platform === "macos";
   const captureChoices = useMemo(
-    () => captureOptions(catalog, isMacos, t),
-    [catalog, isMacos, t],
+    () => captureOptions(catalog, t),
+    [catalog, t],
   );
   const renderChoices = useMemo(
     () =>
@@ -553,37 +535,6 @@ function SourceCard({
   );
 }
 
-function MacosSetupHint() {
-  const t = useT();
-  const audio = useAudioMeter();
-  const catalog = audio.catalog;
-  const detection = catalog !== null ? detectBlackHole(catalog) : null;
-
-  if (detection?.installed === true) {
-    return (
-      <div className="inline-alert ok" role="status">
-        <div>
-          <strong>{t("sourcesBlackHoleDetected")}</strong>
-          <p>
-            Route VALORANT voice-chat output to “BlackHole 2ch” in the game's
-            audio settings, then capture its input here. Your microphone is
-            always available as its own source.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="inline-alert" role="status">
-      <div>
-        <strong>macOS setup</strong>
-        <p>{t("sourcesMacosHint")}</p>
-      </div>
-    </div>
-  );
-}
-
 export function SourcesPanel({
   asrProvider = "local",
 }: {
@@ -597,7 +548,6 @@ export function SourcesPanel({
 
   return (
     <div className="page-stack">
-      {audio.catalog?.platform === "macos" && <MacosSetupHint />}
       <VbCableCard />
       <section className="card" aria-labelledby="sources-title">
         <div className="card-head">

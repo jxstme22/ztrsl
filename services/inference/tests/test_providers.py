@@ -27,7 +27,6 @@ class FakeSegment:
         self.no_speech_prob = no_speech_prob
         self.avg_logprob = avg_logprob
 
-
 def test_is_hallucination_matches_known_phrases() -> None:
     assert is_hallucination("Thanks for Watching!")
     assert is_hallucination("thank you")
@@ -40,7 +39,6 @@ def test_is_hallucination_matches_known_phrases() -> None:
     assert not is_hallucination("get into the game right now everyone")
     assert not is_hallucination("rotate to A")
 
-
 def test_keep_asr_segment_drops_non_speech_and_hallucinations() -> None:
     assert keep_asr_segment(FakeSegment("rotate B, they are on A")) is True
     assert keep_asr_segment(FakeSegment("Thank you!")) is False
@@ -48,7 +46,6 @@ def test_keep_asr_segment_drops_non_speech_and_hallucinations() -> None:
     assert keep_asr_segment(FakeSegment("", no_speech_prob=0.0)) is False
     assert keep_asr_segment(FakeSegment("let's go", no_speech_prob=0.95)) is False
     assert keep_asr_segment(FakeSegment("push now", no_speech_prob=0.1)) is True
-
 
 def test_keep_asr_segment_joint_no_speech_decision() -> None:
     # High no_speech_prob with STRONG logprob is confident speech: keep.
@@ -88,7 +85,6 @@ def test_keep_asr_segment_joint_no_speech_decision() -> None:
         is False
     )
 
-
 class FakeTranslator:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -96,7 +92,6 @@ class FakeTranslator:
     def translate_batch(self, source: list[list[str]], **kwargs: Any) -> list[Any]:
         self.calls.append({"source": source, **kwargs})
         return [SimpleNamespace(hypotheses=[["eng_Latn", "▁They", "▁are", "▁on", "▁A", "."]])]
-
 
 class FakeCTranslate2Module:
     def __init__(self) -> None:
@@ -112,11 +107,9 @@ class FakeCTranslate2Module:
         self.translator = FakeTranslator()
         return self.translator
 
-
 class FakeEncoding:
     def __init__(self) -> None:
         self.tokens: list[str] = ["▁Push", "▁na"]
-
 
 class FakeTokenizer:
     encodes: ClassVar[list[str]] = []
@@ -140,11 +133,9 @@ class FakeTokenizer:
         reverse = {100: "They", 101: "are", 102: "on", 103: "A", 104: "."}
         return " ".join(reverse.get(i, "?") for i in ids).replace(" .", ".")
 
-
 class FakeTokenizerModule:
     def __init__(self) -> None:
         self.Tokenizer = FakeTokenizer
-
 
 @pytest.fixture
 def nllb_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
@@ -189,7 +180,6 @@ def nllb_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str,
     monkeypatch.delenv("LST_TRANSLATION_COMPUTE_TYPE", raising=False)
     return {"ct2": ct2, "tok": tok}, model_dir
 
-
 @pytest.mark.skipif(
     platform.system() != "Windows",
     reason="CUDA is deliberately enabled only on Windows in this codebase",
@@ -202,14 +192,12 @@ def test_nllb_provider_uses_cuda_when_available(nllb_env: tuple[dict[str, Any], 
     assert created["compute_type"] == "int8"
     assert provider.runtime_detail == "cuda/int8"
 
-
 def test_nllb_provider_falls_back_to_cpu(nllb_env: tuple[dict[str, Any], Path]) -> None:
     modules, model_dir = nllb_env
     modules["ct2"].cuda_device_count = 0
     provider = NllbCTranslate2Provider(model_dir)
     assert modules["ct2"].created[0]["device"] == "cpu"
     assert provider.runtime_detail == "cpu/int8"
-
 
 def test_nllb_provider_translate_injects_lang_tokens_and_strips_prefix(
     nllb_env: tuple[dict[str, Any], Path],
@@ -234,7 +222,6 @@ def test_nllb_provider_translate_injects_lang_tokens_and_strips_prefix(
     assert result.model_id == "nllb-200-distilled-600M-ct2-int8"
     assert modules["tok"].Tokenizer.encodes == ["Push na"]
 
-
 def test_nllb_provider_injects_chinese_source_token(
     nllb_env: tuple[dict[str, Any], Path],
 ) -> None:
@@ -254,7 +241,6 @@ def test_nllb_provider_injects_chinese_source_token(
     call = modules["ct2"].translator.calls[0]
     assert call["source"] == [["zho_Hans", "▁Push", "▁na"]]
     assert call["target_prefix"] == [["eng_Latn"]]
-
 
 def test_nllb_provider_english_to_chinese_target(
     nllb_env: tuple[dict[str, Any], Path],
@@ -276,14 +262,12 @@ def test_nllb_provider_english_to_chinese_target(
     assert call["source"] == [["eng_Latn", "▁Push", "▁na"]]
     assert call["target_prefix"] == [["zho_Hans"]]
 
-
 def test_nllb_provider_rejects_unknown_target_language(
     nllb_env: tuple[dict[str, Any], Path],
 ) -> None:
     _, model_dir = nllb_env
     with pytest.raises(ValueError):
         NllbCTranslate2Provider(model_dir, target_language="de")
-
 
 def test_nllb_provider_passthrough_empty_and_long_text(
     nllb_env: tuple[dict[str, Any], Path],
@@ -317,7 +301,6 @@ def test_nllb_provider_passthrough_empty_and_long_text(
     assert "too long" in long_text.english_text
     assert modules["ct2"].translator.calls == []
 
-
 def test_nllb_provider_missing_manifest_is_visible(
     nllb_env: tuple[dict[str, Any], Path], tmp_path: Path
 ) -> None:
@@ -326,164 +309,6 @@ def test_nllb_provider_missing_manifest_is_visible(
     empty_dir.mkdir()
     with pytest.raises(ModelUnavailableError):
         NllbCTranslate2Provider(empty_dir)
-
-
-class FakeMlxModule:
-    """Fake `mlx_whisper` module recording transcribe calls."""
-
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-        self._segments: list[dict[str, Any]] = []
-
-    def set_segments(self, segments: list[dict[str, Any]]) -> None:
-        self._segments = segments
-
-    def transcribe(self, audio: Any, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append({"audio_shape": getattr(audio, "shape", None), **kwargs})
-        return {
-            "text": " ".join(seg.get("text", "") for seg in self._segments).strip(),
-            "segments": self._segments,
-            "language": "tl",
-        }
-
-
-@pytest.fixture
-def mlx_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
-    pytest.importorskip("numpy")
-    model_dir = tmp_path / "mlx-whisper"
-    model_dir.mkdir()
-    (model_dir / "config.json").write_bytes(b"{}")
-    (model_dir / "weights.npz").write_bytes(b"\x00\x00\x00\x00")
-
-    def digest(data: bytes) -> str:
-        import hashlib
-
-        return hashlib.sha256(data).hexdigest()
-
-    (model_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "id": "mlx-whisper-large-v3-turbo-q4",
-                "artifacts": [
-                    {
-                        "role": "config",
-                        "path": "config.json",
-                        "size_bytes": 2,
-                        "sha256": digest(b"{}"),
-                    },
-                    {
-                        "role": "model",
-                        "path": "weights.npz",
-                        "size_bytes": 4,
-                        "sha256": digest(b"\x00\x00\x00\x00"),
-                    },
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    mlx = FakeMlxModule()
-    monkeypatch.setitem(sys.modules, "mlx_whisper", mlx)
-    return {"mlx": mlx}, model_dir
-
-
-def test_mlx_provider_transcribes_utterance(
-    mlx_env: tuple[dict[str, Any], Path],
-) -> None:
-    from local_squad_inference.providers import MlxWhisperProvider
-    from local_squad_inference.vad import AudioUtterance
-
-    modules, model_dir = mlx_env
-    modules["mlx"].set_segments(
-        [{"text": "Push A site", "start": 0.0, "end": 1.2, "avg_logprob": -0.1}]
-    )
-    provider = MlxWhisperProvider(model_dir)
-    assert provider.runtime_detail == "metal/mlx-4bit"
-    result = provider.transcribe(
-        AudioUtterance(
-            utterance_id="u1",
-            pcm_f32=(0.0, 0.1, 0.0),
-            sample_rate=16_000,
-            started_ns=0,
-            ended_ns=1_200_000_000,
-            is_final=True,
-            forced_end=True,
-        ),
-        source_mode="filipino",
-    )
-    assert result.text == "Push A site"
-    assert result.language == "tl"
-    call = modules["mlx"].calls[0]
-    assert call["language"] == "tl"
-    assert call["path_or_hf_repo"] == str(model_dir.resolve())
-    assert call["condition_on_previous_text"] is False
-
-
-def test_mlx_provider_drops_hallucination_segments(
-    mlx_env: tuple[dict[str, Any], Path],
-) -> None:
-    from local_squad_inference.providers import MlxWhisperProvider
-    from local_squad_inference.vad import AudioUtterance
-
-    modules, model_dir = mlx_env
-    modules["mlx"].set_segments(
-        [
-            {"text": "Thanks for watching", "start": 0.0, "end": 0.5, "avg_logprob": -0.1},
-            {"text": "rotate B, they are on A", "start": 0.5, "end": 1.5, "avg_logprob": -0.2},
-        ]
-    )
-    provider = MlxWhisperProvider(model_dir)
-    result = provider.transcribe(
-        AudioUtterance(
-            utterance_id="u2",
-            pcm_f32=(0.0, 0.1, 0.0),
-            sample_rate=16_000,
-            started_ns=0,
-            ended_ns=1_500_000_000,
-            is_final=True,
-            forced_end=True,
-        ),
-        source_mode="filipino",
-    )
-    # The hallucination segment is dropped; real speech is kept.
-    assert "rotate B" in result.text
-    assert "Thanks for watching" not in result.text
-
-
-def test_mlx_provider_missing_library_is_visible(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from local_squad_inference.providers import MlxWhisperProvider
-
-    model_dir = tmp_path / "mlx-missing"
-    model_dir.mkdir()
-    (model_dir / "config.json").write_bytes(b"{}")
-    (model_dir / "weights.npz").write_bytes(b"\x00")
-    (model_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "id": "mlx-whisper-large-v3-turbo-q4",
-                "artifacts": [
-                    {"path": "config.json", "size_bytes": 2, "sha256": "0" * 64},
-                    {"path": "weights.npz", "size_bytes": 1, "sha256": "1" * 64},
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.delitem(sys.modules, "mlx_whisper", raising=False)
-    monkeypatch.setattr("importlib.import_module", _raise_on_mlx)
-    with pytest.raises(ModelUnavailableError):
-        MlxWhisperProvider(model_dir)
-
-
-def _raise_on_mlx(name: str) -> Any:
-    if name == "mlx_whisper":
-        raise ImportError("no mlx-whisper installed")
-    return __import__(name)
-
 
 class FakeSherpaSenseVoiceModule:
     """Fake `sherpa_onnx` for SenseVoice: `from_sense_voice` returns a
@@ -598,7 +423,6 @@ def test_sensevoice_provider_transcribes_utterance(
     assert zh_config["tokens"].endswith("tokens.txt")
     assert calls[-1] == {"decoded": True}
 
-
 def test_sensevoice_uses_auto_recognizer_for_unknown_languages(
     sensevoice_env: tuple[dict[str, Any], Path],
 ) -> None:
@@ -625,7 +449,6 @@ def test_sensevoice_uses_auto_recognizer_for_unknown_languages(
     auto_config = next(call for call in modules["sherpa"].calls if call.get("language") == "auto")
     assert auto_config is not None
 
-
 def test_sensevoice_provider_missing_manifest_is_visible(tmp_path: Path) -> None:
     from local_squad_inference.providers import SenseVoiceProvider
 
@@ -633,7 +456,6 @@ def test_sensevoice_provider_missing_manifest_is_visible(tmp_path: Path) -> None
     empty.mkdir()
     with pytest.raises(ModelUnavailableError, match="not installed"):
         SenseVoiceProvider(empty)
-
 
 def test_sensevoice_provider_missing_library_is_visible(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

@@ -25,7 +25,6 @@ const PYTHON = existsSync(VENV_PYTHON)
     : "python";
 // macOS ships the Apple Silicon (MLX) ASR runtime in the sidecar so captions
 // run on the Metal GPU/ANE. Windows/CUDA keeps faster-whisper only.
-const IS_MACOS = process.platform === "darwin";
 
 const BUILD_ROOT = resolve(ROOT, "target", "sidecar-build");
 const DIST_DIR = resolve(BUILD_ROOT, "dist");
@@ -86,16 +85,6 @@ const args = [
   "websockets",
   "--hidden-import",
   "numpy",
-  ...(IS_MACOS
-    ? [
-        "--hidden-import",
-        "mlx_whisper",
-        "--collect-all",
-        "mlx_whisper",
-        "--collect-all",
-        "mlx",
-      ]
-    : []),
   "--collect-all",
   "ctranslate2",
   "--collect-all",
@@ -145,25 +134,6 @@ const stagedDir = resolve(SIDECAR_DIR, "local-squad-sidecar");
 console.log("Staging sidecar ->", stagedDir);
 rmSync(stagedDir, { recursive: true, force: true });
 cpSync(builtDir, stagedDir, { recursive: true });
-
-// macOS mlx: PyInstaller flattens libmlx.dylib into the onedir root, so mlx's
-// colocated metallib lookup (relative to the loaded dylib) misses the shader
-// library at _internal/mlx/lib/mlx.metallib and every live transcription dies
-// with "Failed to load the default metallib". Mirror mlx.metallib next to the
-// flattened dylib so the colocated fallback resolves.
-if (IS_MACOS) {
-  const metallib = resolve(
-    stagedDir,
-    "_internal",
-    "mlx",
-    "lib",
-    "mlx.metallib",
-  );
-  if (existsSync(metallib)) {
-    copyFileSync(metallib, resolve(stagedDir, "_internal", "mlx.metallib"));
-    console.log("mlx: staged mlx.metallib next to the flattened dylib");
-  }
-}
 
 // Translation-runner (MADLAD candle runner) next to it.
 if (existsSync(RUNNER)) {
