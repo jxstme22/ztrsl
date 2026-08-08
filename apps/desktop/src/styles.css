@@ -186,6 +186,16 @@
   background: var(--progress-track);
 }
 
+/* History page surfaces are solid white in the light theme: chat bubbles
+   (non-"you"), avatars, the top toolbar, and the bottom input bar. "You"
+   bubbles keep their picked color (inline style wins). */
+:root[data-theme="light"] .chat-bubble-tip,
+:root[data-theme="light"] .chat-avatar,
+:root[data-theme="light"] .history-toolbar,
+:root[data-theme="light"] .history-input-card {
+  background: #ffffff;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -2690,7 +2700,8 @@ input[type="range"]::-moz-range-thumb {
    sit on the right with the picked solid color. */
 .history-entry.chat-bubble {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   align-items: flex-start;
   max-width: min(640px, 88%);
   padding: 0;
@@ -2698,8 +2709,20 @@ input[type="range"]::-moz-range-thumb {
   background: transparent;
 }
 
+/* The avatar + bubble row inside the column (the per-speaker meta line sits
+   above it; it is a sibling, not a bubble child). */
+.chat-bubble-main {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  max-width: 100%;
+}
+
 .history-entry.chat-bubble.self {
   align-self: flex-end;
+}
+
+.history-entry.chat-bubble.self .chat-bubble-main {
   flex-direction: row-reverse;
 }
 
@@ -2782,6 +2805,12 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   margin-bottom: 4px;
   min-height: 16px;
+}
+
+/* The once-per-speaker-run log line above a "you" bubble hugs the right
+   edge like the bubble itself (chat bubbles are right-aligned). */
+.history-entry-meta.chat-bubble-meta[data-self] {
+  justify-content: flex-end;
 }
 
 .history-entry-meta time {

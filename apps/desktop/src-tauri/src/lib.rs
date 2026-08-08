@@ -1761,7 +1761,11 @@ impl LiveSource {
             source_id: self.source_id.clone(),
             display_name: self.display_name.clone(),
             caption_tag: self.caption_tag.clone(),
-            capture_target: serde_json::Value::String(self.endpoint_name.clone()),
+            capture_target: serde_json::json!({
+                "kind": "endpoint",
+                "endpoint_id": self.endpoint_name,
+                "loopback": self.loopback,
+            }),
             language_profile: self.language_profile.clone(),
             strictness: match self.strictness.as_str() {
                 "off" => CaptionStrictness::Off,

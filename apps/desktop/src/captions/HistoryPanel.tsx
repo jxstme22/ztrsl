@@ -7,6 +7,7 @@ import {
   Copy,
   Mic,
   Pencil,
+  Plus,
   Search,
   Send,
   Settings,
@@ -81,9 +82,19 @@ const YOU_COLOR_PRESETS = [
   "#64748b",
 ];
 
+/** Identity of a speaker run: "you" bubbles group under their own key, all
+ * other speakers group by source id (falling back to their display label). */
+function speakerKey(entry: HistoryEntry): string {
+  if (entry.fromSelf) {
+    return "you";
+  }
+  return entry.sourceId !== "" ? `src:${entry.sourceId}` : `who:${entry.displayName}`;
+}
+
 export function HistoryPanel({
   sessions,
   currentSessionId,
+  onNewSession,
   onRenameSession,
   onDeleteSession,
   onClearSession,
@@ -98,6 +109,9 @@ export function HistoryPanel({
 }: {
   sessions: HistorySession[];
   currentSessionId: string | null;
+  /** Open a fresh session and make it current: live captions and chat
+   * continue into the new session from both the Live and History pages. */
+  onNewSession: () => void;
   onRenameSession: (id: string, name: string) => void;
   onDeleteSession: (id: string) => void;
   onClearSession: (id: string) => void;
@@ -164,6 +178,21 @@ export function HistoryPanel({
         entry.displayName.toLowerCase().includes(needle),
     );
   }, [query, selected]);
+
+  // The first bubble of each speaker in the transcript carries the log/data
+  // line; later bubbles from the same speaker stay clean (chat-style).
+  const firstOfSpeakerIds = useMemo(() => {
+    const seen = new Set<string>();
+    const ids = new Set<string>();
+    for (const entry of entries) {
+      const key = speakerKey(entry);
+      if (!seen.has(key)) {
+        seen.add(key);
+        ids.add(entry.id);
+      }
+    }
+    return ids;
+  }, [entries]);
 
   useEffect(() => {
     onCountChange?.(selected?.entries.length ?? 0);
@@ -343,6 +372,19 @@ export function HistoryPanel({
     >
       <div className="history-toolbar" ref={toolbarRef}>
         <div className="history-toolbar-group">
+          <button
+            className="button quiet history-toolbar-button"
+            type="button"
+            aria-label={t("historyNewSession")}
+            title={t("historyNewSessionHint")}
+            onClick={onNewSession}
+          >
+            <Plus aria-hidden="true" size={14} />
+            <span className="history-toolbar-label">
+              {t("historyNewSession")}
+            </span>
+          </button>
+
           <button
             className={`button quiet history-toolbar-button ${sessionsOpen ? "on" : ""}`}
             type="button"
@@ -629,6 +671,7 @@ export function HistoryPanel({
                     entry={entry}
                     options={options}
                     copied={copiedId === entry.id}
+                    firstOfSpeaker={firstOfSpeakerIds.has(entry.id)}
                     onCopy={() => {
                       void copyEntry(entry);
                     }}
@@ -711,11 +754,14 @@ function MessageBubble({
   entry,
   options,
   copied,
+  firstOfSpeaker,
   onCopy,
 }: {
   entry: HistoryEntry;
   options: HistoryDisplayOptions;
   copied: boolean;
+  /** Whether this bubble starts a new speaker run (meta line shows once). */
+  firstOfSpeaker: boolean;
   onCopy: () => void;
 }) {
   const t = useT();
@@ -733,6 +779,39 @@ function MessageBubble({
       data-uncertain={entry.uncertain || undefined}
       style={fromSelf ? undefined : accent.entry}
     >
+      {firstOfSpeaker && (
+        <div
+          className="history-entry-meta chat-bubble-meta"
+          data-self={fromSelf || undefined}
+        >
+          {options.showSpeaker && (
+            <span
+              className="history-who"
+              style={
+                fromSelf
+                  ? {
+                      backgroundColor: `${options.youColor}26`,
+                      color: options.youColor,
+                    }
+                  : accent.badge
+              }
+            >
+              {who}
+            </span>
+          )}
+          {options.showTimestamp && <time>{formatTime(entry.timestampMs)}</time>}
+          {options.showLatency && entry.latencyMs > 0 && (
+            <span className="history-latency">{entry.latencyMs} ms</span>
+          )}
+          {options.showModels && entry.provider !== "" && (
+            <span className="history-models">{entry.provider}</span>
+          )}
+          {entry.uncertain && (
+            <span className="history-uncertain">?</span>
+          )}
+        </div>
+      )}
+      <div className="chat-bubble-main">
       {options.showAvatars && (
         <span
           className={`chat-avatar ${fromSelf ? "self" : ""}`}
@@ -789,6 +868,7 @@ function MessageBubble({
             </div>
           </div>
         </div>
+      </div>
       </div>
     </li>
   );
