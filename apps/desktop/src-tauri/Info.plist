@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>yTSRL captures the audio source you select (your microphone, a BlackHole virtual input, or system audio) and translates it into English captions on this Mac. Audio is processed locally and never uploaded.</string>
+  <string>yTRSL captures the audio source you select (your microphone, a BlackHole virtual input, or system audio) and translates it into English captions on this Mac. Audio is processed locally and never uploaded.</string>
   <key>NSScreenCaptureUsageDescription</key>
-  <string>yTSRL uses system audio capture to hear game and voice-chat audio so it can translate teammates' voice chat into English captions. Only audio is used — screen content is never captured, stored, or shared.</string>
+  <string>yTRSL uses system audio capture to hear game and voice-chat audio so it can translate teammates' voice chat into English captions. Only audio is used — screen content is never captured, stored, or shared.</string>
 </dict>
 </plist>

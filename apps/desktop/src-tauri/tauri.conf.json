@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "yTSRL",
+  "productName": "yTRSL",
   "version": "0.9.0",
   "identifier": "app.localsquadtranslator.desktop",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "control",
-        "title": "yTSRL",
+        "title": "yTRSL",
         "width": 1000,
         "height": 904,
         "minWidth": 920,
@@ -27,7 +27,7 @@
       },
       {
         "label": "overlay",
-        "title": "yTSRL Captions",
+        "title": "yTRSL Captions",
         "url": "index.html?window=overlay",
         "width": 900,
         "height": 150,

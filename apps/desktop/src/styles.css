@@ -3122,6 +3122,7 @@ input[type="range"]::-moz-range-thumb {
 
 .history-menu-row:disabled {
   opacity: 0.45;
+  cursor: default;
 }
 
 /* Label on the left, checkmark on the right. */
@@ -3161,8 +3162,6 @@ input[type="range"]::-moz-range-thumb {
 .history-submenu:dir(rtl) {
   left: auto;
   right: calc(100% + 6px);
-}
-  cursor: default;
 }
 
 .history-menu-name {

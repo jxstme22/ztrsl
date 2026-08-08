@@ -627,4 +627,4 @@ minus macOS-only pieces (window chrome, system-audio capture, MLX, mic TCC).
 - **Responsive dropdowns** — selects flip upward near the viewport bottom;
   history menus are solid; settings menu redesigned with checkmarks and a
   nested layout picker.
-- **Branding** — back to yTSRL on the Windows build.
+- **Branding** — yTRSL on the Windows build.

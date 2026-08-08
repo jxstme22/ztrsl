@@ -496,7 +496,7 @@ export function ControlApp() {
             alt=""
             draggable={false}
           />
-          <span className="titlebar-title">yTSRL</span>
+          <span className="titlebar-title">yTRSL</span>
           <span className="titlebar-beta">BETA</span>
           <span className="titlebar-version">v{APP_VERSION}</span>
         </span>

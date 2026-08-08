@@ -20,7 +20,7 @@ model-manager = { path = "../../../crates/model-manager" }
 serde.workspace = true
 serde_json.workspace = true
 sidecar-supervisor = { path = "../../../crates/sidecar-supervisor" }
-tauri = { version = "2" }
+tauri = { version = "2", features = [] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "=2.4.0"
 tokio = { version = "1", features = ["sync", "time"] }

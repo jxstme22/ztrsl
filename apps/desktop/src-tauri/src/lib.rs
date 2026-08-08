@@ -244,7 +244,7 @@ fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
     } else {
         app.path()
             .app_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir().join("yTSRL"))
+            .unwrap_or_else(|_| std::env::temp_dir().join("yTRSL"))
             .join("models")
     }
 }
@@ -3567,7 +3567,7 @@ fn run_macos_live_loop(
             return Err(LiveLoopError::Endpoint(
                 "System Audio received no audio from ScreenCaptureKit. macOS is \
                  not letting this app capture the output mix — grant Screen Recording \
-                 permission to yTSRL in System Settings > Privacy & Security > \
+                 permission to yTRSL in System Settings > Privacy & Security > \
                  Screen Recording (add/check it, then restart the app), or switch to \
                  a BlackHole loopback source instead."
                     .to_owned(),

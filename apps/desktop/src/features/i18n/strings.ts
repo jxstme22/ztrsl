@@ -181,7 +181,7 @@ const UI_STRINGS = {
   exportBundle: { en: "Export support bundle", zh: "导出支持包" },
 
   // Welcome
-  welcomeTitle: { en: "Welcome to yTSRL", zh: "欢迎使用 yTSRL" },
+  welcomeTitle: { en: "Welcome to yTRSL", zh: "欢迎使用 yTRSL" },
   welcomeSub: {
     en: "VALORANT voice chat, captioned in English — on this PC.",
     zh: "在本机为 VALORANT 语音聊天生成英文字幕。",
@@ -920,8 +920,8 @@ const UI_STRINGS = {
   wizardTitle: { en: "Create a profile", zh: "创建配置" },
   wizardStepCount: { en: "Step {n}/8", zh: "第 {n}/8 步" },
   wizardStepChooseUseCase: {
-    en: "What will you use yTSRL with?",
-    zh: "你打算用 yTSRL 做什么？",
+    en: "What will you use yTRSL with?",
+    zh: "你打算用 yTRSL 做什么？",
   },
   wizardStepDetectCable: { en: "Virtual cable check", zh: "虚拟音频线检测" },
   wizardStepShowRouting: {
@@ -951,8 +951,8 @@ const UI_STRINGS = {
     zh: "正在检测虚拟音频线设备……",
   },
   wizardCableFound: {
-    en: "Found a virtual cable ({ids}). The application you listen to outputs here; yTSRL captures it.",
-    zh: "检测到虚拟音频线（{ids}）。你收听的应用程序输出到这里，yTSRL 会捕获它。",
+    en: "Found a virtual cable ({ids}). The application you listen to outputs here; yTRSL captures it.",
+    zh: "检测到虚拟音频线（{ids}）。你收听的应用程序输出到这里，yTRSL 会捕获它。",
   },
   wizardCableMissing: {
     en: "No virtual cable detected. Install VB-CABLE (Windows) or BlackHole (macOS), then refresh. You can still continue and pick a different input.",
@@ -982,8 +982,8 @@ const UI_STRINGS = {
   },
   wizardChooseOutput: { en: "Choose an output…", zh: "选择输出……" },
   wizardSignalIntro: {
-    en: "Speak into the captured channel. yTSRL measures your voice level for 2 seconds.",
-    zh: "请对着被捕获的通道说话。yTSRL 会测量你的音量 2 秒钟。",
+    en: "Speak into the captured channel. yTRSL measures your voice level for 2 seconds.",
+    zh: "请对着被捕获的通道说话。yTRSL 会测量你的音量 2 秒钟。",
   },
   wizardMeasuringSignal: {
     en: "Measuring… speak now",
@@ -1052,8 +1052,8 @@ const UI_STRINGS = {
 
   // About page
   aboutIntro: {
-    en: "yTSRL is a privacy-first accessibility companion: it listens to voice chat on your computer and shows near-live English captions for what your teammates say. Everything runs on your own machine — nothing you say is uploaded unless you choose a cloud provider.",
-    zh: "yTSRL 是一个以隐私为先的辅助工具：它监听电脑上的语音聊天，并为队友说的话显示近乎实时的英文字幕。一切都在你自己的机器上运行——除非你选择云端服务商，否则你的声音不会被上传。",
+    en: "yTRSL is a privacy-first accessibility companion: it listens to voice chat on your computer and shows near-live English captions for what your teammates say. Everything runs on your own machine — nothing you say is uploaded unless you choose a cloud provider.",
+    zh: "yTRSL 是一个以隐私为先的辅助工具：它监听电脑上的语音聊天，并为队友说的话显示近乎实时的英文字幕。一切都在你自己的机器上运行——除非你选择云端服务商，否则你的声音不会被上传。",
   },
   aboutPagesTitle: {
     en: "The pages, simply explained",
