@@ -83,14 +83,27 @@ export function YouConfigDialog({
   installedModelIds,
   onClose,
   onSaved,
+  separatedState = "idle",
+  separatedError = null,
+  onStartSeparatedLive,
+  onStopSeparatedLive,
 }: {
   endpoints: AudioEndpoint[];
   installedModelIds: ReadonlySet<string>;
   onClose: () => void;
   onSaved: (config: YouStreamConfig) => void;
+  /** Separated (history) live session status. */
+  separatedState?: "idle" | "starting" | "listening" | "stopping" | "error";
+  separatedError?: string | null;
+  onStartSeparatedLive: () => Promise<string | null>;
+  onStopSeparatedLive: () => Promise<void>;
 }) {
   const t = useT();
   const [config, setConfig] = useState<YouStreamConfig>(loadYouConfig);
+  const [separatedBusy, setSeparatedBusy] = useState(false);
+  const [separatedLocalError, setSeparatedLocalError] = useState<string | null>(
+    null,
+  );
 
   // Live section state, seeded from the same keys the Live page uses.
   const [liveEndpointId, setLiveEndpointId] = useState<string>(
@@ -362,6 +375,54 @@ export function YouConfigDialog({
         </section>
 
         <p className="you-config-live-note">{t("chatConfigLiveNote")}</p>
+
+        <div className="you-config-separated">
+          <span className="you-config-separated-label">
+            {t("historySeparatedLive")}
+          </span>
+          {separatedState === "listening" ? (
+            <button
+              type="button"
+              className="button history-separated-stop"
+              disabled={separatedBusy}
+              onClick={() => {
+                setSeparatedBusy(true);
+                void onStopSeparatedLive().finally(() => {
+                  setSeparatedBusy(false);
+                });
+              }}
+            >
+              {t("historySeparatedStop")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button btn-shine history-separated-start"
+              disabled={separatedBusy || separatedState === "starting"}
+              onClick={() => {
+                setSeparatedBusy(true);
+                void onStartSeparatedLive()
+                  .then((error) => {
+                    if (error !== null) {
+                      setSeparatedLocalError(error);
+                    }
+                  })
+                  .finally(() => {
+                    setSeparatedBusy(false);
+                  });
+              }}
+            >
+              {separatedState === "starting"
+                ? t("historySeparatedStarting")
+                : t("historySeparatedStart")}
+            </button>
+          )}
+          {(separatedLocalError ?? separatedError) !== null && (
+            <span className="history-separated-error" role="alert">
+              {separatedLocalError ?? separatedError}
+            </span>
+          )}
+        </div>
 
         <div className="lst-modal-actions you-config-actions">
           <button type="button" className="button quiet" onClick={onClose}>

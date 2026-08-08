@@ -66,9 +66,16 @@ export function useCaptionHistory() {
   );
 
   const beginSession = useCallback((id: string, name: string) => {
-    setState((current) =>
-      historyReducer(current, { type: "beginSession", id, name }),
-    );
+    // Update the ref synchronously so callers that read `currentSessionId`
+    // right after (e.g. the chat box recording a bubble) see the new session
+    // immediately instead of the stale pre-update state.
+    const next = historyReducer(stateRef.current, {
+      type: "beginSession",
+      id,
+      name,
+    });
+    stateRef.current = next;
+    setState(next);
   }, []);
 
   const endSession = useCallback((id: string) => {

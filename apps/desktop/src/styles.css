@@ -2450,7 +2450,7 @@ input[type="range"]::-moz-range-thumb {
 /* Captions-history view inside the overlay window: a readable transcript
    panel (the live caption lane stays transparent). */
 .overlay-shell[data-history] {
-  align-content: stretch;
+  align-content: end;
 }
 
 /* A fixed row count (5 or 10) sizes the panel to its content instead of
@@ -2684,32 +2684,10 @@ input[type="range"]::-moz-range-thumb {
   list-style: none;
 }
 
-/* Classic layout: the old flat entry rows (left accent + badge + text).
-   "You" entries stay right-aligned like in chat mode. */
-.history-entry-classic {
-  align-self: stretch;
-  max-width: 100%;
-  padding: 10px 14px;
-  border: 1px solid var(--stroke);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-}
-
-.history-entry-classic.self {
-  margin-left: auto;
-  max-width: min(640px, 88%);
-}
-
-.history-entry-classic[data-uncertain] .history-text {
-  opacity: 0.72;
-}
-
-.history-entry-classic .history-copy {
-  margin-left: auto;
-}
-
-/* Bubble chat rows: profile icon beside a rounded bubble; "you" (own mic /
-   typed chat) bubbles sit on the right, everyone else on the left. */
+/* Per-caption bubble rows: each finalized caption is its own small bubble
+   sized to its text. No speaker/avatar/meta inside — just the text (and the
+   optional transcribed line) with the copy button beside it. "You" bubbles
+   sit on the right with the picked solid color. */
 .history-entry.chat-bubble {
   display: flex;
   gap: 8px;
@@ -2728,8 +2706,9 @@ input[type="range"]::-moz-range-thumb {
 .chat-avatar {
   display: grid;
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
+  margin-top: 3px;
   place-items: center;
   border-radius: 50%;
   /* Same surface as the bubble it sits beside. */
@@ -2740,15 +2719,8 @@ input[type="range"]::-moz-range-thumb {
   user-select: none;
 }
 
-.history-entry.chat-bubble.self .chat-avatar {
-  background: rgba(220, 77, 94, 0.12);
-  color: #f8728a;
-}
-
 .chat-bubble-body {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
   min-width: 0;
   align-items: flex-start;
 }
@@ -2757,8 +2729,7 @@ input[type="range"]::-moz-range-thumb {
   align-items: flex-end;
 }
 
-/* Bubble row: bubble + copy button side by side (copy beside the caption,
-   not below it). */
+/* Bubble row: bubble + copy button side by side (copy beside the caption). */
 .chat-bubble-row {
   display: flex;
   gap: 6px;
@@ -2769,25 +2740,23 @@ input[type="range"]::-moz-range-thumb {
   flex-direction: row-reverse;
 }
 
-/* The corner beside the profile icon (top) is the "pointed" one — the
-   bubble points at who said it, and the icon sits at the top. */
 .chat-bubble-tip {
-  padding: 9px 13px;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px 12px;
   border: 1px solid var(--stroke);
-  border-radius: 4px 14px 14px 14px;
+  border-radius: 14px 14px 14px 4px;
   background: var(--bg-elevated);
 }
 
 /* YOU bubble: same shape/radius as other bubbles, solid configurable
-   background (default blue) instead of the red/pink tint. */
+   background (default blue). */
 .history-entry.chat-bubble.self .chat-bubble-tip {
-  border-radius: 14px 14px 14px 14px;
+  border-radius: 14px 14px 4px 14px;
   border-color: transparent;
 }
 
-/* Each message inside a merged bubble: caption text + copy button beside
-   it on the same row (button vertically centered, never stretches the
-   bubble or adds trailing free space). */
 .chat-bubble-message {
   display: flex;
   gap: 8px;
@@ -2797,12 +2766,6 @@ input[type="range"]::-moz-range-thumb {
 .chat-bubble-text {
   flex: 1;
   min-width: 0;
-}
-
-.chat-bubble-message + .chat-bubble-message {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid var(--stroke);
 }
 
 .history-entry.chat-bubble.self .chat-bubble-message {
@@ -3987,6 +3950,30 @@ input[type="range"]::-moz-range-thumb {
 
 .you-config-actions {
   flex-wrap: wrap;
+}
+
+/* Separated live start/stop controls inside the config modal. */
+.you-config-separated {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  background: var(--glass);
+}
+
+.you-config-separated-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.you-config-separated .history-separated-start,
+.you-config-separated .history-separated-stop {
+  min-height: 30px;
+  padding: 0 14px;
 }
 
 .you-config-dialog .lst-modal-actions .button {

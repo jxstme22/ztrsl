@@ -6,9 +6,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   currentSessionEntries,
   type HistoryEntry,
+  loadHistoryDisplayOptions,
   loadHistoryState,
   visibleHistoryEntries,
-  YOU_ACCENT_COLOR,
 } from "./captions/history";
 import { CaptionStack } from "./components/CaptionStack";
 import { useT } from "./features/i18n/store";
@@ -28,6 +28,9 @@ export function OverlayApp() {
     currentSessionEntries(loadHistoryState()),
   );
   const t = useT();
+  // The "you" bubble color picked in the History display-options menu, so
+  // the overlay's YOU badge matches the picked color (not a hardcoded red).
+  const youBubbleColor = useRef(loadHistoryDisplayOptions().youColor);
 
   // The overlay is always dark-styled: a transparent caption bar over the
   // game (or a dark history panel) must never pick up the app's light theme.
@@ -214,7 +217,7 @@ export function OverlayApp() {
                       className="overlay-history-source"
                       style={{
                         ...badgeStyle(
-                          entry.fromSelf ? YOU_ACCENT_COLOR : entry.color,
+                          entry.fromSelf ? youBubbleColor.current : entry.color,
                         ),
                         fontSize:
                           String(Math.round(historyFontSize * 0.78)) + "px",

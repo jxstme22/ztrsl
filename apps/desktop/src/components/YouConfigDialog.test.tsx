@@ -44,6 +44,8 @@ function renderDialog(
       }
       onClose={overrides.onClose ?? vi.fn()}
       onSaved={overrides.onSaved ?? vi.fn()}
+      onStartSeparatedLive={vi.fn()}
+      onStopSeparatedLive={vi.fn()}
     />,
   );
 }
@@ -82,5 +84,57 @@ describe("YouConfigDialog", () => {
   it("shows the live-section note so users know it is separate", () => {
     renderDialog();
     expect(screen.getByText(/only apply when you press/i)).toBeInTheDocument();
+  });
+});
+
+describe("YouConfigDialog separated live controls", () => {
+  it("shows the separated-live start button and starts it", () => {
+    const onStart = vi.fn().mockResolvedValue(null);
+    render(
+      <YouConfigDialog
+        endpoints={[
+          {
+            id: "mic-1",
+            friendlyName: "Built-in Microphone",
+            kind: "capture",
+            state: "active",
+            defaultRoles: {
+              console: true,
+              multimedia: true,
+              communications: true,
+            },
+            nativeFormat: { sampleRate: 48000, channels: 1 },
+            isSynthetic: false,
+          },
+        ]}
+        installedModelIds={new Set()}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        separatedState="idle"
+        separatedError={null}
+        onStartSeparatedLive={onStart}
+        onStopSeparatedLive={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
+    expect(onStart).toHaveBeenCalled();
+  });
+
+  it("shows Stop while the separated live is listening", () => {
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    render(
+      <YouConfigDialog
+        endpoints={[]}
+        installedModelIds={new Set()}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+        separatedState="listening"
+        separatedError={null}
+        onStartSeparatedLive={vi.fn()}
+        onStopSeparatedLive={onStop}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^stop$/i }));
+    expect(onStop).toHaveBeenCalled();
   });
 });

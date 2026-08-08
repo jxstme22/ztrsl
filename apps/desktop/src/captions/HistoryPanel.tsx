@@ -94,10 +94,6 @@ export function HistoryPanel({
   onToggleMic,
   onSendChat,
   onOpenYouConfig,
-  separatedState,
-  separatedError,
-  onStartSeparatedLive,
-  onStopSeparatedLive,
 }: {
   sessions: HistorySession[];
   currentSessionId: string | null;
@@ -116,11 +112,6 @@ export function HistoryPanel({
    * or null when nothing was recorded (translation failed / no session). */
   onSendChat: (text: string) => Promise<string | null>;
   onOpenYouConfig: () => void;
-  /** Separated live session status (started from this page). */
-  separatedState: "idle" | "starting" | "listening" | "stopping" | "error";
-  separatedError: string | null;
-  onStartSeparatedLive: () => Promise<string | null>;
-  onStopSeparatedLive: () => Promise<void>;
 }) {
   const t = useT();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -130,11 +121,6 @@ export function HistoryPanel({
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState<"settings" | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [layoutOpen, setLayoutOpen] = useState(false);
-  const [separatedBusy, setSeparatedBusy] = useState(false);
-  const [separatedLocalError, setSeparatedLocalError] = useState<string | null>(
-    null,
-  );
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -175,30 +161,6 @@ export function HistoryPanel({
         entry.displayName.toLowerCase().includes(needle),
     );
   }, [query, selected]);
-
-  // Chat-room grouping: consecutive bubbles from the same speaker merge
-  // into one bubble (each message becomes its own line) until another
-  // speaker talks. "Same speaker" = same fromSelf flag + same display
-  // identity (source id when present, else the display name).
-  const messageGroups = useMemo(() => {
-    const groups: HistoryEntry[][] = [];
-    for (const entry of entries) {
-      const last = groups[groups.length - 1];
-      const previous = last?.[last.length - 1];
-      const sameSpeaker =
-        previous?.fromSelf === entry.fromSelf &&
-        (previous.sourceId !== ""
-          ? previous.sourceId === entry.sourceId
-          : previous.displayName === entry.displayName &&
-            previous.sourceLabel === entry.sourceLabel);
-      if (sameSpeaker && last !== undefined) {
-        last.push(entry);
-      } else {
-        groups.push([entry]);
-      }
-    }
-    return groups;
-  }, [entries]);
 
   useEffect(() => {
     onCountChange?.(selected?.entries.length ?? 0);
@@ -243,7 +205,6 @@ export function HistoryPanel({
       if (!toolbarRef.current?.contains(event.target as Node)) {
         setMenuOpen(null);
         setSessionsOpen(false);
-        setLayoutOpen(false);
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
@@ -256,7 +217,6 @@ export function HistoryPanel({
   useEffect(() => {
     if (sessionsOpen) {
       setMenuOpen(null);
-      setLayoutOpen(false);
     }
   }, [sessionsOpen]);
 
@@ -397,58 +357,6 @@ export function HistoryPanel({
             <ChevronDown aria-hidden="true" size={14} />
           </button>
 
-          <div
-            className={`history-separated ${separatedState === "listening" ? "on" : ""}`}
-            role="status"
-          >
-            <span className="history-separated-label">
-              {t("historySeparatedLive")}
-            </span>
-            {separatedState === "listening" ? (
-              <button
-                type="button"
-                className="button history-separated-stop"
-                disabled={separatedBusy}
-                onClick={() => {
-                  setSeparatedBusy(true);
-                  void onStopSeparatedLive().finally(() => {
-                    setSeparatedBusy(false);
-                  });
-                }}
-              >
-                {t("historySeparatedStop")}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="button btn-shine history-separated-start"
-                disabled={separatedBusy || separatedState === "starting"}
-                onClick={() => {
-                  setSeparatedBusy(true);
-                  setSeparatedLocalError(null);
-                  void onStartSeparatedLive()
-                    .then((error) => {
-                      if (error !== null) {
-                        setSeparatedLocalError(error);
-                      }
-                    })
-                    .finally(() => {
-                      setSeparatedBusy(false);
-                    });
-                }}
-              >
-                {separatedState === "starting"
-                  ? t("historySeparatedStarting")
-                  : t("historySeparatedStart")}
-              </button>
-            )}
-          </div>
-          {(separatedLocalError ?? separatedError) !== null && (
-            <span className="history-separated-error" role="alert">
-              {separatedLocalError ?? separatedError}
-            </span>
-          )}
-
           {renaming ? (
             <div className="history-rename">
               <input
@@ -546,7 +454,6 @@ export function HistoryPanel({
               title={t("historySettings")}
               onClick={() => {
                 setMenuOpen(menuOpen === "settings" ? null : "settings");
-                setLayoutOpen(false);
               }}
             >
               <Settings aria-hidden="true" size={14} />
@@ -602,95 +509,6 @@ export function HistoryPanel({
                     {options.bubbleColor === "source" && <Check size={12} />}
                   </span>
                 </button>
-
-                <div className="history-menu-anchor">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    aria-haspopup="menu"
-                    aria-expanded={layoutOpen}
-                    className="history-menu-row"
-                    onClick={() => {
-                      setLayoutOpen((current) => !current);
-                    }}
-                  >
-                    <span className="history-menu-label">
-                      {t("historyLayout")}
-                    </span>
-                    <span className="history-menu-value">
-                      {options.layout === "classic"
-                        ? t("historyLayoutClassic")
-                        : t("historyLayoutChat")}
-                      <ChevronDown
-                        aria-hidden="true"
-                        size={12}
-                        className="history-menu-chevron"
-                      />
-                    </span>
-                  </button>
-                  {layoutOpen && (
-                    <div
-                      className="history-menu history-submenu"
-                      role="menu"
-                      aria-label={t("historyLayout")}
-                    >
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={options.layout === "classic"}
-                        className="history-menu-row"
-                        onClick={() => {
-                          setOptions((current) => {
-                            const next: HistoryDisplayOptions = {
-                              ...current,
-                              layout: "classic",
-                            };
-                            saveHistoryDisplayOptions(next);
-                            return next;
-                          });
-                          setLayoutOpen(false);
-                        }}
-                      >
-                        <span className="history-menu-label">
-                          {t("historyLayoutClassic")}
-                        </span>
-                        <span
-                          className={`history-check ${options.layout === "classic" ? "on" : ""}`}
-                          aria-hidden="true"
-                        >
-                          {options.layout === "classic" && <Check size={12} />}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={options.layout === "chat"}
-                        className="history-menu-row"
-                        onClick={() => {
-                          setOptions((current) => {
-                            const next: HistoryDisplayOptions = {
-                              ...current,
-                              layout: "chat",
-                            };
-                            saveHistoryDisplayOptions(next);
-                            return next;
-                          });
-                          setLayoutOpen(false);
-                        }}
-                      >
-                        <span className="history-menu-label">
-                          {t("historyLayoutChat")}
-                        </span>
-                        <span
-                          className={`history-check ${options.layout === "chat" ? "on" : ""}`}
-                          aria-hidden="true"
-                        >
-                          {options.layout === "chat" && <Check size={12} />}
-                        </span>
-                      </button>
-                    </div>
-                  )}
-                </div>
 
                 <div className="history-menu-row history-you-color-row">
                   <span className="history-menu-label">
@@ -800,102 +618,19 @@ export function HistoryPanel({
                   ? t("historySessionEmpty")
                   : t("historySearchEmpty")}
               </p>
-            ) : options.layout === "classic" ? (
-              <ol className="history-list history-list-classic">
-                {entries.map((entry) => {
-                  const accent = sourceAccent(entry.color);
-                  const fromSelf = entry.fromSelf;
-                  const who =
-                    entry.displayName !== ""
-                      ? entry.displayName
-                      : entry.sourceLabel !== ""
-                        ? entry.sourceLabel
-                        : t("historyUnknownSpeaker");
-                  return (
-                    <li
-                      key={entry.id}
-                      className={`history-entry-classic ${
-                        fromSelf ? "self" : ""
-                      }`}
-                      data-uncertain={entry.uncertain || undefined}
-                      style={
-                        fromSelf
-                          ? {
-                              backgroundColor: options.youColor,
-                              color: "#ffffff",
-                            }
-                          : accent.entry
-                      }
-                    >
-                      <div className="history-entry-meta">
-                        {options.showSpeaker && (
-                          <span className="history-who" style={accent.badge}>
-                            {fromSelf ? t("historyYou") : who}
-                          </span>
-                        )}
-                        {options.showTimestamp && (
-                          <time>{formatTime(entry.timestampMs)}</time>
-                        )}
-                        {options.showLatency && entry.latencyMs > 0 && (
-                          <span className="history-latency">
-                            {entry.latencyMs} ms
-                          </span>
-                        )}
-                        {options.showModels && entry.provider !== "" && (
-                          <span className="history-models">
-                            {entry.provider}
-                          </span>
-                        )}
-                        {entry.uncertain && (
-                          <span className="history-uncertain">?</span>
-                        )}
-                        <button
-                          className="history-copy"
-                          type="button"
-                          aria-label={t("historyCopy")}
-                          title={t("historyCopy")}
-                          onClick={() => {
-                            void copyEntry(entry);
-                          }}
-                        >
-                          {copiedId === entry.id ? (
-                            <Check aria-hidden="true" size={13} />
-                          ) : (
-                            <Copy aria-hidden="true" size={13} />
-                          )}
-                        </button>
-                      </div>
-                      <p className="history-text">{entry.text}</p>
-                      {options.showSource && entry.sourceText !== "" && (
-                        <p className="history-source">{entry.sourceText}</p>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
             ) : (
               <ol className="history-list">
-                {messageGroups.map((group) => {
-                  const first = group[0];
-                  if (first === undefined) {
-                    return null;
-                  }
-                  const last = group[group.length - 1];
-                  return (
-                    <ChatBubble
-                      key={first.id}
-                      group={group}
-                      options={options}
-                      copiedId={copiedId}
-                      onCopyOne={(item) => {
-                        void copyEntry(item);
-                      }}
-                      formatTime={formatTime}
-                      firstTimestamp={first.timestampMs}
-                      lastTimestamp={last?.timestampMs ?? first.timestampMs}
-                    />
-                  );
-                })}
+                {entries.map((entry) => (
+                  <MessageBubble
+                    key={entry.id}
+                    entry={entry}
+                    options={options}
+                    copied={copiedId === entry.id}
+                    onCopy={() => {
+                      void copyEntry(entry);
+                    }}
+                  />
+                ))}
               </ol>
             )}
           </div>
@@ -960,131 +695,86 @@ export function HistoryPanel({
   );
 }
 
-function ChatBubble({
-  group,
+function MessageBubble({
+  entry,
   options,
-  copiedId,
-  onCopyOne,
-  formatTime,
-  firstTimestamp,
-  lastTimestamp,
+  copied,
+  onCopy,
 }: {
-  /** One or more consecutive messages from the same speaker. */
-  group: HistoryEntry[];
+  entry: HistoryEntry;
   options: HistoryDisplayOptions;
-  /** Which entry currently shows the "copied" check, or null. */
-  copiedId: string | null;
-  /** Copy one message inside a merged bubble. */
-  onCopyOne: (entry: HistoryEntry) => void;
-  formatTime: (timestampMs: number) => string;
-  firstTimestamp: number;
-  lastTimestamp: number;
+  copied: boolean;
+  onCopy: () => void;
 }) {
   const t = useT();
-  const entry = group[0];
-  const fromSelf = entry?.fromSelf ?? false;
-  const accent = sourceAccent(entry?.color ?? "");
-  const bubbleTint = fromSelf
-    ? options.youColor
-    : options.bubbleColor === "source" && entry?.color !== ""
-      ? (entry?.color ?? "")
-      : "";
+  const fromSelf = entry.fromSelf;
+  const accent = sourceAccent(entry.color);
   const who =
-    (entry?.displayName ?? "") !== ""
-      ? (entry?.displayName ?? "")
-      : (entry?.sourceLabel ?? "") !== ""
-        ? (entry?.sourceLabel ?? "")
+    entry.displayName !== ""
+      ? entry.displayName
+      : entry.sourceLabel !== ""
+        ? entry.sourceLabel
         : t("historyUnknownSpeaker");
-  const initial = (who.charAt(0) || "?").toUpperCase();
-  const anyUncertain = group.some((item) => item.uncertain);
   return (
     <li
       className={`history-entry chat-bubble ${fromSelf ? "self" : "other"}`}
-      data-uncertain={anyUncertain || undefined}
-      style={accent.entry}
+      data-uncertain={entry.uncertain || undefined}
+      style={fromSelf ? undefined : accent.entry}
     >
       {options.showAvatars && (
         <span
           className={`chat-avatar ${fromSelf ? "self" : ""}`}
           style={
-            options.bubbleColor === "source" && entry?.color !== ""
+            fromSelf
               ? {
-                  backgroundColor: `${entry?.color ?? ""}26`,
-                  color: entry?.color,
+                  backgroundColor: `${options.youColor}26`,
+                  color: options.youColor,
                 }
-              : undefined
+              : options.bubbleColor === "source" && entry.color !== ""
+                ? {
+                    backgroundColor: `${entry.color}26`,
+                    color: entry.color,
+                  }
+                : undefined
           }
           aria-hidden="true"
         >
-          {fromSelf ? <User size={13} /> : initial}
+          {fromSelf ? <User size={13} /> : who.charAt(0) || "?"}
         </span>
       )}
       <div className="chat-bubble-body">
-        <div className="history-entry-meta">
-          {options.showSpeaker && (
-            <span className="history-who" style={accent.badge}>
-              {fromSelf ? t("historyYou") : who}
-            </span>
-          )}
-          {options.showTimestamp && (
-            <time>
-              {formatTime(firstTimestamp)}
-              {lastTimestamp !== firstTimestamp
-                ? ` – ${formatTime(lastTimestamp)}`
-                : ""}
-            </time>
-          )}
-          {options.showLatency && group.some((item) => item.latencyMs > 0) && (
-            <span className="history-latency">
-              {group.find((item) => item.latencyMs > 0)?.latencyMs} ms
-            </span>
-          )}
-          {options.showModels && group.some((item) => item.provider !== "") && (
-            <span className="history-models">
-              {group.find((item) => item.provider !== "")?.provider}
-            </span>
-          )}
-          {anyUncertain && <span className="history-uncertain">?</span>}
-        </div>
         <div className="chat-bubble-row">
           <div
             className="chat-bubble-tip"
             style={
-              bubbleTint !== ""
-                ? {
-                    backgroundColor: fromSelf
-                      ? options.youColor
-                      : `${entry?.color ?? ""}14`,
-                    color: fromSelf ? "#ffffff" : undefined,
-                  }
-                : undefined
+              fromSelf
+                ? { backgroundColor: options.youColor, color: "#ffffff" }
+                : options.bubbleColor === "source" && entry.color !== ""
+                  ? { backgroundColor: `${entry.color}14` }
+                  : undefined
             }
           >
-            {group.map((item) => (
-              <div className="chat-bubble-message" key={item.id}>
-                <div className="chat-bubble-text">
-                  <p className="history-text">{item.text}</p>
-                  {options.showSource && item.sourceText !== "" && (
-                    <p className="history-source">{item.sourceText}</p>
-                  )}
-                </div>
-                <button
-                  className="history-copy"
-                  type="button"
-                  aria-label={t("historyCopy")}
-                  title={t("historyCopy")}
-                  onClick={() => {
-                    onCopyOne(item);
-                  }}
-                >
-                  {copiedId === item.id ? (
-                    <Check aria-hidden="true" size={13} />
-                  ) : (
-                    <Copy aria-hidden="true" size={13} />
-                  )}
-                </button>
+            <div className="chat-bubble-message">
+              <div className="chat-bubble-text">
+                <p className="history-text">{entry.text}</p>
+                {options.showSource && entry.sourceText !== "" && (
+                  <p className="history-source">{entry.sourceText}</p>
+                )}
               </div>
-            ))}
+              <button
+                className="history-copy"
+                type="button"
+                aria-label={t("historyCopy")}
+                title={t("historyCopy")}
+                onClick={onCopy}
+              >
+                {copied ? (
+                  <Check aria-hidden="true" size={13} />
+                ) : (
+                  <Copy aria-hidden="true" size={13} />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
