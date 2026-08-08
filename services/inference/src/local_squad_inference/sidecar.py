@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -52,12 +52,15 @@ from local_squad_inference.protocol import (
     HelloPayload,
     LiveStartPayload,
     SourceControlPayload,
+    SourceMode,
     SourcePresentationUpdatePayload,
     SourceRegistryEntry,
     SourceRegistryPayload,
     SourceSnapshot,
     Strictness,
     SuppressionReason,
+    TranslateResultPayload,
+    TranslateTextPayload,
     UncertaintyReason,
     dump_caption,
     encode_source_id_hex,
@@ -71,7 +74,6 @@ from local_squad_inference.providers import (
     DemoTranslationProvider,
     FasterWhisperProvider,
     MadladTranslationProvider,
-    MlxWhisperProvider,
     NemoCtcProvider,
     NllbCTranslate2Provider,
     OpusMtEnZhProvider,
@@ -79,6 +81,7 @@ from local_squad_inference.providers import (
     SenseVoiceProvider,
     StreamingParaformerProvider,
     TranslationProvider,
+    TranslationResult,
     provider_readiness,
 )
 from local_squad_inference.scheduler import (
@@ -87,7 +90,11 @@ from local_squad_inference.scheduler import (
     SchedulerMetrics,
     make_job,
 )
-from local_squad_inference.vad import AudioUtterance, vad_config_from_sensitivity
+from local_squad_inference.vad import (
+    AudioUtterance,
+    apply_segmentation,
+    vad_config_from_sensitivity,
+)
 
 SendJson = Callable[[dict[str, object]], Awaitable[None]]
 
@@ -96,14 +103,34 @@ logger = logging.getLogger("local_squad_inference.sidecar")
 
 def profile_source_mode(
     language_profile: str,
-) -> Literal["filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"]:
-    """Map a registry language profile to the ASR source mode. Only Chinese
-    diverges today; Filipino-family profiles (filipino/tagalog/cebuano) all
-    use the Filipino ASR mode. Per-source strictness and filters land in a
-    later phase."""
-    if language_profile == "chinese":
-        return "chinese"
-    return "filipino"
+) -> SourceMode | None:
+    """Map a registry language profile to the ASR source mode.
+
+    One explicit table (DEC-001): a profile either maps to its own source
+    mode or stays unconstrained (``None``) — it never silently falls back
+    to an unrelated language. ``auto`` and unknown profiles return ``None``
+    so the session's source mode (or the provider's own detection) applies.
+    ``chinese_english`` maps to ``mixed`` (primary-preferred, never
+    Filipino). Filipino-family profiles share the Filipino ASR mode until a
+    dedicated decoder mode exists.
+    """
+    return PROFILE_SOURCE_MODES.get(language_profile)
+
+
+PROFILE_SOURCE_MODES: dict[str, SourceMode] = {
+    "mandarin": "chinese",
+    "chinese": "chinese",
+    "chinese_english": "mixed",
+    "tagalog": "filipino",
+    "taglish": "filipino",
+    "cebuano": "filipino",
+    "bislish": "filipino",
+    "english": "english",
+    "indonesian": "indonesian",
+    "vietnamese": "vietnamese",
+    "thai": "thai",
+    "malay": "malay",
+}
 
 
 def _priority_of_source(
@@ -412,13 +439,6 @@ def local_whisper_provider(requested_model_id: str) -> FasterWhisperProvider:
     return FasterWhisperProvider(_whisper_model_dir(requested_model_id))
 
 
-@lru_cache(maxsize=2)
-def local_mlx_whisper_provider(
-    requested_model_id: str = "mlx-whisper-large-v3-turbo-q4",
-) -> MlxWhisperProvider:
-    return MlxWhisperProvider(_model_artifact_dir(requested_model_id))
-
-
 NCSpeech_MODEL_DIRS: dict[str, str] = {
     "ncspeech": "ncspeech-tl-fastconformer-hybrid-large",
     "ncspeech-zh": "ncspeech-zh-citrinet-1024-gamma",
@@ -462,6 +482,29 @@ def build_translation_provider(name: str, target_language: str = "en") -> Transl
     HTTP providers are opt-in: when selected, the recognized source transcript
     (text only — never raw audio) is sent over HTTP to the configured endpoint.
     """
+    return _resolve_translation_provider(name, target_language)
+
+
+def translate_text(provider: TranslationProvider, text: str, source_mode: str) -> TranslationResult:
+    """One-shot typed-chat translation through an already-built provider.
+    A module-level helper so the callable stays mypy-friendly inside
+    asyncio.to_thread."""
+    from local_squad_inference.providers import AsrResult
+
+    return provider.translate(
+        AsrResult(
+            utterance_id="chat",
+            text=text,
+            source_mode=source_mode,
+            is_final=True,
+            inference_ms=0.0,
+            model_id="chat",
+            confidence=None,
+        )
+    )
+
+
+def _resolve_translation_provider(name: str, target_language: str) -> TranslationProvider:
     if name in {"nllb", "local", ""}:
         return local_translation_provider(target_language)
     if name in {"madlad"}:
@@ -496,13 +539,9 @@ def build_asr_provider(name: str) -> AsrProvider:
     audio to Groq's Whisper endpoint. A missing API key raises before the
     session starts so misconfiguration is visible.
 
-    On Apple Silicon (macOS), `mlx` / `mlx-whisper` selects the Metal-accelerated
-    mlx-whisper provider; `whisper-turbo`/`whisper-full` still pick the
-    CTranslate2 build (CPU-only on macOS) for users who installed those weights.
+    `whisper-turbo`/`whisper-full` pick the CTranslate2 build (CPU-only on
+    macOS) for users who installed those weights.
     """
-    if name in {"mlx", "mlx-whisper"}:
-        requested = os.environ.get("LST_MLX_WHISPER_MODEL_ID", "mlx-whisper-large-v3-turbo-q4")
-        return local_mlx_whisper_provider(requested)
     if name in {"", "local", "whisper-turbo"}:
         requested = os.environ.get("LST_WHISPER_MODEL_ID", "whisper-large-v3-turbo")
         if name == "whisper-turbo":
@@ -661,6 +700,26 @@ def fake_captions_v2(
     )
 
 
+@dataclass(frozen=True)
+class WorkerQueueMetrics:
+    """Session-wide raw-audio + inference-job accounting (DS-104).
+
+    ``packets_dropped`` counts raw audio evicted from the bounded input
+    queue (latest-wins under overload); supported load reports zero.
+    ``provisionals_suppressed`` counts provisional jobs skipped by the
+    DS-105A overload shed before any raw audio is evicted.
+    """
+
+    packets_submitted: int
+    packets_consumed: int
+    packets_dropped: int
+    max_queue_depth: int
+    provisionals_suppressed: int
+    provisionals_dropped: int
+    finals_dropped: int
+    overload_events: int
+
+
 class LivePipelineWorker:
     """Runs the pipeline so the websocket handler never blocks on inference.
 
@@ -730,6 +789,14 @@ class LivePipelineWorker:
         )
         self._results: queue.Queue[tuple[CaptionPayload, ...] | Exception] = queue.Queue()
         self._dropped_packets = 0
+        self._packets_submitted = 0
+        self._packets_consumed = 0
+        self._max_queue_depth = 0
+        # DS-105A: when the raw packet queue is near-full (the VAD thread is
+        # falling behind), new provisional jobs are suppressed before raw
+        # audio is ever evicted. Finals are never suppressed.
+        self._provisional_high_water = max(2, max_pending - 2)
+        self._provisionals_suppressed = 0
         self._stopped = False
         self._thread = threading.Thread(
             target=self._run_vad,
@@ -751,6 +818,10 @@ class LivePipelineWorker:
     def submit(self, packet: AudioPacket | AudioPacketV2) -> None:
         # Latest-wins: when the VAD is behind, keep the most recent audio
         # (the speech that is happening right now) instead of the oldest.
+        # Raw drops are counted and only happen after provisional jobs are
+        # suppressed (DS-105A) — supported load never evicts raw audio.
+        self._packets_submitted += 1
+        self._max_queue_depth = max(self._max_queue_depth, self._input.qsize())
         while True:
             try:
                 self._input.put_nowait(packet)
@@ -761,6 +832,22 @@ class LivePipelineWorker:
                 except queue.Empty:
                     return
                 self._dropped_packets += 1
+
+    def worker_queue_metrics(self) -> WorkerQueueMetrics:
+        """Session-wide raw-audio queue + inference-job accounting. Every
+        dropped packet is measurable here; supported load reports zero
+        raw drops (DS-104/DS-105)."""
+        scheduler = self._scheduler.metrics()
+        return WorkerQueueMetrics(
+            packets_submitted=self._packets_submitted,
+            packets_consumed=self._packets_consumed,
+            packets_dropped=self._dropped_packets,
+            max_queue_depth=self._max_queue_depth,
+            provisionals_suppressed=self._provisionals_suppressed,
+            provisionals_dropped=scheduler.provisionals_dropped,
+            finals_dropped=scheduler.finals_dropped,
+            overload_events=scheduler.overload_events,
+        )
 
     def poll(self) -> tuple[CaptionPayload, ...] | Exception | None:
         try:
@@ -911,6 +998,7 @@ class LivePipelineWorker:
             self._drain_controls()
             if packet is None:
                 break
+            self._packets_consumed += 1
             try:
                 utterances = self._pipeline.feed_utterances(packet)
             except Exception as error:  # surfaced to the client as live.error
@@ -938,8 +1026,14 @@ class LivePipelineWorker:
                 due_ns = next_provisional_at_ns.get(source_key)
                 due = due_ns is None or now_ns >= due_ns
                 if speech_elapsed_ns >= PROVISIONAL_MIN_SPEECH_NS and due:
-                    self._enqueue_provisional(snapshot)
-                    next_provisional_at_ns[source_key] = now_ns + PROVISIONAL_CADENCE_NS
+                    if self._input.qsize() >= self._provisional_high_water:
+                        # DS-105A overload shed: the VAD thread is falling
+                        # behind; skip the provisional job (counted) so raw
+                        # audio is not evicted. Finals still schedule.
+                        self._provisionals_suppressed += 1
+                    else:
+                        self._enqueue_provisional(snapshot)
+                        next_provisional_at_ns[source_key] = now_ns + PROVISIONAL_CADENCE_NS
             else:
                 next_provisional_at_ns[source_key] = None
         self._drain_controls()
@@ -1077,6 +1171,14 @@ async def drain_live_results(
                 )
             continue
         for _index, caption in enumerate(result, start=1):
+            # Session-scope the caption id: the sidecar (and its VAD utterance
+            # sequence) restarts on every live start, so a kept-open history
+            # session would otherwise collide run N+1's `clip-utterance-1` with
+            # run N's entry and upsert it in place mid-list. The connection
+            # session id is unique per spawn, so ids never repeat across runs.
+            caption = caption.model_copy(
+                update={"caption_id": f"{session_id}-{caption.caption_id}"}
+            )
             # A provisional that surfaces after its own final is stale (the
             # VAD cadence raced inference completion) — drop it so the client
             # never sees "Listening..." overwrite a delivered final.
@@ -1155,6 +1257,10 @@ async def handle_connection(
         # the presentation snapshots the sidecar stamps onto captions.
         source_registry: dict[str, SourceRegistryEntry] = {}
         source_snapshots: dict[str, SourceSnapshot] = {}
+        # Per-source translation providers keyed by source id, built when the
+        # registry declares a per-source target language (e.g. the user's own
+        # microphone in a reversed direction).
+        source_translations: dict[str, TranslationProvider] = {}
 
         def snapshot_for(source_id: bytes) -> tuple[SourceSnapshot | None, Strictness | None]:
             entry = source_registry.get(encode_source_id_hex(source_id))
@@ -1210,7 +1316,21 @@ async def handle_connection(
                         )
                         if live_pipeline is None or live_worker is None:
                             continue
-                        live_pipeline.start_source(source_hex, source_mode=source_mode)
+                        # DS-303: per-source processing policy from the
+                        # registry's audio origin (user overrides later).
+                        from local_squad_inference.audio_health import (
+                            policy_for_origin,
+                        )
+
+                        processing = (
+                            policy_for_origin(entry.source_origin) if entry is not None else None
+                        )
+                        live_pipeline.start_source(
+                            source_hex,
+                            source_mode=source_mode,
+                            processing=processing,
+                            translation=source_translations.get(source_hex),
+                        )
                         live_worker.submit(packet_v2)
                         continue
                     snapshot, strictness = snapshot_for(packet_v2.source_id)
@@ -1321,9 +1441,30 @@ async def handle_connection(
                     return
                 registry = SourceRegistryPayload.model_validate(control.payload)
                 source_registry.clear()
+                source_snapshots.clear()
                 for entry in registry.sources:
                     source_registry[entry.source_id] = entry
                     source_snapshots[entry.source_id] = entry_snapshot(entry)
+                # Per-source translation directions: entries that declare
+                # their own target language get their own provider (cached
+                # per direction), so e.g. the user's mic can translate
+                # opposite to the session default. Providers are shared
+                # across registry re-pushes.
+                source_translations.clear()
+                for entry in registry.sources:
+                    if entry.target_language is None:
+                        continue
+                    try:
+                        source_translations[entry.source_id] = await asyncio.to_thread(
+                            build_translation_provider,
+                            entry.translation_provider or "nllb",
+                            entry.target_language,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "per-source translation provider failed for %s",
+                            entry.source_id,
+                        )
                 await connection.send(
                     json.dumps(
                         envelope(
@@ -1523,13 +1664,17 @@ async def handle_connection(
                     )
                     continue
                 scheduler_metrics = await asyncio.to_thread(live_worker.scheduler_metrics)
+                queue_metrics = await asyncio.to_thread(live_worker.worker_queue_metrics)
                 await connection.send(
                     json.dumps(
                         envelope(
                             "scheduler.metrics",
                             control.message_id,
                             control.session_id,
-                            asdict(scheduler_metrics),
+                            {
+                                "scheduler": asdict(scheduler_metrics),
+                                "queue": asdict(queue_metrics),
+                            },
                             version=negotiated_version,
                         )
                     )
@@ -1556,7 +1701,10 @@ async def handle_connection(
                         asr_provider,
                         translation_provider,
                         source_mode=live_request.source_mode,
-                        vad_config=vad_config_from_sensitivity(live_request.vad_sensitivity),
+                        vad_config=apply_segmentation(
+                            vad_config_from_sensitivity(live_request.vad_sensitivity),
+                            live_request.segmentation,
+                        ),
                         use_silero=live_request.provider != "demo",
                     )
                     live_worker = LivePipelineWorker(
@@ -1734,6 +1882,53 @@ async def handle_connection(
                                 "truncated": result.truncated,
                                 "mode": result.mode,
                             },
+                            version=negotiated_version,
+                        )
+                    )
+                )
+            elif control.type == "translate.text":
+                try:
+                    chat_request = TranslateTextPayload.model_validate(control.payload)
+                    provider = await asyncio.to_thread(
+                        build_translation_provider,
+                        chat_request.translation_provider,
+                        chat_request.target_language,
+                    )
+                    started_at = time.perf_counter()
+                    chat_result = await asyncio.to_thread(
+                        partial(
+                            translate_text,
+                            provider,
+                            chat_request.text,
+                            chat_request.source_mode,
+                        )
+                    )
+                    latency_ms = (time.perf_counter() - started_at) * 1000.0
+                except Exception as error:
+                    logger.exception("translate.text failed: %s", error)
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "translate.error",
+                                control.message_id,
+                                control.session_id,
+                                {"message": str(error)},
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                    continue
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "translate.result",
+                            control.message_id,
+                            control.session_id,
+                            TranslateResultPayload(
+                                translated_text=chat_result.english_text,
+                                provider=chat_request.translation_provider,
+                                latency_ms=latency_ms,
+                            ).model_dump(),
                             version=negotiated_version,
                         )
                     )

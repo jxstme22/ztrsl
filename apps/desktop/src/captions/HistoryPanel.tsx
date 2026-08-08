@@ -1,11 +1,30 @@
 import type { CSSProperties } from "react";
-import { useState } from "react";
-import { ListChecks, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CalendarClock,
+  Check,
+  ChevronDown,
+  Copy,
+  Mic,
+  Pencil,
+  Plus,
+  Search,
+  Send,
+  Settings,
+  SlidersHorizontal,
+  Trash2,
+  User,
+} from "lucide-react";
 
-import { type HistoryEntry } from "../captions/history";
+import {
+  type HistoryDisplayOptions,
+  type HistoryEntry,
+  type HistorySession,
+  loadHistoryDisplayOptions,
+  saveHistoryDisplayOptions,
+} from "../captions/history";
 import { useT } from "../features/i18n/store";
-
-const SHOW_SOURCE_KEY = "lst.history.showSource";
+import type { UIKey } from "../features/i18n/strings";
 
 function formatTime(timestampMs: number): string {
   const date = new Date(timestampMs);
@@ -35,90 +54,810 @@ function sourceAccent(color: string): {
   };
 }
 
+/** Options menu rows: label + persisted checkbox toggle. */
+const OPTION_TOGGLES: readonly {
+  key: Exclude<
+    keyof HistoryDisplayOptions,
+    "bubbleColor" | "layout" | "youColor"
+  >;
+  label: UIKey;
+}[] = [
+  { key: "showSource", label: "historyShowTranscribed" },
+  { key: "showSpeaker", label: "historyShowSpeaker" },
+  { key: "showTimestamp", label: "historyShowTimestamp" },
+  { key: "showLatency", label: "historyShowLatency" },
+  { key: "showModels", label: "historyShowModels" },
+  { key: "showAvatars", label: "historyShowAvatars" },
+];
+
+/** Preset solid colors for the "you" bubble (configurable in settings). */
+const YOU_COLOR_PRESETS = [
+  "#3b82f6",
+  "#0284c7",
+  "#059669",
+  "#7c3aed",
+  "#f59e0b",
+  "#ef4444",
+  "#dc4d5e",
+  "#64748b",
+];
+
+/** Identity of a speaker run: "you" bubbles group under their own key, all
+ * other speakers group by source id (falling back to their display label). */
+function speakerKey(entry: HistoryEntry): string {
+  if (entry.fromSelf) {
+    return "you";
+  }
+  return entry.sourceId !== "" ? `src:${entry.sourceId}` : `who:${entry.displayName}`;
+}
+
 export function HistoryPanel({
-  entries,
-  onClear,
+  sessions,
+  currentSessionId,
+  onNewSession,
+  onRenameSession,
+  onDeleteSession,
+  onClearSession,
+  onCountChange,
+  micEnabled,
+  micConfigured,
+  liveRunning,
+  onToggleMic,
+  onSendChat,
+  onOpenYouConfig,
 }: {
-  entries: HistoryEntry[];
-  onClear: () => void;
+  sessions: HistorySession[];
+  currentSessionId: string | null;
+  /** Open a fresh session and make it current: live captions and chat
+   * continue into the new session from both the Live and History pages. */
+  onNewSession: () => void;
+  onRenameSession: (id: string, name: string) => void;
+  onDeleteSession: (id: string) => void;
+  onClearSession: (id: string) => void;
+  onCountChange?: (count: number) => void;
+  /** Whether the "you" mic stream is currently capturing on the live session. */
+  micEnabled: boolean;
+  /** Whether a mic endpoint is configured for the "you" stream. */
+  micConfigured: boolean;
+  /** Whether a live translation session is running (required for the mic). */
+  liveRunning: boolean;
+  onToggleMic: () => Promise<boolean>;
+  /** Translate + record a typed chat message. Returns the recorded entry id,
+   * or null when nothing was recorded (translation failed / no session). */
+  onSendChat: (text: string) => Promise<string | null>;
+  onOpenYouConfig: () => void;
 }) {
   const t = useT();
-  const [showSource, setShowSource] = useState<boolean>(
-    () => window.localStorage.getItem(SHOW_SOURCE_KEY) === "1",
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [options, setOptions] = useState<HistoryDisplayOptions>(
+    loadHistoryDisplayOptions,
   );
+  const [query, setQuery] = useState("");
+  const [menuOpen, setMenuOpen] = useState<"settings" | null>(null);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [micBusy, setMicBusy] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
 
-  const toggleSource = () => {
-    setShowSource((current) => {
-      const next = !current;
-      window.localStorage.setItem(SHOW_SOURCE_KEY, next ? "1" : "0");
+  // Default view: the live session, else the most recently started one.
+  const selected = useMemo(() => {
+    if (sessions.length === 0) {
+      return null;
+    }
+    const live = sessions.find((s) => s.id === currentSessionId);
+    if (live !== undefined) {
+      return live;
+    }
+    return (
+      sessions.find((s) => s.id === selectedId) ??
+      [...sessions].sort((a, b) => b.startedAtMs - a.startedAtMs)[0] ??
+      null
+    );
+  }, [currentSessionId, selectedId, sessions]);
+
+  const entries = useMemo(() => {
+    if (selected === null || query.trim() === "") {
+      return selected?.entries ?? [];
+    }
+    const needle = query.trim().toLowerCase();
+    return selected.entries.filter(
+      (entry) =>
+        entry.text.toLowerCase().includes(needle) ||
+        entry.sourceText.toLowerCase().includes(needle) ||
+        entry.displayName.toLowerCase().includes(needle),
+    );
+  }, [query, selected]);
+
+  // The first bubble of each speaker in the transcript carries the log/data
+  // line; later bubbles from the same speaker stay clean (chat-style).
+  const firstOfSpeakerIds = useMemo(() => {
+    const seen = new Set<string>();
+    const ids = new Set<string>();
+    for (const entry of entries) {
+      const key = speakerKey(entry);
+      if (!seen.has(key)) {
+        seen.add(key);
+        ids.add(entry.id);
+      }
+    }
+    return ids;
+  }, [entries]);
+
+  useEffect(() => {
+    onCountChange?.(selected?.entries.length ?? 0);
+  }, [onCountChange, selected]);
+
+  // Chat-room auto-bottom: stick to the newest message unless the user has
+  // scrolled up to read older ones. Newest entries arrive at the bottom.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (scroller === null) {
+      return;
+    }
+    if (stickToBottomRef.current) {
+      scroller.scrollTop = scroller.scrollHeight;
+    }
+  }, [entries.length, selected?.id]);
+
+  useEffect(() => {
+    stickToBottomRef.current = true;
+    const scroller = scrollRef.current;
+    if (scroller !== null) {
+      scroller.scrollTop = scroller.scrollHeight;
+    }
+  }, [selected?.id]);
+
+  const onScroll = () => {
+    const scroller = scrollRef.current;
+    if (scroller === null) {
+      return;
+    }
+    const distanceFromBottom =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 64;
+  };
+
+  // Close the popovers when clicking anywhere else.
+  useEffect(() => {
+    if (menuOpen === null && !sessionsOpen) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!toolbarRef.current?.contains(event.target as Node)) {
+        setMenuOpen(null);
+        setSessionsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [menuOpen, sessionsOpen]);
+
+  // Session sidebar is mutually exclusive with the settings menu.
+  useEffect(() => {
+    if (sessionsOpen) {
+      setMenuOpen(null);
+    }
+  }, [sessionsOpen]);
+
+  const toggleOption = (key: keyof HistoryDisplayOptions) => {
+    setOptions((current) => {
+      const next = { ...current, [key]: !current[key] };
+      saveHistoryDisplayOptions(next);
       return next;
     });
   };
 
+  // Copy one translation (a single message inside a bubble).
+  const copyEntry = async (entry: HistoryEntry) => {
+    try {
+      await navigator.clipboard.writeText(entry.text);
+      setCopiedId(entry.id);
+      window.setTimeout(() => {
+        setCopiedId(null);
+      }, 1200);
+    } catch {
+      // Clipboard unavailable; nothing else to do.
+    }
+  };
+
+  const startRename = () => {
+    if (selected === null) {
+      return;
+    }
+    setNameDraft(selected.name);
+    setRenaming(true);
+  };
+
+  const commitRename = () => {
+    if (selected !== null && nameDraft.trim() !== "") {
+      onRenameSession(selected.id, nameDraft.trim());
+    }
+    setRenaming(false);
+  };
+
+  const deleteSelected = () => {
+    if (selected === null) {
+      return;
+    }
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      window.setTimeout(() => {
+        setConfirmingDelete(false);
+      }, 3000);
+      return;
+    }
+    setConfirmingDelete(false);
+    setSelectedId(null);
+    onDeleteSession(selected.id);
+  };
+
+  const clearSelected = () => {
+    if (selected === null) {
+      return;
+    }
+    onClearSession(selected.id);
+    setMenuOpen(null);
+  };
+
+  const toggleMic = async () => {
+    if (micBusy) {
+      return;
+    }
+    setMicBusy(true);
+    setMicError(null);
+    try {
+      await onToggleMic();
+    } catch (cause) {
+      setMicError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setMicBusy(false);
+    }
+  };
+
+  const onMicClick = () => {
+    void toggleMic();
+  };
+
+  const submitChat = async (event: { preventDefault: () => void }) => {
+    event.preventDefault();
+    const text = draft.trim();
+    if (text === "" || sending) {
+      return;
+    }
+    setSending(true);
+    try {
+      const recordedId = await onSendChat(text);
+      if (recordedId !== null) {
+        setDraft("");
+        // Newest message is a chat bubble; snap to it.
+        requestAnimationFrame(() => {
+          const scroller = scrollRef.current;
+          if (scroller !== null) {
+            scroller.scrollTop = scroller.scrollHeight;
+          }
+        });
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Requires a running live session; the mic endpoint is resolved at toggle
+  // time (from the config dialog) so clicking with no mic configured shows
+  // the error instead of doing nothing.
+  const micDisabled = !liveRunning || micBusy;
+  const micHint = !liveRunning
+    ? t("chatMicRequiresLive")
+    : !micConfigured
+      ? t("chatMicNeedsConfig")
+      : undefined;
+
   return (
-    <section className="card lst-section-card" aria-labelledby="history-title">
-      <div className="card-head">
-        <h3 className="card-title" id="history-title">
-          {t("historyTitle")}
-        </h3>
-        <span className="lst-model-count pill">{entries.length}</span>
-        <button
-          className={`button quiet ${showSource ? "on" : ""}`}
-          type="button"
-          aria-label={t("historyShowTranscribed")}
-          aria-pressed={showSource}
-          title={t("historyShowTranscribed")}
-          disabled={entries.length === 0}
-          onClick={toggleSource}
-        >
-          <ListChecks aria-hidden="true" size={14} />
-          {t("historyShowTranscribed")}
-        </button>
-        <button
-          className="button quiet"
-          type="button"
-          disabled={entries.length === 0}
-          onClick={onClear}
-        >
-          <Trash2 aria-hidden="true" size={14} />
-          {t("historyClear")}
-        </button>
-      </div>
-      {entries.length === 0 ? (
-        <p className="lst-model-empty">{t("historyEmpty")}</p>
-      ) : (
-        <ol className="history-list">
-          {entries.map((entry) => {
-            const accent = sourceAccent(entry.color);
-            return (
-              <li
-                key={entry.id}
-                className="history-entry"
-                data-uncertain={entry.uncertain || undefined}
-                style={accent.entry}
+    <section
+      className="card lst-section-card history-panel history-chat"
+      aria-label={t("historyTitle")}
+    >
+      <div className="history-toolbar" ref={toolbarRef}>
+        <div className="history-toolbar-group">
+          <button
+            className="button quiet history-toolbar-button"
+            type="button"
+            aria-label={t("historyNewSession")}
+            title={t("historyNewSessionHint")}
+            onClick={onNewSession}
+          >
+            <Plus aria-hidden="true" size={14} />
+            <span className="history-toolbar-label">
+              {t("historyNewSession")}
+            </span>
+          </button>
+
+          <button
+            className={`button quiet history-toolbar-button ${sessionsOpen ? "on" : ""}`}
+            type="button"
+            aria-expanded={sessionsOpen}
+            aria-label={t("historySessions")}
+            disabled={sessions.length === 0}
+            onClick={() => {
+              setSessionsOpen((current) => !current);
+            }}
+          >
+            <CalendarClock aria-hidden="true" size={14} />
+            <span className="history-toolbar-label">
+              {selected !== null ? selected.name : t("historySessions")}
+            </span>
+            <ChevronDown aria-hidden="true" size={14} />
+          </button>
+
+          {renaming ? (
+            <div className="history-rename">
+              <input
+                className="history-rename-input"
+                value={nameDraft}
+                maxLength={64}
+                aria-label={t("historyRename")}
+                onChange={(event) => {
+                  setNameDraft(event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    commitRename();
+                  }
+                  if (event.key === "Escape") {
+                    setRenaming(false);
+                  }
+                }}
+                autoFocus
+              />
+              <button
+                className="button quiet"
+                type="button"
+                aria-label={t("historyRenameSave")}
+                disabled={nameDraft.trim() === ""}
+                onClick={commitRename}
               >
-                <div className="history-entry-meta">
-                  <span className="history-who" style={accent.badge}>
-                    {entry.displayName !== ""
-                      ? entry.displayName
-                      : entry.sourceLabel !== ""
-                        ? entry.sourceLabel
-                        : t("historyUnknownSpeaker")}
+                <Check aria-hidden="true" size={14} />
+              </button>
+            </div>
+          ) : (
+            <button
+              className="button quiet history-toolbar-button"
+              type="button"
+              aria-label={t("historyRename")}
+              title={t("historyRename")}
+              disabled={selected === null}
+              onClick={startRename}
+            >
+              <Pencil aria-hidden="true" size={14} />
+            </button>
+          )}
+
+          <button
+            className="button quiet history-toolbar-button"
+            type="button"
+            aria-label={t("historyDelete")}
+            title={
+              confirmingDelete ? t("historyDeleteConfirm") : t("historyDelete")
+            }
+            disabled={selected === null}
+            onClick={deleteSelected}
+          >
+            <Trash2 aria-hidden="true" size={14} />
+            {confirmingDelete && (
+              <span className="history-confirm-hint">
+                {t("historyDeleteConfirm")}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <div className="history-toolbar-group history-toolbar-right">
+          <div className="history-search">
+            <Search aria-hidden="true" size={13} />
+            <input
+              value={query}
+              placeholder={t("historySearch")}
+              aria-label={t("historySearch")}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+            />
+            {query !== "" && (
+              <button
+                className="history-search-clear"
+                type="button"
+                aria-label={t("cancel")}
+                onClick={() => {
+                  setQuery("");
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          <div className="history-menu-anchor history-menu-anchor-right">
+            <button
+              className="button quiet history-toolbar-button"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen === "settings"}
+              aria-label={t("historySettings")}
+              title={t("historySettings")}
+              onClick={() => {
+                setMenuOpen(menuOpen === "settings" ? null : "settings");
+              }}
+            >
+              <Settings aria-hidden="true" size={14} />
+            </button>
+            {menuOpen === "settings" && (
+              <div className="history-menu history-menu-noclip" role="menu">
+                {OPTION_TOGGLES.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={options[key]}
+                    className="history-menu-row"
+                    onClick={() => {
+                      toggleOption(key);
+                    }}
+                  >
+                    <span className="history-menu-label">{t(label)}</span>
+                    <span
+                      className={`history-check ${options[key] ? "on" : ""}`}
+                      aria-hidden="true"
+                    >
+                      {options[key] && <Check size={12} />}
+                    </span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={options.bubbleColor === "source"}
+                  className="history-menu-row"
+                  onClick={() => {
+                    setOptions((current) => {
+                      const next: HistoryDisplayOptions = {
+                        ...current,
+                        bubbleColor:
+                          current.bubbleColor === "source"
+                            ? "default"
+                            : "source",
+                      };
+                      saveHistoryDisplayOptions(next);
+                      return next;
+                    });
+                  }}
+                >
+                  <span className="history-menu-label">
+                    {t("historyBubbleColor")}
                   </span>
-                  <time>{formatTime(entry.timestampMs)}</time>
-                  {entry.uncertain && (
-                    <span className="history-uncertain">?</span>
-                  )}
+                  <span
+                    className={`history-check ${options.bubbleColor === "source" ? "on" : ""}`}
+                    aria-hidden="true"
+                  >
+                    {options.bubbleColor === "source" && <Check size={12} />}
+                  </span>
+                </button>
+
+                <div className="history-menu-row history-you-color-row">
+                  <span className="history-menu-label">
+                    {t("historyYouColor")}
+                  </span>
+                  <span className="history-you-colors">
+                    {YOU_COLOR_PRESETS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`history-you-swatch ${
+                          options.youColor === color ? "on" : ""
+                        }`}
+                        style={{ backgroundColor: color }}
+                        aria-label={`${t("historyYouColor")} ${color}`}
+                        title={color}
+                        onClick={() => {
+                          setOptions((current) => {
+                            const next: HistoryDisplayOptions = {
+                              ...current,
+                              youColor: color,
+                            };
+                            saveHistoryDisplayOptions(next);
+                            return next;
+                          });
+                        }}
+                      />
+                    ))}
+                  </span>
                 </div>
+
+                <div className="history-menu-sep" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="history-menu-row history-menu-danger"
+                  disabled={selected === null || selected.entries.length === 0}
+                  onClick={clearSelected}
+                >
+                  <span className="history-menu-label">
+                    {t("historyClearSession")}
+                  </span>
+                  <Trash2 aria-hidden="true" size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="history-body">
+        {sessionsOpen && (
+          <aside className="history-sessions" aria-label={t("historySessions")}>
+            <div className="history-sessions-head">
+              <span>{t("historySessions")}</span>
+              <span className="history-sessions-count">{sessions.length}</span>
+            </div>
+            <ol className="history-sessions-list">
+              {[...sessions]
+                .sort((a, b) => b.startedAtMs - a.startedAtMs)
+                .map((session) => (
+                  <li key={session.id}>
+                    <button
+                      type="button"
+                      className={`history-session-row ${
+                        selected?.id === session.id ? "on" : ""
+                      }`}
+                      onClick={() => {
+                        setSelectedId(session.id);
+                        setSessionsOpen(false);
+                      }}
+                    >
+                      <span className="history-session-name">
+                        {session.name}
+                        {session.id === currentSessionId && (
+                          <span
+                            className="history-live-dot"
+                            title={t("historyLiveSession")}
+                            aria-label={t("historyLiveSession")}
+                          />
+                        )}
+                      </span>
+                      <span className="history-session-meta">
+                        {session.entries.length} ·{" "}
+                        {formatTime(session.startedAtMs)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+            </ol>
+          </aside>
+        )}
+
+        <div className="history-main">
+          <div
+            className="history-scroll"
+            ref={scrollRef}
+            onScroll={onScroll}
+            role="log"
+            aria-live="polite"
+          >
+            {selected === null ? (
+              <p className="lst-model-empty">{t("historyEmpty")}</p>
+            ) : entries.length === 0 ? (
+              <p className="lst-model-empty">
+                {query.trim() === ""
+                  ? t("historySessionEmpty")
+                  : t("historySearchEmpty")}
+              </p>
+            ) : (
+              <ol className="history-list">
+                {entries.map((entry) => (
+                  <MessageBubble
+                    key={entry.id}
+                    entry={entry}
+                    options={options}
+                    copied={copiedId === entry.id}
+                    firstOfSpeaker={firstOfSpeakerIds.has(entry.id)}
+                    onCopy={() => {
+                      void copyEntry(entry);
+                    }}
+                  />
+                ))}
+              </ol>
+            )}
+          </div>
+
+          <form
+            className="history-input-card"
+            onSubmit={(event) => {
+              void submitChat(event);
+            }}
+          >
+            <input
+              className="history-chat-input"
+              value={draft}
+              placeholder={t("chatPlaceholder")}
+              aria-label={t("chatPlaceholder")}
+              maxLength={2000}
+              onChange={(event) => {
+                setDraft(event.target.value);
+              }}
+            />
+            <button
+              type="button"
+              className="button quiet history-toolbar-button history-input-settings"
+              aria-label={t("chatConfig")}
+              title={t("chatConfig")}
+              onClick={onOpenYouConfig}
+            >
+              <SlidersHorizontal aria-hidden="true" size={15} />
+            </button>
+            <button
+              type="button"
+              className={`history-mic-button ${micEnabled ? "on" : ""}`}
+              aria-label={micEnabled ? t("chatMicLive") : t("chatMic")}
+              title={micHint ?? (micEnabled ? t("chatMicLive") : t("chatMic"))}
+              aria-disabled={micDisabled || micBusy}
+              disabled={micDisabled || micBusy}
+              onClick={onMicClick}
+            >
+              <Mic aria-hidden="true" size={14} />
+            </button>
+            <button
+              type="submit"
+              className="button primary btn-shine history-send-button"
+              disabled={draft.trim() === "" || sending}
+              aria-label={t("chatSend")}
+            >
+              {sending ? (
+                <span className="history-send-spinner" aria-hidden="true" />
+              ) : (
+                <Send aria-hidden="true" size={14} />
+              )}
+            </button>
+            {micError !== null && (
+              <div className="history-mic-error" role="alert">
+                <span>{micError}</span>
+              </div>
+            )}
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MessageBubble({
+  entry,
+  options,
+  copied,
+  firstOfSpeaker,
+  onCopy,
+}: {
+  entry: HistoryEntry;
+  options: HistoryDisplayOptions;
+  copied: boolean;
+  /** Whether this bubble starts a new speaker run (meta line shows once). */
+  firstOfSpeaker: boolean;
+  onCopy: () => void;
+}) {
+  const t = useT();
+  const fromSelf = entry.fromSelf;
+  const accent = sourceAccent(entry.color);
+  const who =
+    entry.displayName !== ""
+      ? entry.displayName
+      : entry.sourceLabel !== ""
+        ? entry.sourceLabel
+        : t("historyUnknownSpeaker");
+  return (
+    <li
+      className={`history-entry chat-bubble ${fromSelf ? "self" : "other"}`}
+      data-uncertain={entry.uncertain || undefined}
+      style={fromSelf ? undefined : accent.entry}
+    >
+      {firstOfSpeaker && (
+        <div
+          className="history-entry-meta chat-bubble-meta"
+          data-self={fromSelf || undefined}
+        >
+          {options.showSpeaker && (
+            <span
+              className="history-who"
+              style={
+                fromSelf
+                  ? {
+                      backgroundColor: `${options.youColor}26`,
+                      color: options.youColor,
+                    }
+                  : accent.badge
+              }
+            >
+              {who}
+            </span>
+          )}
+          {options.showTimestamp && <time>{formatTime(entry.timestampMs)}</time>}
+          {options.showLatency && entry.latencyMs > 0 && (
+            <span className="history-latency">{entry.latencyMs} ms</span>
+          )}
+          {options.showModels && entry.provider !== "" && (
+            <span className="history-models">{entry.provider}</span>
+          )}
+          {entry.uncertain && (
+            <span className="history-uncertain">?</span>
+          )}
+        </div>
+      )}
+      <div className="chat-bubble-main">
+      {options.showAvatars && (
+        <span
+          className={`chat-avatar ${fromSelf ? "self" : ""}`}
+          style={
+            fromSelf
+              ? {
+                  backgroundColor: `${options.youColor}26`,
+                  color: options.youColor,
+                }
+              : options.bubbleColor === "source" && entry.color !== ""
+                ? {
+                    backgroundColor: `${entry.color}26`,
+                    color: entry.color,
+                  }
+                : undefined
+          }
+          aria-hidden="true"
+        >
+          {fromSelf ? <User size={13} /> : who.charAt(0) || "?"}
+        </span>
+      )}
+      <div className="chat-bubble-body">
+        <div className="chat-bubble-row">
+          <div
+            className="chat-bubble-tip"
+            style={
+              fromSelf
+                ? { backgroundColor: options.youColor, color: "#ffffff" }
+                : options.bubbleColor === "source" && entry.color !== ""
+                  ? { backgroundColor: `${entry.color}14` }
+                  : undefined
+            }
+          >
+            <div className="chat-bubble-message">
+              <div className="chat-bubble-text">
                 <p className="history-text">{entry.text}</p>
-                {showSource && entry.sourceText !== "" && (
+                {options.showSource && entry.sourceText !== "" && (
                   <p className="history-source">{entry.sourceText}</p>
                 )}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </section>
+              </div>
+              <button
+                className="history-copy"
+                type="button"
+                aria-label={t("historyCopy")}
+                title={t("historyCopy")}
+                onClick={onCopy}
+              >
+                {copied ? (
+                  <Check aria-hidden="true" size={13} />
+                ) : (
+                  <Copy aria-hidden="true" size={13} />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </li>
   );
 }

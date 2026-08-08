@@ -211,6 +211,31 @@ pub struct ClipComparePayload {
     pub include_transcripts: bool,
 }
 
+/// One-shot typed-chat translation (the history-page chat box). Uses the
+/// same provider cache as live translation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TranslateTextPayload {
+    pub text: String,
+    pub source_mode: String,
+    #[serde(default = "default_target_language")]
+    pub target_language: String,
+    #[serde(default = "default_translation_provider")]
+    pub translation_provider: String,
+}
+
+pub fn default_translation_provider() -> String {
+    "nllb".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranslateResultPayload {
+    pub translated_text: String,
+    #[serde(default = "default_translation_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub latency_ms: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LiveStartPayload {
     pub source_mode: String,
@@ -226,10 +251,18 @@ pub struct LiveStartPayload {
     /// quieter speech is treated as speech and utterances close sooner.
     #[serde(default = "default_vad_sensitivity")]
     pub vad_sensitivity: u8,
+    /// Caption segmentation style: "chunk" (short callouts), "balanced"
+    /// (sensitivity-derived), "sentence" (complete sentences).
+    #[serde(default = "default_segmentation")]
+    pub segmentation: String,
 }
 
 pub fn default_vad_sensitivity() -> u8 {
     50
+}
+
+pub fn default_segmentation() -> String {
+    "balanced".to_string()
 }
 
 pub fn default_target_language() -> String {
@@ -238,6 +271,34 @@ pub fn default_target_language() -> String {
 
 /// One entry of the `source.registry` control (IPC v2 freeze §4.2). The
 /// desktop pushes the full registry right after `live.start` so the sidecar
+/// DS-201: explicit recognition language intent crossing IPC. Validated by
+/// the sidecar; `fixed`/`primary_preferred` require a primary language and
+/// `limited_auto` requires at least one allowed language.
+///
+/// Serializes snake_case: the sidecar's StrictModel validates
+/// `primary_language`/`secondary_languages`/`detection_mode` and forbids
+/// extras, so a camelCase payload would close the connection with 1008.
+/// The camelCase aliases keep deserializing the desktop's own frontend
+/// payloads (`{primaryLanguage, secondaryLanguages, detectionMode}`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct LanguageConfig {
+    #[serde(alias = "primaryLanguage")]
+    pub primary_language: Option<String>,
+    #[serde(default, alias = "secondaryLanguages")]
+    pub secondary_languages: Vec<String>,
+    #[serde(default = "default_detection_mode", alias = "detectionMode")]
+    pub detection_mode: String,
+}
+
+fn default_detection_mode() -> String {
+    "full_auto".to_owned()
+}
+
+/// DS-200: audio origin for policy selection. Never replaces the capture
+/// endpoint; users can always edit it.
+pub const DEFAULT_SOURCE_ORIGIN: &str = "virtual_voice_channel";
+
 /// can resolve `source.presentation.update` targets.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SourceRegistryEntry {
@@ -253,6 +314,24 @@ pub struct SourceRegistryEntry {
     /// the final/provisional tiers. Never derived from names or tags.
     #[serde(default = "default_source_priority")]
     pub priority: u32,
+    /// DS-200: audio origin; defaulted so older v2 payloads still parse.
+    #[serde(default = "default_source_origin")]
+    pub source_origin: String,
+    /// DS-201: explicit language configuration (optional, older payloads).
+    #[serde(default)]
+    pub language_config: Option<LanguageConfig>,
+    /// Per-source translation direction (e.g. the user's own microphone in
+    /// a direction reversed from the session default). Optional so payloads
+    /// from older desktops still validate; when absent the source uses the
+    /// session default target language / translation provider.
+    #[serde(default)]
+    pub target_language: Option<String>,
+    #[serde(default)]
+    pub translation_provider: Option<String>,
+}
+
+fn default_source_origin() -> String {
+    DEFAULT_SOURCE_ORIGIN.to_owned()
 }
 
 fn default_source_priority() -> u32 {
@@ -738,6 +817,38 @@ mod tests {
         let serialized = serde_json::to_value(envelope).expect("envelope should serialize");
         assert_eq!(serialized["type"], "health");
         assert!(serialized.get("message_type").is_none());
+    }
+
+    #[test]
+    fn language_config_serializes_snake_case_for_the_sidecar() {
+        // The sidecar's StrictModel validates snake_case keys and forbids
+        // extras; a camelCase payload would close the connection with 1008
+        // "invalid message" (regression: live sessions died mid-start).
+        let config = super::LanguageConfig {
+            primary_language: Some("tl".to_owned()),
+            secondary_languages: vec!["en".to_owned()],
+            detection_mode: "fixed".to_owned(),
+        };
+        let serialized = serde_json::to_value(config).expect("config should serialize");
+        assert_eq!(serialized["primary_language"], "tl");
+        assert_eq!(serialized["secondary_languages"][0], "en");
+        assert_eq!(serialized["detection_mode"], "fixed");
+        assert!(serialized.get("primaryLanguage").is_none());
+    }
+
+    #[test]
+    fn language_config_deserializes_camel_case_from_the_frontend() {
+        // The desktop frontend sends camelCase keys; the alias keeps the
+        // request parsing working end-to-end.
+        let parsed: super::LanguageConfig = serde_json::from_value(serde_json::json!({
+            "primaryLanguage": "ceb",
+            "secondaryLanguages": ["en"],
+            "detectionMode": "primary_preferred",
+        }))
+        .expect("frontend payload should parse");
+        assert_eq!(parsed.primary_language.as_deref(), Some("ceb"));
+        assert_eq!(parsed.secondary_languages, vec!["en".to_owned()]);
+        assert_eq!(parsed.detection_mode, "primary_preferred");
     }
 
     #[test]

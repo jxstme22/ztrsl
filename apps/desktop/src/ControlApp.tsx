@@ -2,19 +2,24 @@ import {
   Activity,
   Boxes,
   Gauge,
+  Info,
+  MessageSquareText,
   Mic,
   Minus,
+  Rocket,
   ScrollText,
   Settings,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { HistoryPanel } from "./captions/HistoryPanel";
 import { useCaptionHistory } from "./captions/useCaptionHistory";
+import { translateText } from "./chat/bridge";
+import { YouConfigDialog } from "./components/YouConfigDialog";
 import { AudioDevicePanel } from "./components/AudioDevicePanel";
 import { AccuracyLabPanel } from "./components/AccuracyLabPanel";
 import { CaptionStack } from "./components/CaptionStack";
@@ -24,6 +29,8 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { HotkeyPanel } from "./components/HotkeyPanel";
 import { IpcPanel } from "./components/IpcPanel";
 import { LiveTranslationPanel } from "./components/LiveTranslationPanel";
+import { ProfilePage } from "./setup/ProfilePage";
+import { AboutPanel } from "./components/AboutPanel";
 import { ModelsPanel } from "./components/ModelsPanel";
 import { OverlaySettingsPanel } from "./components/OverlaySettingsPanel";
 import { RoutingPanel } from "./components/RoutingPanel";
@@ -36,10 +43,22 @@ import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useT } from "./features/i18n/store";
 import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
+import { useSeparatedLiveTranslation } from "./live/useSeparatedLiveTranslation";
+import type {
+  AsrProvider,
+  LiveSourceRequest,
+  TranslationProvider,
+} from "./live/bridge";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime, emitHistoryToOverlay } from "./overlay/bridge";
 import type { Caption, OverlaySettings } from "./overlay/model";
+import {
+  buildYouSourceRequest,
+  loadYouConfig,
+  resolveYouDirection,
+  type YouStreamConfig,
+} from "./you/config";
 import { useOverlayController } from "./overlay/useOverlayController";
 import { loadSourceConfigs } from "./sources/storage";
 import { captionTrustEnabled } from "./sources/captionTrustFlag";
@@ -47,13 +66,15 @@ import { multiSourceEnabled } from "./sources/featureFlag";
 
 type SectionId =
   | "live"
+  | "profile"
   | "models"
   | "history"
   | "settings"
   | "diagnostics"
-  | "sources";
+  | "sources"
+  | "about";
 
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.9.2";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
@@ -69,10 +90,11 @@ function navItems(
   return [
     { id: "live", label: t("navLive") },
     { id: "history", label: t("navHistory") },
-    { id: "models", label: t("navModels") },
+    { id: "profile", label: t("navSetup") },
     ...(multiSourceEnabled()
       ? [{ id: "sources" as SectionId, label: t("navSources") }]
       : []),
+    { id: "models", label: t("navModels") },
     { id: "settings", label: t("navSettings") },
     { id: "diagnostics", label: t("navDiagnostics") },
   ];
@@ -80,11 +102,13 @@ function navItems(
 
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
-  models: Boxes,
-  history: ScrollText,
+  history: MessageSquareText,
+  profile: Rocket,
   sources: Mic,
+  models: Boxes,
   settings: Settings,
   diagnostics: Gauge,
+  about: Info,
 };
 
 export function ControlApp() {
@@ -110,9 +134,15 @@ export function ControlApp() {
             (config) => config.sourceId === caption.source?.sourceId,
           )?.displayName ?? caption.source.captionTag;
       }
+      const snapshot = liveRef.current?.snapshot;
+      const modelLabel =
+        snapshot?.asrModel !== null && snapshot?.provider !== null
+          ? `${snapshot?.asrModel ?? ""} + ${snapshot?.provider ?? ""}`
+          : "";
       historyRef.current.record(caption, {
         displayName,
         audioSource: endpoint?.friendlyName ?? "",
+        provider: modelLabel,
       });
       controller.ingestCaption(caption);
     },
@@ -120,25 +150,249 @@ export function ControlApp() {
   );
   const live = useLiveTranslation(ingestCaption);
   liveRef.current = live;
+  // The user's own voice & chat stream config (mic endpoint, direction,
+  // models). Defaults auto-reverse of the live pair when a live session
+  // runs; the config dialog lets the user override.
+  const [youConfig, setYouConfig] = useState<YouStreamConfig>(loadYouConfig);
+  const [youConfigOpen, setYouConfigOpen] = useState(false);
+  // The live pair drives the "you" direction default (auto-reverse).
+  const livePair = useMemo(
+    () => ({
+      sourceMode: live.snapshot.sourceMode,
+      targetLanguage: live.snapshot.targetLanguage,
+    }),
+    [live.snapshot.sourceMode, live.snapshot.targetLanguage],
+  );
+  const youSource = useMemo(
+    () =>
+      buildYouSourceRequest(
+        youConfig,
+        livePair,
+        window.localStorage.getItem("lst.live.translation-provider") ?? "nllb",
+      ),
+    [livePair, youConfig],
+  );
   const models = useModels();
   const gpuRuntime = useGpuRuntime();
   const diagnostics = useDiagnostics();
   const language = useUiLanguage();
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
+  // Total translation count of the session currently shown in HistoryPanel,
+  // lifted up so it can be displayed in the titlebar window-actions.
+  const [historyCount, setHistoryCount] = useState(0);
   // Show the welcome card only on a fresh install — when no models are
   // installed yet. Once the user has models, the welcome never reappears.
   const [showWelcome, setShowWelcome] = useState(
     () => !models.hasInstalledModels,
   );
 
+  // The separated live session (started from the history page): a second,
+  // independent live translation that shares the sidecar process (models)
+  // with the main live session. Its captions go to history only.
+  const separatedLiveRef = useRef<ReturnType<
+    typeof useSeparatedLiveTranslation
+  > | null>(null);
+  const separatedLive = useSeparatedLiveTranslation((caption) => {
+    const endpoint = audio.catalog?.endpoints.find(
+      (candidate) =>
+        candidate.id === separatedLiveRef.current?.sessionEndpointId,
+    );
+    let displayName = "";
+    if (caption.source !== undefined) {
+      displayName =
+        loadSourceConfigs().sources.find(
+          (config) => config.sourceId === caption.source?.sourceId,
+        )?.displayName ?? caption.source.captionTag;
+    }
+    const snapshot = separatedLiveRef.current?.snapshot;
+    const modelLabel =
+      snapshot?.asrModel !== null && snapshot?.provider !== null
+        ? `${snapshot?.asrModel ?? ""} + ${snapshot?.provider ?? ""}`
+        : "";
+    historyRef.current.record(caption, {
+      displayName,
+      audioSource: endpoint?.friendlyName ?? "",
+      provider: modelLabel,
+    });
+    void emitHistoryToOverlay(historyRef.current.activeEntries);
+  });
+  separatedLiveRef.current = separatedLive;
+
   // Keep the overlay window's history view in sync (it also boots from the
   // same localStorage, so this only needs to run when entries change).
   useEffect(() => {
     if (desktop) {
-      void emitHistoryToOverlay(history.entries);
+      void emitHistoryToOverlay(history.activeEntries);
     }
-  }, [desktop, history.entries]);
+  }, [desktop, history.activeEntries]);
+
+  // History sessions: when live translation reaches the listening state, the
+  // live pipeline carries a session id (fresh, or a kept-open one reused via
+  // sessionIdHint). Create the session record once; a kept-open id already
+  // exists and is simply pointed at by the reducer.
+  useEffect(() => {
+    if (live.state !== "listening" || live.sessionId === null) {
+      return;
+    }
+    if (historyRef.current.sessions.some((s) => s.id === live.sessionId)) {
+      return;
+    }
+    const locale = language.language === "zh" ? "zh-CN" : "en-US";
+    const date = new Date().toLocaleString(locale, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    historyRef.current.beginSession(
+      live.sessionId,
+      `${language.t("historySessionPrefix")} · ${date}`,
+    );
+  }, [language, live.sessionId, live.state]);
+
+  // Stop-live confirmation: the user picks whether the current session ends
+  // (transcript stays in History) or stays open for the next start.
+  const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const requestStop = useCallback(() => {
+    setStopDialogOpen(true);
+  }, []);
+
+  const resolveStop = useCallback(
+    (endSession: boolean) => {
+      setStopDialogOpen(false);
+      if (endSession && live.sessionId !== null) {
+        historyRef.current.endSession(live.sessionId);
+      }
+      void live.stop();
+    },
+    [live],
+  );
+
+  // "New session": open a fresh session and make it current. Both the main
+  // live session and the separated (history) live append into the current
+  // session, so the next captions and chat bubbles land in the new one
+  // without restarting anything.
+  const newHistorySession = useCallback(() => {
+    const locale = language.language === "zh" ? "zh-CN" : "en-US";
+    const date = new Date().toLocaleString(locale, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    historyRef.current.beginSession(
+      `sess-${String(Date.now())}`,
+      `${language.t("historySessionPrefix")} · ${date}`,
+    );
+    void emitHistoryToOverlay(historyRef.current.activeEntries);
+  }, [language]);
+
+  // The "you" mic toggle: flips the shared flag the Rust live loop watches.
+  // Requires a running live session with a configured mic stream.
+  const toggleMic = useCallback(async (): Promise<boolean> => {
+    const next = !live.snapshot.micEnabled;
+    const applied = await live.setMicEnabled(next, youSource);
+    return applied === next;
+  }, [live, youSource]);
+
+  // Typed-chat translation: translate on demand (standalone sidecar), then
+  // record the "you" bubble. When no session is open (e.g. chat before any
+  // live run), open a "Chat" session first so the bubble is saved.
+  const sendChat = useCallback(
+    async (text: string): Promise<string | null> => {
+      const direction = resolveYouDirection(youConfig, livePair);
+      const liveTranslationProvider =
+        window.localStorage.getItem("lst.live.translation-provider") ?? "nllb";
+      let result;
+      try {
+        result = await translateText(
+          text,
+          direction.sourceMode,
+          direction.targetLanguage,
+          liveTranslationProvider as TranslationProvider,
+        );
+      } catch (cause) {
+        console.error("chat translation failed:", cause);
+        return null;
+      }
+      if (historyRef.current.currentSessionId === null) {
+        const id = `sess-${String(Date.now())}`;
+        const locale = language.language === "zh" ? "zh-CN" : "en-US";
+        const date = new Date().toLocaleString(locale, {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        historyRef.current.beginSession(
+          id,
+          `${language.t("chatStandaloneSession")} · ${date}`,
+        );
+      }
+      const entryId = `chat-${String(Date.now())}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const recorded = historyRef.current.recordChat({
+        id: entryId,
+        text: result.translatedText,
+        sourceText: text,
+        provider: result.provider,
+      });
+      if (recorded === null) {
+        return null;
+      }
+      void emitHistoryToOverlay(historyRef.current.activeEntries);
+      return recorded;
+    },
+    [language, livePair, youConfig],
+  );
+
+  // Start the separated live session from the history page. It uses the
+  // modal's "Live translation" section (the same lst.live.* keys the Live
+  // page reads) and shares the sidecar process — so loaded models are
+  // reused, only genuinely-different ones load a second time.
+  const startSeparatedLive = useCallback(async (): Promise<string | null> => {
+    // History live = YOUR voice: capture the configured mic and stamp the
+    // captions as "you" (right-aligned YOU bubbles), using the modal's
+    // models for the direction.
+    if (youSource === null) {
+      return "Pick a microphone in the config dialog first.";
+    }
+    const direction = resolveYouDirection(youConfig, livePair);
+    const translationProvider =
+      (window.localStorage.getItem(
+        "lst.live.translation-provider",
+      ) as TranslationProvider | null) ?? "nllb";
+    const asrProvider =
+      (window.localStorage.getItem(
+        "lst.live.asr-provider",
+      ) as AsrProvider | null) ?? "whisper-turbo";
+    await separatedLive.start(
+      youSource.endpointId,
+      null,
+      asrProvider !== "groq-whisper" &&
+        (translationProvider === "madlad" ||
+          translationProvider === "nllb" ||
+          translationProvider === "opus-mt-en-zh" ||
+          translationProvider === "opus-mt-zh-en")
+        ? "local"
+        : "http",
+      false,
+      direction.sourceMode,
+      direction.targetLanguage,
+      asrProvider,
+      translationProvider,
+      50,
+      "balanced",
+      [youSource],
+    );
+    return separatedLive.error;
+  }, [livePair, separatedLive, youConfig, youSource]);
+
+  const stopSeparatedLive = useCallback(async () => {
+    await separatedLive.stop();
+  }, [separatedLive]);
 
   const minimize = () => {
     if (desktop) {
@@ -161,12 +415,19 @@ export function ControlApp() {
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
         <span className="titlebar-brand-card" data-tauri-drag-region>
-          <span className="titlebar-title">yTSRL</span>
+          <img
+            className="titlebar-icon"
+            src="app-icon.png"
+            alt="yTRSL"
+            draggable={false}
+          />
           <span className="titlebar-beta">BETA</span>
-          <span className="titlebar-version">v0.7</span>
         </span>
         {desktop && (
           <div className="window-actions">
+            <span className="lst-model-count pill titlebar-history-count">
+              {historyCount}
+            </span>
             <button
               type="button"
               aria-label={language.t("overlayToggleHistory")}
@@ -206,6 +467,19 @@ export function ControlApp() {
                 </button>
               );
             })}
+            <span className="sidebar-nav-spacer" aria-hidden="true" />
+            <button
+              type="button"
+              className={`nav-button ${section === "about" ? "active" : ""}`}
+              aria-label={language.t("navAbout")}
+              aria-current={section === "about" ? "page" : undefined}
+              title={language.t("navAbout")}
+              onClick={() => {
+                setSection("about");
+              }}
+            >
+              <Info aria-hidden="true" size={20} strokeWidth={1.9} />
+            </button>
           </nav>
         </aside>
 
@@ -216,14 +490,41 @@ export function ControlApp() {
               audio={audio}
               live={live}
               models={models}
+              sessionIdHint={history.currentSessionId}
+              onRequestStop={requestStop}
+              micSource={youSource}
             />
           )}
+          {section === "profile" && (
+            <ProfilePage
+              audio={audio}
+              live={live}
+              sessionIdHint={history.currentSessionId}
+            />
+          )}
+          {section === "about" && <AboutPanel version={APP_VERSION} />}
           {section === "models" && (
             <ModelsPage models={models} gpuRuntime={gpuRuntime} />
           )}
           {section === "history" && (
-            <div className="page-stack">
-              <HistoryPanel entries={history.entries} onClear={history.clear} />
+            <div className="page-stack history-page-stack">
+              <HistoryPanel
+                sessions={history.sessions}
+                currentSessionId={history.currentSessionId}
+                onNewSession={newHistorySession}
+                onRenameSession={history.renameSession}
+                onDeleteSession={history.deleteSession}
+                onClearSession={history.clearSession}
+                onCountChange={setHistoryCount}
+                micEnabled={live.snapshot.micEnabled}
+                micConfigured={youConfig.micEndpointId !== null}
+                liveRunning={live.state === "listening"}
+                onToggleMic={toggleMic}
+                onSendChat={sendChat}
+                onOpenYouConfig={() => {
+                  setYouConfigOpen(true);
+                }}
+              />
             </div>
           )}
           {section === "sources" && (
@@ -245,6 +546,58 @@ export function ControlApp() {
         </section>
       </div>
 
+      {stopDialogOpen && (
+        <div className="lst-modal-backdrop" role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={language.t("liveStopConfirmTitle")}
+            className="lst-modal"
+          >
+            <div className="lst-modal-head">
+              <h3>{language.t("liveStopConfirmTitle")}</h3>
+            </div>
+            <p className="lst-modal-body">
+              {history.activeSession !== null
+                ? language
+                    .t("liveStopConfirmBody")
+                    .replace("{name}", history.activeSession.name)
+                : language.t("liveStopConfirmBodyShort")}
+            </p>
+            <div className="lst-modal-actions">
+              <button
+                className="button primary btn-shine"
+                type="button"
+                autoFocus
+                onClick={() => {
+                  resolveStop(true);
+                }}
+              >
+                {language.t("liveStopEnd")}
+              </button>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  resolveStop(false);
+                }}
+              >
+                {language.t("liveStopKeep")}
+              </button>
+              <button
+                className="button quiet"
+                type="button"
+                onClick={() => {
+                  setStopDialogOpen(false);
+                }}
+              >
+                {language.t("cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {desktop && showWelcome && (
         <WelcomeModelsDialog
           models={models}
@@ -255,6 +608,23 @@ export function ControlApp() {
             setShowWelcome(false);
           }}
           language={language}
+        />
+      )}
+
+      {youConfigOpen && (
+        <YouConfigDialog
+          endpoints={audio.catalog?.endpoints ?? []}
+          installedModelIds={new Set(models.installed.map((model) => model.id))}
+          onSaved={(config) => {
+            setYouConfig(config);
+          }}
+          onClose={() => {
+            setYouConfigOpen(false);
+          }}
+          separatedState={separatedLive.state}
+          separatedError={separatedLive.error}
+          onStartSeparatedLive={startSeparatedLive}
+          onStopSeparatedLive={stopSeparatedLive}
         />
       )}
     </main>
@@ -280,11 +650,17 @@ function LivePage({
   audio,
   live,
   models,
+  sessionIdHint,
+  onRequestStop,
+  micSource,
 }: {
   controller: Controller;
   audio: AudioController;
   live: LiveController;
   models: ModelsController;
+  sessionIdHint: string | null;
+  onRequestStop: () => void;
+  micSource: LiveSourceRequest | null;
 }) {
   const { snapshot } = controller;
   const t = useT();
@@ -317,7 +693,14 @@ function LivePage({
         </section>
       )}
 
-      <LiveTranslationPanel audio={audio} live={live} models={models} />
+      <LiveTranslationPanel
+        audio={audio}
+        live={live}
+        models={models}
+        sessionIdHint={sessionIdHint}
+        onRequestStop={onRequestStop}
+        micSource={micSource}
+      />
 
       <section className="card" aria-labelledby="overlay-customize">
         <div className="card-head">
@@ -512,7 +895,7 @@ function DiagnosticsPage({
         sourceConfigs={loadSourceConfigs()}
         overlaySettings={overlaySettings}
         appVersion={APP_VERSION}
-        platform="unknown"
+        platform={audio.catalog?.platform ?? "unknown"}
         onRunLeakage={() => void diagnostics.runLeakage()}
       />
       <AudioDevicePanel audio={audio} />

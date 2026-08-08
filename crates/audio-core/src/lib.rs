@@ -24,7 +24,7 @@ pub use windows::{
 #[cfg(target_os = "macos")]
 pub use macos::{
     MacosAudioCapture, MacosAudioPlayback, MacosDeviceWatcher, MacosEndpointCatalog,
-    MacosEndpointEvent, macos_endpoint_peak,
+    MacosEndpointEvent, MacosSystemAudioCapture, macos_endpoint_peak,
 };
 
 pub use source::{
@@ -474,6 +474,11 @@ impl AtomicLevelMeter {
 
 pub const SYNTHETIC_ENDPOINT_ID: &str = "synthetic://phase-2-meter";
 pub const SYNTHETIC_MONITOR_ENDPOINT_ID: &str = "synthetic://phase-3-headphones";
+
+/// macOS ScreenCaptureKit system-audio pseudo-endpoint: taps the system
+/// output mix without a virtual device (macOS 13+). The desktop live loop
+/// special-cases this id and opens [`crate::macos::MacosSystemAudioCapture`].
+pub const SYSTEM_AUDIO_ENDPOINT_ID: &str = "system-audio";
 
 #[must_use]
 pub fn synthetic_monitor_endpoint() -> AudioEndpoint {

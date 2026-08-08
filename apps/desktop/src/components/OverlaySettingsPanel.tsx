@@ -133,11 +133,7 @@ export function OverlaySettingsPanel({
               onChange={(value) => {
                 onUpdateSettings({
                   historyMaxRows:
-                    value === "auto"
-                      ? "auto"
-                      : value === "10"
-                        ? 10
-                        : 5,
+                    value === "auto" ? "auto" : value === "10" ? 10 : 5,
                 });
               }}
               options={[
@@ -146,9 +142,7 @@ export function OverlaySettingsPanel({
                 { value: "5", label: t("settingsHistoryRows5") },
               ]}
             />
-            <small className="field-note">
-              {t("settingsHistoryRowsNote")}
-            </small>
+            <small className="field-note">{t("settingsHistoryRowsNote")}</small>
           </label>
 
           <label className="field">
@@ -310,9 +304,9 @@ export function OverlaySettingsPanel({
             <input
               id="background-opacity"
               type="range"
-              min="0.35"
+              min="0.12"
               max="0.9"
-              step="0.05"
+              step="0.02"
               value={snapshot.settings.backgroundOpacity}
               onChange={(event) => {
                 onUpdateSettings({

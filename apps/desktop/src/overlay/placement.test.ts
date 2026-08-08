@@ -74,7 +74,7 @@ describe("overlay placement", () => {
       widthNormalized: 0.95,
       heightNormalized: 0.9,
       fontScale: 1.6,
-      backgroundOpacity: 0.35,
+      backgroundOpacity: 0.12,
     });
   });
 });

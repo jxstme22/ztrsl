@@ -25,8 +25,6 @@ export type AsrProvider =
   | "local"
   | "whisper-turbo"
   | "whisper-full"
-  | "mlx"
-  | "mlx-whisper"
   | "ncspeech"
   | "ncspeech-zh"
   | "ncspeech-zh-parakeet"
@@ -58,7 +56,8 @@ export type SourceMode =
   | "thai"
   | "malay";
 
-export type TargetLanguage = "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
+export type TargetLanguage =
+  "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
 
 export type LiveSourceRequest = {
   sourceId: string;
@@ -70,6 +69,16 @@ export type LiveSourceRequest = {
   labelStyle?: string;
   color?: string | null;
   priority?: number;
+  sourceOrigin?: string;
+  languageConfig?: {
+    primaryLanguage: string | null;
+    secondaryLanguages: string[];
+    detectionMode: string;
+  } | null;
+  /** Per-source translation direction (e.g. the user's mic reversed from
+   * the session default). Optional; absent = session default. */
+  targetLanguage?: string | null;
+  translationProvider?: string | null;
 };
 
 export async function startLiveTranslation(
@@ -82,7 +91,9 @@ export async function startLiveTranslation(
   asrProvider: AsrProvider,
   translationProvider: TranslationProvider,
   vadSensitivity = 50,
+  segmentation: "chunk" | "balanced" | "sentence" = "balanced",
   sources: LiveSourceRequest[] = [],
+  micSource: LiveSourceRequest | null = null,
 ): Promise<LiveSnapshot> {
   if (!isTauri()) {
     browserListening = true;
@@ -109,9 +120,90 @@ export async function startLiveTranslation(
         resourceProfile: "quality",
         monitorEnabled,
         vadSensitivity,
+        segmentation,
+        sources,
+        micSource,
+      },
+    }),
+  );
+}
+
+/** Flip the "you" mic stream on/off on the running live session. Returns the
+ * new state. Errors when no live session is running or the mic stream was
+ * not configured at live start. */
+export async function setLiveMicEnabled(
+  enabled: boolean,
+  micSource: LiveSourceRequest | null = null,
+): Promise<boolean> {
+  if (!isTauri()) {
+    return enabled;
+  }
+  return await invoke("set_live_mic_enabled", { enabled, micSource });
+}
+
+/** Start the SEPARATED live session (a second, independent live translation
+ * started from the history page). It shares the sidecar process — and its
+ * loaded models — with the main live session, but has its own endpoint and
+ * configuration, and records into the same history session. */
+export async function startSeparatedLiveTranslation(
+  endpointId: string,
+  playbackEndpointId: string | null,
+  provider: "demo" | "local" | "http",
+  monitorEnabled: boolean,
+  sourceMode: SourceMode,
+  targetLanguage: TargetLanguage,
+  asrProvider: AsrProvider,
+  translationProvider: TranslationProvider,
+  vadSensitivity = 50,
+  segmentation: "chunk" | "balanced" | "sentence" = "balanced",
+  sources: LiveSourceRequest[] = [],
+): Promise<LiveSnapshot> {
+  if (!isTauri()) {
+    return {
+      ...EMPTY_LIVE_SNAPSHOT,
+      state: "listening",
+      provider: "demo",
+      asrModel: "browser-preview",
+      sourceMode,
+      targetLanguage,
+      resourceProfile: "quality",
+    };
+  }
+  return liveSnapshotSchema.parse(
+    await invoke("start_separated_live_translation", {
+      request: {
+        endpointId,
+        playbackEndpointId: playbackEndpointId ?? "",
+        sourceMode,
+        targetLanguage,
+        provider,
+        asrProvider,
+        translationProvider,
+        resourceProfile: "quality",
+        monitorEnabled,
+        vadSensitivity,
+        segmentation,
         sources,
       },
     }),
+  );
+}
+
+export async function fetchSeparatedLiveSnapshot(): Promise<LiveSnapshot> {
+  if (!isTauri()) {
+    return EMPTY_LIVE_SNAPSHOT;
+  }
+  return liveSnapshotSchema.parse(
+    await invoke("separated_live_translation_snapshot"),
+  );
+}
+
+export async function stopSeparatedLiveTranslation(): Promise<LiveSnapshot> {
+  if (!isTauri()) {
+    return EMPTY_LIVE_SNAPSHOT;
+  }
+  return liveSnapshotSchema.parse(
+    await invoke("stop_separated_live_translation"),
   );
 }
 

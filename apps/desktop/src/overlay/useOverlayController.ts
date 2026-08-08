@@ -9,6 +9,8 @@ import {
 
 import {
   listenForDoneEditing,
+  listenForHideOverlay,
+  listenForToggleHistoryView,
   listenForOverlaySettings,
   listenForRecoveredOverlay,
   registerHotkeys,
@@ -16,6 +18,8 @@ import {
   unregisterHotkeys,
   type HotkeyErrors,
 } from "./bridge";
+import { setWindowedOverlay, isMacos } from "../windowEffects";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   DEFAULT_OVERLAY_SNAPSHOT,
   type Caption,
@@ -37,6 +41,7 @@ export function useOverlayController() {
   const [captions, dispatch] = useReducer(captionReducer, []);
   const [visible, setVisible] = useState(DEFAULT_OVERLAY_SNAPSHOT.visible);
   const [mode, setMode] = useState<OverlayMode>(DEFAULT_OVERLAY_SNAPSHOT.mode);
+  const [windowedMode, setWindowedMode] = useState(false);
   const [translationEnabled, setTranslationEnabled] = useState(true);
   const [settings, setSettings] = useState(loadOverlaySettings);
   const [hotkeyErrors, setHotkeyErrors] = useState<HotkeyErrors>({});
@@ -104,6 +109,8 @@ export function useOverlayController() {
     let stopRecovered: (() => void) | undefined;
     let stopSettings: (() => void) | undefined;
     let stopDoneEditing: (() => void) | undefined;
+    let stopToggleView: (() => void) | undefined;
+    let stopHide: (() => void) | undefined;
 
     void listenForRecoveredOverlay(() => {
       setRecoveredPlacement(true);
@@ -137,60 +144,135 @@ export function useOverlayController() {
       }
     });
 
+    void listenForToggleHistoryView(() => {
+      // The overlay control strip's view toggle: swap the mini caption lane
+      // and the full history panel.
+      setSettings((current) => ({
+        ...current,
+        overlayContent:
+          current.overlayContent === "history" ? "captions" : "history",
+      }));
+      setVisible(true);
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        stopToggleView = unlisten;
+      }
+    });
+
+    void listenForHideOverlay(() => {
+      // The overlay control strip's close button: hide now and stay hidden
+      // (new captions must not re-show it) until the user shows it again.
+      dismissed.current = true;
+      setVisible(false);
+      setMode("play");
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        stopHide = unlisten;
+      }
+    });
+
     return () => {
       disposed = true;
       stopRecovered?.();
       stopSettings?.();
       stopDoneEditing?.();
+      stopToggleView?.();
+      stopHide?.();
     };
   }, []);
 
-  const handleHotkey = useCallback((action: HotkeyAction) => {
-    switch (action) {
-      case "toggleOverlay":
-        setVisible((current) => {
-          dismissed.current = current;
-          return !current;
-        });
-        break;
-      case "toggleTranslation":
-        setTranslationEnabled((current) => !current);
-        break;
-      case "toggleEditMode":
-        dismissed.current = false;
-        setVisible(true);
-        setMode((current) => (current === "edit" ? "play" : "edit"));
-        break;
-      case "clearCaptions":
-        dispatch({ type: "clear" });
-        break;
-      case "increaseText":
-        setSettings((current) =>
-          normalizeSettings({
-            ...current,
-            fontScale: current.fontScale + 0.1,
-          }),
-        );
-        break;
-      case "decreaseText":
-        setSettings((current) =>
-          normalizeSettings({
-            ...current,
-            fontScale: current.fontScale - 0.1,
-          }),
-        );
-        break;
-      case "toggleHistory":
-        dismissed.current = false;
-        setSettings((current) => ({
-          ...current,
-          overlayContent:
-            current.overlayContent === "history" ? "captions" : "history",
-        }));
-        setVisible(true);
-        break;
-    }
+  const toggleWindowedMode = useCallback(() => {
+    setWindowedMode((current) => !current);
+    setVisible(false);
+    setMode("play");
   }, []);
+
+  useEffect(() => {
+    void setWindowedOverlay(windowedMode).catch((error: unknown) => {
+      setWindowError(
+        typeof error === "string"
+          ? error
+          : "Windowed overlay mode failed to switch.",
+      );
+    });
+  }, [windowedMode]);
+
+  // The pin toggle only matters in windowed (mini) mode: the window floats
+  // above other apps when pinned, and behaves normally when unpinned.
+  const pin = useCallback(() => {
+    setSettings((current) => {
+      const next = { ...current, pinned: !current.pinned };
+      void getCurrentWindow()
+        .setAlwaysOnTop(next.pinned)
+        .catch(() => undefined);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!windowedMode) {
+      return;
+    }
+    void getCurrentWindow()
+      .setAlwaysOnTop(settings.pinned)
+      .catch(() => undefined);
+  }, [windowedMode, settings.pinned]);
+
+  const handleHotkey = useCallback(
+    (action: HotkeyAction) => {
+      switch (action) {
+        case "toggleOverlay":
+          if (isMacos()) {
+            toggleWindowedMode();
+          } else {
+            setVisible((current) => {
+              dismissed.current = current;
+              return !current;
+            });
+          }
+          break;
+        case "toggleTranslation":
+          setTranslationEnabled((current) => !current);
+          break;
+        case "toggleEditMode":
+          setVisible(true);
+          setMode((current) => (current === "edit" ? "play" : "edit"));
+          break;
+        case "clearCaptions":
+          dispatch({ type: "clear" });
+          break;
+        case "increaseText":
+          setSettings((current) =>
+            normalizeSettings({
+              ...current,
+              fontScale: current.fontScale + 0.1,
+            }),
+          );
+          break;
+        case "decreaseText":
+          setSettings((current) =>
+            normalizeSettings({
+              ...current,
+              fontScale: current.fontScale - 0.1,
+            }),
+          );
+          break;
+        case "toggleHistory":
+          setSettings((current) => ({
+            ...current,
+            overlayContent:
+              current.overlayContent === "history" ? "captions" : "history",
+          }));
+          setVisible(true);
+          break;
+      }
+    },
+    [toggleWindowedMode],
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -334,8 +416,11 @@ export function useOverlayController() {
     hotkeyErrors,
     windowError,
     recoveredPlacement,
+    windowedMode,
     showOverlay,
     hideOverlay,
+    toggleWindowedMode,
+    pin,
     toggleEditMode,
     toggleHistoryView,
     clearCaptions,

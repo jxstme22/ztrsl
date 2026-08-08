@@ -23,6 +23,7 @@ sidecar-supervisor = { path = "../../../crates/sidecar-supervisor" }
 tauri = { version = "2", features = [] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "=2.4.0"
+tokio = { version = "1", features = ["sync", "time"] }
 tracing.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -33,6 +34,9 @@ windows = { version = "0.61", features = [
     "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

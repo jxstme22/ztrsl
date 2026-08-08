@@ -1,9 +1,10 @@
 import { LoaderCircle, Play, Square } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
 import { useLiveTranslation } from "../live/useLiveTranslation";
 import { setTranslationEnv } from "../live/bridge";
+import { loadSourceConfigs } from "../sources/storage";
 import type {
   AsrProvider,
   SourceMode,
@@ -11,9 +12,14 @@ import type {
   TranslationProvider,
 } from "../live/bridge";
 import type { ModelUiState } from "../models/useModels";
+import {
+  QUALITY_PROFILE_IDS,
+  loadQualityProfileId,
+  saveQualityProfileId,
+  type QualityProfileId,
+} from "../presets/quality";
 import { useT } from "../features/i18n/store";
 import type { UIKey } from "../features/i18n/strings";
-import { loadSourceConfigs } from "../sources/storage";
 import { Select } from "./Select";
 import type { SelectOption } from "./Select";
 
@@ -25,6 +31,13 @@ type LiveTranslationPanelProps = {
   live: LiveController;
   /** Installed model ids, so provider options can show what's on disk. */
   models?: ModelUiState;
+  /** Kept-open history session id to append into (null = fresh session). */
+  sessionIdHint?: string | null;
+  /** When provided, Stop asks the caller (confirmation modal) first. */
+  onRequestStop?: () => void;
+  /** The user's own mic stream request (null = mic not configured). Added
+   * to the same live session so the mic toggle works mid-session. */
+  micSource: import("../live/bridge").LiveSourceRequest | null;
 };
 
 const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
@@ -44,13 +57,30 @@ const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
 const BAIDU_APPID_KEY = "lst.live.baidu-appid";
 const BAIDU_SECRET_KEY = "lst.live.baidu-secret";
 const CAPTION_MODE_KEY = "lst.live.caption-mode";
+const SEGMENTATION_KEY = "lst.live.segmentation";
 
 /** How the pipeline produces captions: streaming preview vs per-utterance. */
 export type CaptionMode = "streaming" | "final-only";
 
+/** Caption segmentation style: short chunks, balanced, or full sentences. */
+export type Segmentation = "chunk" | "balanced" | "sentence";
+
+const SEGMENTATIONS: readonly Segmentation[] = [
+  "chunk",
+  "balanced",
+  "sentence",
+];
+
 function loadCaptionMode(): CaptionMode {
   const stored = window.localStorage.getItem(CAPTION_MODE_KEY);
   return stored === "final-only" ? "final-only" : "streaming";
+}
+
+function loadSegmentation(): Segmentation {
+  const stored = window.localStorage.getItem(SEGMENTATION_KEY);
+  return SEGMENTATIONS.includes(stored as Segmentation)
+    ? (stored as Segmentation)
+    : "balanced";
 }
 
 function loadStored(key: string): string | null {
@@ -105,8 +135,6 @@ function loadAsrProvider(): AsrProvider {
     stored === "ncspeech-zh-parakeet" ||
     stored === "paraformer-zh-streaming" ||
     stored === "sensevoice-small" ||
-    stored === "mlx" ||
-    stored === "mlx-whisper" ||
     stored === "groq-whisper"
   ) {
     return stored;
@@ -199,6 +227,9 @@ export function LiveTranslationPanel({
   audio,
   live,
   models,
+  sessionIdHint = null,
+  onRequestStop,
+  micSource,
 }: LiveTranslationPanelProps) {
   const [inputEndpointId, setInputEndpointId] = useState<string | null>(() =>
     loadStored(INPUT_ENDPOINT_KEY),
@@ -214,7 +245,12 @@ export function LiveTranslationPanel({
   const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
   const [vadSensitivity, setVadSensitivity] =
     useState<number>(loadVadSensitivity);
+  const [qualityProfileId, setQualityProfileId] =
+    useState<QualityProfileId>(loadQualityProfileId);
   const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [segmentation, setSegmentation] =
+    useState<Segmentation>(loadSegmentation);
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
@@ -241,8 +277,6 @@ export function LiveTranslationPanel({
   const LOCAL_ASR_MODELS: Partial<Record<string, string>> = {
     "whisper-turbo": "whisper-large-v3-turbo",
     "whisper-full": "whisper-large-v3",
-    mlx: "mlx-whisper-large-v3-turbo-q4",
-    "mlx-whisper": "mlx-whisper-large-v3-turbo-q4",
     ncspeech: "ncspeech-tl-fastconformer-hybrid-large",
     "ncspeech-zh": "ncspeech-zh-citrinet-1024-gamma",
     "ncspeech-zh-parakeet": "ncspeech-zh-parakeet-ctc-0.6b",
@@ -306,24 +340,15 @@ export function LiveTranslationPanel({
   const listening = live.state === "listening";
 
   const endpoints = audio.catalog?.endpoints ?? [];
-  const isMacos = audio.catalog?.platform === "macos";
-  // On Windows, loopback captures a render endpoint (WASAPI loopback). On
-  // macOS, BlackHole exposes its input as a capture endpoint — the game
-  // routes voice-chat output to BlackHole, and we capture that input.
+  // Windows loopback captures a render endpoint (WASAPI loopback); capture
+  // endpoints are microphones.
   const captureInputs = useMemo(
     () => endpoints.filter((endpoint) => endpoint.kind === "capture"),
     [endpoints],
   );
   const loopbackInputs = useMemo(
-    () =>
-      isMacos
-        ? endpoints.filter(
-            (endpoint) =>
-              endpoint.kind === "capture" &&
-              /blackhole|black hole/i.test(endpoint.friendlyName),
-          )
-        : endpoints.filter((endpoint) => endpoint.kind === "render"),
-    [endpoints, isMacos],
+    () => endpoints.filter((endpoint) => endpoint.kind === "render"),
+    [endpoints],
   );
 
   // Installed local model ids (whisper/nllb/madlad on disk) plus the known
@@ -346,14 +371,61 @@ export function LiveTranslationPanel({
   /** Mark a cloud/API provider so it is clearly distinct from local ones. */
   const cloud = (label: string): string => `${label} · Cloud`;
 
+  const configuredSources = useMemo(() => loadSourceConfigs().sources, []);
+  const endpointInfo = useCallback(
+    (
+      endpointId: string | null,
+    ): { name: string; capturable: boolean } | null => {
+      if (endpointId === null) {
+        return null;
+      }
+      const endpoint = endpoints.find(
+        (candidate) => candidate.id === endpointId,
+      );
+      if (endpoint === undefined) {
+        return null;
+      }
+      return {
+        name: endpoint.friendlyName,
+        capturable: true,
+      };
+    },
+    [endpoints],
+  );
+
   const channelOptions = useMemo<SelectOption[]>(() => {
     const options: SelectOption[] = [];
-    const activeCapture = captureInputs.filter(
-      (endpoint) => endpoint.state === "active",
-    );
-    const activeLoopback = loopbackInputs.filter(
-      (endpoint) => endpoint.state === "active",
-    );
+    // Sources configured on the Sources page first: starting live should
+    // reuse exactly what was set up there (endpoint + label).
+    const sourceOptions = configuredSources
+      .map((source) => {
+        const info = endpointInfo(
+          source.captureTarget.kind === "endpoint"
+            ? source.captureTarget.endpointId
+            : null,
+        );
+        if (!info?.capturable) {
+          return null;
+        }
+        return {
+          value:
+            source.captureTarget.kind === "endpoint"
+              ? (source.captureTarget.endpointId ?? "")
+              : "",
+          label: `${source.displayName} (${info.name})`,
+          group: "Your sources",
+        };
+      })
+      .filter(
+        (option): option is { value: string; label: string; group: string } =>
+          option !== null && option.value !== "",
+      );
+    options.push(...sourceOptions);
+    // Show every capture/loopback endpoint, not just the system defaults:
+    // virtual devices (BlackHole, the Audio MIDI multi-output routing) are
+    // configured on the Sources page and must be selectable here too.
+    const activeCapture = captureInputs;
+    const activeLoopback = loopbackInputs;
     if (activeCapture.length > 0) {
       options.push(
         ...activeCapture.map((endpoint) => ({
@@ -377,20 +449,22 @@ export function LiveTranslationPanel({
 
   const selectedInput =
     endpoints.find((endpoint) => endpoint.id === inputEndpointId) ?? null;
-  const inputReady = selectedInput !== null && selectedInput.state === "active";
+  // Any selected endpoint is startable: a genuinely dead device surfaces a
+  // clear capture error at start instead of hiding the option entirely.
+  const inputReady = selectedInput !== null;
 
   const playbackEndpoint =
     endpoints.find(
       (endpoint) =>
         endpoint.id === playbackEndpointId && endpoint.kind === "render",
     ) ?? null;
-  const playbackReady =
-    playbackEndpoint !== null && playbackEndpoint.state === "active";
+  const playbackReady = playbackEndpoint !== null;
 
   const configComplete =
     (asrProvider !== "groq-whisper" || groqApiKey.trim().length > 0) &&
     (!asrProvider.startsWith("nvidia-") || nvidiaApiKey.trim().length > 0) &&
-    (!translationProvider.startsWith("nvidia-") || nvidiaApiKey.trim().length > 0) &&
+    (!translationProvider.startsWith("nvidia-") ||
+      nvidiaApiKey.trim().length > 0) &&
     (translationProvider !== "libretranslate" ||
       ltEndpoint.trim().length > 0) &&
     (translationProvider !== "custom-http" ||
@@ -399,9 +473,8 @@ export function LiveTranslationPanel({
       (sourceMode === "english" && targetLanguage === "zh")) &&
     (translationProvider !== "opus-mt-zh-en" ||
       (sourceMode === "chinese" && targetLanguage === "en")) &&
-    (translationProvider !== "baidu-translate" ||
-      (baiduAppId.trim().length > 0 && baiduSecret.trim().length > 0));
-
+      (translationProvider !== "baidu-translate" ||
+        (baiduAppId.trim().length > 0 && baiduSecret.trim().length > 0));
 
   const sameEndpoint =
     monitorEnabled &&
@@ -471,6 +544,11 @@ export function LiveTranslationPanel({
     window.localStorage.setItem(CAPTION_MODE_KEY, value);
   };
 
+  const changeSegmentation = (value: Segmentation) => {
+    setSegmentation(value);
+    window.localStorage.setItem(SEGMENTATION_KEY, value);
+  };
+
   const changeTranslationProvider = (value: TranslationProvider) => {
     setTranslationProvider(value);
     window.localStorage.setItem(TRANSLATION_PROVIDER_KEY, value);
@@ -492,29 +570,19 @@ export function LiveTranslationPanel({
         <h2 className="card-title" id="live-title">
           Live
         </h2>
-        <div
-          className={`live-state ${listening ? "listening" : live.state}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span aria-hidden="true" />
-          {live.state === "starting"
-            ? t("liveLoadingModels")
-            : live.state === "stopping"
-              ? t("liveStopping")
-              : listening
-                ? t("liveStop")
-                : live.state === "error"
-                  ? t("liveNeedsAttention")
-                  : t("liveStart")}
-        </div>
         {listening ? (
           <button
             className="button secondary live-stop"
             type="button"
             disabled={busy}
             aria-busy={busy}
-            onClick={() => void live.stop()}
+            onClick={() => {
+              if (onRequestStop === undefined) {
+                void live.stop();
+              } else {
+                onRequestStop();
+              }
+            }}
           >
             {busy ? (
               <LoaderCircle className="spin" aria-hidden="true" size={16} />
@@ -525,19 +593,19 @@ export function LiveTranslationPanel({
           </button>
         ) : (
           <button
-            className="button primary live-start"
+            className="button primary live-start btn-shine"
             type="button"
             disabled={!canStart}
             aria-busy={busy}
             onClick={() => {
-              const activeSources =
-                channelMode === "all" ? allSources : [];
+              const activeSources = channelMode === "all" ? allSources : [];
               if (
                 channelMode === "all"
                   ? activeSources.length > 0
                   : inputEndpointId !== null
               ) {
                 void (async () => {
+                  setPermissionError(null);
                   await pushProviderEnv(asrProvider, translationProvider, {
                     groqApiKey,
                     nvidiaApiKey,
@@ -555,7 +623,7 @@ export function LiveTranslationPanel({
                       : null;
                   await live.start(
                     channelMode === "all"
-                      ? firstEndpoint ?? ""
+                      ? (firstEndpoint ?? "")
                       : (inputEndpointId ?? ""),
                     channelMode === "all"
                       ? null
@@ -577,6 +645,7 @@ export function LiveTranslationPanel({
                     asrProvider,
                     translationProvider,
                     vadSensitivity,
+                    segmentation,
                     activeSources.map((source) => ({
                       sourceId: source.sourceId,
                       endpointId:
@@ -589,7 +658,11 @@ export function LiveTranslationPanel({
                       strictness: source.strictness,
                       labelStyle: source.labelStyle,
                       color: source.color,
+                      sourceOrigin: source.sourceOrigin,
+                      languageConfig: source.languageConfig,
                     })),
+                    sessionIdHint,
+                    micSource,
                   );
                 })();
               }
@@ -603,6 +676,35 @@ export function LiveTranslationPanel({
             {busy ? t("liveLoadingModels") : t("liveStartListening")}
           </button>
         )}
+        {listening && (
+          <div
+            className="live-level"
+            role="meter"
+            aria-label="Input level"
+            title={
+              live.snapshot.metrics.capturePeak > 0.01
+                ? "Audio is reaching the app"
+                : "Silence — check the audio routing for this source"
+            }
+          >
+            <span
+              className={`live-level-fill${live.snapshot.metrics.capturePeak > 0.01 ? " on" : ""}`}
+              style={{
+                width: String(
+                  Math.min(
+                    100,
+                    Math.round(live.snapshot.metrics.capturePeak * 100),
+                  ),
+                ).concat("%"),
+              }}
+            />
+            <span className="live-level-label">
+              {live.snapshot.metrics.capturePeak > 0.01
+                ? "input level"
+                : "no audio — check routing"}
+            </span>
+          </div>
+        )}
       </div>
 
       {isSimulator && (
@@ -610,6 +712,15 @@ export function LiveTranslationPanel({
           <div>
             <strong>{t("liveSimulatorMode")}</strong>
             <p>{t("liveSimulatorModeText")}</p>
+          </div>
+        </div>
+      )}
+
+      {permissionError !== null && (
+        <div className="inline-alert error" role="alert">
+          <div>
+            <strong>Microphone permission needed</strong>
+            <p>{permissionError}</p>
           </div>
         </div>
       )}
@@ -633,41 +744,41 @@ export function LiveTranslationPanel({
       )}
 
       <div className="live-grid">
-        {configurableSources.length >= 2 && (
-          <div className="field span-2">
-            <label htmlFor="live-channel-mode">{t("liveChannelMode")}</label>
-            <div className="segmented" id="live-channel-mode">
-              <button
-                type="button"
-                className={channelMode === "channel" ? "on" : ""}
-                disabled={listening || busy}
-                onClick={() => {
-                  setChannelMode("channel");
-                }}
-              >
-                {t("liveOneChannel")}
-              </button>
-              <button
-                type="button"
-                className={channelMode === "all" ? "on" : ""}
-                disabled={listening || busy}
-                onClick={() => {
-                  setChannelMode("all");
-                }}
-              >
-                {t("liveAllSources").replace(
-                  "{count}",
-                  String(configurableSources.length),
-                )}
-              </button>
-            </div>
-            <small className="field-note">
-              {channelMode === "all"
-                ? t("liveAllSourcesNote")
-                : t("liveOneChannelNote")}
-            </small>
+        <div className="field span-2">
+          <label htmlFor="live-channel-mode">{t("liveChannelMode")}</label>
+          <div className="segmented" id="live-channel-mode">
+            <button
+              type="button"
+              className={channelMode === "channel" ? "on" : ""}
+              disabled={listening || busy}
+              onClick={() => {
+                setChannelMode("channel");
+              }}
+            >
+              {t("liveOneChannel")}
+            </button>
+            <button
+              type="button"
+              className={channelMode === "all" ? "on" : ""}
+              disabled={listening || busy || configurableSources.length < 2}
+              onClick={() => {
+                setChannelMode("all");
+              }}
+            >
+              {t("liveAllSources").replace(
+                "{count}",
+                String(configurableSources.length),
+              )}
+            </button>
           </div>
-        )}
+          <small className="field-note">
+            {channelMode === "all"
+              ? t("liveAllSourcesNote")
+              : configurableSources.length < 2
+                ? t("liveAllSourcesDisabledNote")
+                : t("liveOneChannelNote")}
+          </small>
+        </div>
         {channelMode === "all" ? (
           <div className="field span-2">
             <label>{t("liveSourcesBeingCaptured")}</label>
@@ -675,9 +786,7 @@ export function LiveTranslationPanel({
               {allSources.map((source) => (
                 <li key={source.sourceId}>
                   <span className="live-source-tag">{source.captionTag}</span>
-                  <span className="live-source-name">
-                    {source.displayName}
-                  </span>
+                  <span className="live-source-name">{source.displayName}</span>
                 </li>
               ))}
             </ul>
@@ -736,6 +845,25 @@ export function LiveTranslationPanel({
         </div>
 
         <div className="field">
+          <label htmlFor="live-quality">{t("liveQuality")}</label>
+          <Select
+            id="live-quality"
+            label={t("liveQuality")}
+            value={qualityProfileId}
+            disabled={listening || busy}
+            onChange={(value) => {
+              const id = value as QualityProfileId;
+              setQualityProfileId(id);
+              saveQualityProfileId(id);
+            }}
+            options={QUALITY_PROFILE_IDS.map((id) => ({
+              value: id,
+              label: t(("liveQuality" + id) as UIKey),
+            }))}
+          />
+        </div>
+
+        <div className="field">
           <label htmlFor="live-asr">{t("liveSpeechRecognition")}</label>
           <Select
             id="live-asr"
@@ -760,17 +888,6 @@ export function LiveTranslationPanel({
                   installedModelIds.has("whisper-large-v3"),
                 ),
               },
-              ...(audio.catalog?.platform === "macos"
-                ? [
-                    {
-                      value: "mlx" as const,
-                      label: tag(
-                        "Apple Silicon Whisper (Metal, recommended on Mac)",
-                        installedModelIds.has("mlx-whisper-large-v3-turbo-q4"),
-                      ),
-                    },
-                  ]
-                : []),
               {
                 value: "ncspeech",
                 label: tag(
@@ -892,15 +1009,15 @@ export function LiveTranslationPanel({
           {translationProvider === "opus-mt-en-zh" &&
             (sourceMode !== "english" || targetLanguage !== "zh") && (
               <p className="diag-hint warn">
-                opus-mt (en→zh) needs the source set to English and the
-                output language set to Chinese.
+                opus-mt (en→zh) needs the source set to English and the output
+                language set to Chinese.
               </p>
             )}
           {translationProvider === "opus-mt-zh-en" &&
             (sourceMode !== "chinese" || targetLanguage !== "en") && (
               <p className="diag-hint warn">
-                opus-mt (zh→en) needs the source set to Chinese and the
-                output language set to English.
+                opus-mt (zh→en) needs the source set to Chinese and the output
+                language set to English.
               </p>
             )}
         </div>
@@ -947,6 +1064,26 @@ export function LiveTranslationPanel({
             }}
           />
           <small className="field-note">{t("liveCaptionModeNote")}</small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-segmentation">{t("liveSegmentation")}</label>
+          <Select
+            id="live-segmentation"
+            label={t("liveSegmentation")}
+            value={segmentation}
+            disabled={listening || busy}
+            options={SEGMENTATIONS.map((id) => ({
+              value: id,
+              label: t(("liveSegmentation" + id) as UIKey),
+            }))}
+            onChange={(value) => {
+              changeSegmentation(value as Segmentation);
+            }}
+          />
+          <small className="field-note">
+            {t(("liveSegmentationNote" + segmentation) as UIKey)}
+          </small>
         </div>
       </div>
 
@@ -1168,32 +1305,6 @@ export function LiveTranslationPanel({
               <p className="readout-english">{live.lastCaption.english_text}</p>
             </>
           )}
-          <dl className="metrics">
-            <div>
-              <dt>{t("liveDevice")}</dt>
-              <dd>{live.snapshot.asrRuntime ?? "—"}</dd>
-            </div>
-            <div>
-              <dt>{t("liveCaptions")}</dt>
-              <dd>{live.snapshot.metrics.captionsReceived}</dd>
-            </div>
-            <div>
-              <dt>{t("liveAsrLabel")}</dt>
-              <dd>
-                {live.lastCaption === null
-                  ? "—"
-                  : `${String(Math.round(live.lastCaption.asr_ms))} ms`}
-              </dd>
-            </div>
-            <div>
-              <dt>{t("livePackets")}</dt>
-              <dd>{live.snapshot.metrics.audioPacketsSent}</dd>
-            </div>
-            <div>
-              <dt>{t("liveDrops")}</dt>
-              <dd>{live.snapshot.metrics.captureDrops}</dd>
-            </div>
-          </dl>
         </div>
       )}
     </section>

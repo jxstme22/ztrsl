@@ -1,6 +1,7 @@
 import asyncio
 import json
 import math
+import threading
 import time
 import wave
 from array import array
@@ -343,6 +344,108 @@ def test_worker_survives_slow_inference_with_bounded_drops() -> None:
     assert dropped > 0
 
 
+def test_worker_metrics_report_zero_loss_on_normal_operation() -> None:
+    class FastPipeline:
+        def feed_utterances(self, _packet: AudioPacket) -> tuple[()]:
+            return ()
+
+        def infer_utterances(self, utterances: list[object]) -> tuple[()]:
+            return ()
+
+        def flush_utterances(self) -> tuple[()]:
+            return ()
+
+        def flush(self) -> tuple[()]:
+            return ()
+
+        def note_utterances_dropped(self, count: int) -> None:
+            pass
+
+        def provisional_utterance(self, _source_key: object = None) -> None:
+            return None
+
+    worker = LivePipelineWorker(FastPipeline(), max_pending=8)  # type: ignore[arg-type]
+    for sequence in range(1, 7):
+        worker.submit(
+            AudioPacket(
+                session_id=b"0123456789abcdef",
+                sequence=sequence,
+                capture_monotonic_ns=sequence * 20_000_000,
+                sample_rate=16_000,
+                channels=1,
+                flags=0,
+                samples=(0.1,) * 5120,
+            )
+        )
+    deadline = time.monotonic() + 2.0
+    while True:
+        metrics = worker.worker_queue_metrics()
+        if metrics.packets_consumed == 6:
+            break
+        assert time.monotonic() < deadline, "worker never consumed the packets"
+        time.sleep(0.02)
+    worker.stop()
+    metrics = worker.worker_queue_metrics()
+    assert metrics.packets_submitted == 6
+    assert metrics.packets_consumed == 6
+    assert metrics.packets_dropped == 0
+    assert metrics.max_queue_depth >= 1
+
+
+def test_worker_counts_raw_packet_drops_under_overload() -> None:
+    class BlockingPipeline:
+        def __init__(self) -> None:
+            self.release = threading.Event()
+
+        def feed_utterances(self, _packet: AudioPacket) -> tuple[()]:
+            # Simulate a stalled VAD consumer so the bounded input queue
+            # overflows; releases on the test's signal.
+            self.release.wait(timeout=3.0)
+            return ()
+
+        def infer_utterances(self, utterances: list[object]) -> tuple[()]:
+            return ()
+
+        def flush_utterances(self) -> tuple[()]:
+            return ()
+
+        def flush(self) -> tuple[()]:
+            return ()
+
+        def note_utterances_dropped(self, count: int) -> None:
+            pass
+
+        def provisional_utterance(self, _source_key: object = None) -> None:
+            return None
+
+    pipeline = BlockingPipeline()
+    worker = LivePipelineWorker(pipeline, max_pending=4)  # type: ignore[arg-type]
+    for sequence in range(1, 13):
+        worker.submit(
+            AudioPacket(
+                session_id=b"0123456789abcdef",
+                sequence=sequence,
+                capture_monotonic_ns=sequence * 20_000_000,
+                sample_rate=16_000,
+                channels=1,
+                flags=0,
+                samples=(0.1,) * 5120,
+            )
+        )
+    time.sleep(0.2)
+    metrics = worker.worker_queue_metrics()
+    assert metrics.packets_dropped > 0
+    assert metrics.packets_submitted == 12
+    assert metrics.packets_consumed + metrics.packets_dropped <= 12
+    pipeline.release.set()
+    worker.stop()
+    # Accounting stays consistent: nothing disappears.
+    final = worker.worker_queue_metrics()
+    assert final.packets_submitted == 12
+    assert final.packets_consumed + final.packets_dropped == 12
+    assert final.max_queue_depth <= 4
+
+
 @dataclass
 class FakeUtterance:
     sequence: int
@@ -367,7 +470,7 @@ def test_worker_delivers_results_in_order_and_never_blocks() -> None:
         def note_utterances_dropped(self, count: int) -> None:
             pass
 
-        def provisional_utterance(self) -> None:
+        def provisional_utterance(self, _source_key: object = None) -> None:
             return None
 
     worker = LivePipelineWorker(EmittingPipeline(), max_pending=4, num_inference=1)  # type: ignore[arg-type]
@@ -418,7 +521,7 @@ def test_worker_vad_stays_realtime_while_inference_is_slow() -> None:
         def note_utterances_dropped(self, count: int) -> None:
             pass
 
-        def provisional_utterance(self) -> None:
+        def provisional_utterance(self, _source_key: object = None) -> None:
             return None
 
     pipeline = SlowInferPipeline()
@@ -843,6 +946,98 @@ def test_v2_live_two_sources_keep_independent_utterances_and_rename_does_not_spl
     asyncio.run(with_server(scenario))
 
 
+def test_caption_ids_are_scoped_to_the_live_run() -> None:
+    """Regression: a kept-open history session must not collide caption ids
+    across live runs. Each live.start respawns the sidecar, whose VAD
+    utterance sequence restarts at 0, so two runs used to emit identical
+    ids (e.g. `live-team-clip-utterance-1`) — history then upserted the new
+    translation in place at the old entry's list position instead of
+    appending at the bottom ("next translation spawns randomly"). Caption
+    ids are now prefixed with the connection session id, which the
+    supervisor generates fresh per spawn."""
+
+    async def run_once(url: str, session_id: str) -> str:
+        async with connect(url) as websocket:
+            await websocket.send(
+                json.dumps(
+                    {
+                        "protocol_version": 1,
+                        "message_id": f"hello-{session_id}",
+                        "session_id": session_id,
+                        "type": "hello",
+                        "sent_monotonic_ns": 1,
+                        "payload": {
+                            "token": "launch-token",
+                            "desktop_version": "0.1.0",
+                            "protocol_versions": [2, 1],
+                            "capabilities": [
+                                "ipc_v2",
+                                "multi_source",
+                                "pcm_f32le",
+                                "caption_revisions",
+                            ],
+                        },
+                    }
+                )
+            )
+            accepted: dict[str, Any] = json.loads(await websocket.recv())
+            assert accepted["type"] == "hello.accepted"
+            await websocket.send(
+                json.dumps(
+                    {
+                        "protocol_version": 2,
+                        "message_id": f"registry-{session_id}",
+                        "session_id": session_id,
+                        "type": "source.registry",
+                        "sent_monotonic_ns": 2,
+                        "payload": registry_payload(),
+                    }
+                )
+            )
+            await websocket.recv()
+            await websocket.send(
+                json.dumps(
+                    {
+                        "protocol_version": 2,
+                        "message_id": f"live-start-{session_id}",
+                        "session_id": session_id,
+                        "type": "live.start",
+                        "sent_monotonic_ns": 2,
+                        "payload": {
+                            "source_mode": "filipino",
+                            "target_language": "en",
+                            "provider": "demo",
+                            "resource_profile": "quality",
+                            "vad_sensitivity": 50,
+                        },
+                    }
+                )
+            )
+            assert json.loads(await websocket.recv())["type"] == "live.started"
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(1, TEAM_SOURCE, 0.25)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(2, TEAM_SOURCE, 0.0)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(3, TEAM_SOURCE, 0.0)))
+            final: dict[str, Any] = {}
+            while final.get("type") != "caption.final":
+                final = json.loads(await websocket.recv())
+                assert final["type"] in ("caption.provisional", "caption.final")
+            caption_id: str = final["payload"]["caption_id"]
+            return caption_id
+
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        first = await run_once(url, "run-1")
+        second = await run_once(url, "run-2")
+        # Same utterance sequence, different live runs: ids must differ so a
+        # kept-open session can never upsert the second run's translation
+        # into the first run's entry slot.
+        assert first != second
+        assert first.startswith("run-1-")
+        assert second.startswith("run-2-")
+        stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
 def test_model_artifact_dir_resolves_both_layouts(tmp_path: Path) -> None:
     """v0.3 regression: in-app (Rust) downloads live at LST_MODEL_DIR/<id>,
     CLI downloads at LST_MODEL_DIR/artifacts/<id>. Both must resolve."""
@@ -884,9 +1079,7 @@ def test_worker_skips_provisionals_when_disabled() -> None:
 
     class ProvisionalPipeline:
         def __init__(self) -> None:
-            self.snapshot = SnapshotUtterance(
-                sequence=0, utterance_id="prov", source_id=None
-            )
+            self.snapshot = SnapshotUtterance(sequence=0, utterance_id="prov", source_id=None)
 
         def feed_utterances(self, packet: AudioPacket) -> list[FakeUtterance]:
             return []
@@ -987,3 +1180,124 @@ def test_slow_local_asr_never_stacks_provisionals_for_one_utterance() -> None:
     # The latch throttles, but does not disable, provisionals entirely.
     assert state["provisionals"] >= 2
     assert state["max_concurrent"] <= 1
+
+
+def test_source_registry_accepts_per_source_translation_direction() -> None:
+    """A source may declare its own target language / translation provider
+    (e.g. the user's own mic reversed from the session default). The
+    registry push must accept it, and captions from that source still flow
+    through the shared live pipeline with per-source direction."""
+
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello_v2("launch-token"))
+            await websocket.recv()
+
+            payload = registry_payload()
+            payload["sources"].append(
+                {
+                    "source_id": "33333333333333333333333333333333",
+                    "display_name": "You (mic)",
+                    "caption_tag": "YOU",
+                    "capture_target": {"kind": "endpoint", "endpoint_id": "you-mic"},
+                    "language_profile": "auto",
+                    "strictness": "off",
+                    "label_style": "brackets",
+                    "color": "#fda4af",
+                    "source_origin": "physical_microphone",
+                    "target_language": "fil",
+                    "translation_provider": "demo",
+                }
+            )
+            await websocket.send(control("registry-1", "source.registry", payload))
+            accepted: dict[str, Any] = json.loads(await websocket.recv())
+            assert accepted["type"] == "source.registry.accepted"
+            assert accepted["payload"]["sources"] == 3
+
+            await websocket.send(
+                control(
+                    "live-start-1",
+                    "live.start",
+                    {
+                        "source_mode": "filipino",
+                        "target_language": "en",
+                        "provider": "demo",
+                        "resource_profile": "quality",
+                        "vad_sensitivity": 50,
+                    },
+                )
+            )
+            assert json.loads(await websocket.recv())["type"] == "live.started"
+
+            you_source = "33333333333333333333333333333333"
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(1, you_source, 0.25)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(2, you_source, 0.0)))
+            await websocket.send(encode_audio_packet_v2(speech_packet_v2(3, you_source, 0.0)))
+
+            final: dict[str, Any] | None = None
+            while final is None:
+                message: dict[str, Any] = json.loads(await websocket.recv())
+                assert message["type"] in ("caption.provisional", "caption.final")
+                if message["type"] == "caption.final":
+                    final = message
+            assert final["payload"]["source_id"] == you_source
+            assert final["payload"]["source_snapshot"]["caption_tag"] == "YOU"
+            assert final["payload"]["source_mode"] == "filipino"
+            stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
+def test_translate_text_roundtrip_in_demo_mode() -> None:
+    """The one-shot typed-chat translation control returns a translated
+    result; demo mode uses the demo provider so no model is required."""
+
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello_v2("launch-token"))
+            await websocket.recv()
+            await websocket.send(
+                control(
+                    "chat-1",
+                    "translate.text",
+                    {
+                        "text": "hello world",
+                        "source_mode": "english",
+                        "target_language": "zh",
+                        "translation_provider": "demo",
+                    },
+                )
+            )
+            result: dict[str, Any] = json.loads(await websocket.recv())
+            assert result["type"] == "translate.result"
+            assert result["payload"]["translated_text"]
+            assert result["payload"]["provider"] == "demo"
+            assert result["payload"]["latency_ms"] >= 0.0
+            assert result["message_id"] == "chat-1"
+            stop.set()
+
+    asyncio.run(with_server(scenario))
+
+
+def test_translate_text_rejects_empty_or_oversized_text() -> None:
+    async def scenario(url: str, stop: asyncio.Event) -> None:
+        async with connect(url) as websocket:
+            await websocket.send(hello_v2("launch-token"))
+            await websocket.recv()
+            await websocket.send(
+                control(
+                    "chat-2",
+                    "translate.text",
+                    {
+                        "text": "",
+                        "source_mode": "english",
+                        "target_language": "zh",
+                        "translation_provider": "demo",
+                    },
+                )
+            )
+            error: dict[str, Any] = json.loads(await websocket.recv())
+            assert error["type"] == "translate.error"
+            stop.set()
+
+    asyncio.run(with_server(scenario))

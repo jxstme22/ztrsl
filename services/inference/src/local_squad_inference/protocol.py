@@ -4,7 +4,7 @@ import re
 import struct
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PROTOCOL_VERSION = 1
 PROTOCOL_V2 = 2
@@ -184,6 +184,27 @@ def dump_caption(caption: CaptionPayload, *, include_v2: bool) -> dict[str, Any]
     return data
 
 
+class LanguageConfig(StrictModel):
+    """DS-201: explicit recognition language intent. `fixed` and
+    `primary_preferred` require a primary language; `limited_auto` requires
+    at least one allowed language; the primary language may not repeat in
+    the secondary list. Language ids use the canonical ISO 639-1/2 form."""
+
+    primary_language: str | None = Field(default=None, pattern=r"^[a-z]{2,3}$")
+    secondary_languages: list[str] = Field(default_factory=list, max_length=8)
+    detection_mode: Literal["fixed", "primary_preferred", "limited_auto", "full_auto"] = "full_auto"
+
+    @model_validator(mode="after")
+    def validate_rules(self) -> LanguageConfig:
+        if self.detection_mode in {"fixed", "primary_preferred"} and self.primary_language is None:
+            raise ValueError("fixed and primary_preferred require a primary language")
+        if self.detection_mode == "limited_auto" and not self.secondary_languages:
+            raise ValueError("limited_auto requires at least one allowed language")
+        if self.primary_language is not None and self.primary_language in self.secondary_languages:
+            raise ValueError("primary language cannot be duplicated in secondary languages")
+        return self
+
+
 class SourceRegistryEntry(StrictModel):
     source_id: str = Field(pattern=r"^[0-9a-f]{32}$")
     display_name: str = Field(min_length=1, max_length=48)
@@ -196,6 +217,22 @@ class SourceRegistryEntry(StrictModel):
     # Scheduling priority (spec §7.2): higher numbers decode first within
     # the final/provisional tiers. Never derived from names or tags.
     priority: int = Field(default=100, ge=0, le=1000)
+    # DS-200/201: audio origin and explicit language configuration. Optional
+    # so v2 payloads from older desktops still validate.
+    source_origin: Literal[
+        "virtual_voice_channel",
+        "physical_microphone",
+        "application_audio",
+        "system_mix",
+        "recorded_file",
+    ] = "virtual_voice_channel"
+    language_config: LanguageConfig | None = None
+    # Per-source translation direction (e.g. the user's own microphone in a
+    # direction reversed from the session default). Optional so payloads from
+    # older desktops still validate; when absent the source uses the session
+    # default target language / translation provider.
+    target_language: Literal["en", "zh", "fil", "ind", "vie", "tha", "zsm"] | None = None
+    translation_provider: str | None = Field(default=None, max_length=64)
 
 
 class SourceRegistryPayload(StrictModel):
@@ -232,6 +269,23 @@ class ClipComparePayload(StrictModel):
     include_transcripts: bool = False
 
 
+class TranslateTextPayload(StrictModel):
+    """One-shot typed-chat translation (the history-page chat box). Uses the
+    same provider cache as live translation, so a running live session does
+    not reload models. `source_mode` selects the NLLB source token."""
+
+    text: str = Field(min_length=1, max_length=2000)
+    source_mode: SourceMode = "filipino"
+    target_language: Literal["en", "zh", "fil", "ind", "vie", "tha", "zsm"] = "en"
+    translation_provider: str = Field(default="nllb", max_length=64)
+
+
+class TranslateResultPayload(StrictModel):
+    translated_text: str = Field(min_length=1, max_length=2000)
+    provider: str = Field(default="nllb", max_length=64)
+    latency_ms: float = Field(default=0.0, ge=0.0)
+
+
 class LiveStartPayload(StrictModel):
     source_mode: Literal[
         "filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"
@@ -246,8 +300,6 @@ class LiveStartPayload(StrictModel):
         "ncspeech",
         "ncspeech-zh",
         "ncspeech-zh-parakeet",
-        "mlx",
-        "mlx-whisper",
         "paraformer-zh-streaming",
         "sensevoice-small",
         "nvidia-whisper-large-v3",
@@ -272,6 +324,10 @@ class LiveStartPayload(StrictModel):
     ] = "nllb"
     resource_profile: Literal["balanced", "quality"] = "quality"
     vad_sensitivity: int = Field(default=50, ge=0, le=100)
+    # Caption segmentation style: "chunk" (short callouts), "balanced"
+    # (sensitivity-derived), "sentence" (complete sentences). Controls how
+    # long a pause finalizes an utterance.
+    segmentation: Literal["chunk", "balanced", "sentence"] = "balanced"
 
 
 def parse_audio_packet(data: bytes) -> AudioPacket:

@@ -516,3 +516,92 @@ def test_glossary_hot_reload_swaps_corrections() -> None:
     pipeline.feed(packet_v2(3, (0.1,) * 4_800, TEAM_ID))
     second = pipeline.feed(packet_v2(4, (0.0,) * 4_800, TEAM_ID))
     assert second[0].source_text == "go bind"
+
+
+def test_pipeline_populates_audio_health_metrics_per_source() -> None:
+    """DS-300: health metrics update during a live source and surface
+    through diagnostics (deterministic states + recommendations)."""
+    from local_squad_inference.audio_health import (
+        policy_for_origin,
+    )
+
+    pipeline = LivePipeline(
+        FakeAsr(),
+        FakeTranslation(),
+        vad_config=VadConfig(
+            frame_ms=30,
+            min_speech_ms=60,
+            pre_roll_ms=60,
+            min_silence_ms=90,
+            max_utterance_ms=1_000,
+        ),
+        use_silero=False,
+    )
+    source_id = "0123456789abcdef0123456789abcdef"
+    packet_v2 = AudioPacketV2(
+        session_id=b"0123456789abcdef",
+        sequence=1,
+        capture_monotonic_ns=1_000_000_000,
+        sample_rate=16_000,
+        channels=1,
+        flags=0,
+        samples=(0.2,) * 4_800,
+        source_id=bytes.fromhex(source_id),
+    )
+    pipeline.start_source(
+        source_id,
+        source_mode="english",
+        processing=policy_for_origin("physical_microphone"),
+    )
+    assert pipeline.feed(packet_v2) == ()
+    diagnostics = pipeline.diagnostics_for(source_id)
+    assert diagnostics["active"] is True
+    assert diagnostics["health"]["packets_received"] == 1
+    assert diagnostics["health"]["peak"] > 0.1
+    assert diagnostics["health_state"]["state"] in {"ready", "very_quiet", "silent"}
+    assert isinstance(diagnostics["recommendations"], list)
+
+
+def test_pipeline_applies_normalization_policy_for_microphones() -> None:
+    """DS-302/303: a physical-microphone source with a quiet signal gets
+    bounded gain applied by the feed path."""
+    from local_squad_inference.audio_health import (
+        SourceProcessingPolicy,
+        resolve_processing_policy,
+    )
+
+    pipeline = LivePipeline(
+        FakeAsr(),
+        FakeTranslation(),
+        vad_config=VadConfig(
+            frame_ms=30,
+            min_speech_ms=60,
+            pre_roll_ms=60,
+            min_silence_ms=90,
+            max_utterance_ms=1_000,
+        ),
+        use_silero=False,
+    )
+    source_id = "22222222222222222222222222222222"
+    policy = resolve_processing_policy(
+        "physical_microphone",
+        overrides=None,
+    )
+    assert policy.normalize is True
+    pipeline.start_source(
+        source_id,
+        source_mode="english",
+        processing=SourceProcessingPolicy(normalize=False),  # explicit off wins
+    )
+    packet_v2 = AudioPacketV2(
+        session_id=b"0123456789abcdef",
+        sequence=1,
+        capture_monotonic_ns=1_000_000_000,
+        sample_rate=16_000,
+        channels=1,
+        flags=0,
+        samples=(0.001,) * 4_800,
+        source_id=bytes.fromhex(source_id),
+    )
+    pipeline.feed(packet_v2)
+    assert pipeline.diagnostics_for(source_id)["health"]["peak"] < 0.01

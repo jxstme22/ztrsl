@@ -95,7 +95,7 @@ describe("captionReducer", () => {
     ]);
   });
 
-  it("keeps only the two newest captions", () => {
+  it("keeps enough captions for the multi-row mini lane", () => {
     const first = captionReducer([], {
       type: "upsert",
       caption: caption("one", 1),
@@ -109,7 +109,7 @@ describe("captionReducer", () => {
       caption: caption("three", 3),
     });
 
-    expect(third.map((item) => item.id)).toEqual(["two", "three"]);
+    expect(third.map((item) => item.id)).toEqual(["one", "two", "three"]);
   });
 
   it("keeps one caption per source lane instead of evicting across sources", () => {

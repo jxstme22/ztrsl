@@ -9,6 +9,8 @@ export const liveMetricsSchema = z.object({
   monitorDrops: z.number().int().nonnegative(),
   monitorUnderrunSamples: z.number().int().nonnegative(),
   captionsReceived: z.number().int().nonnegative(),
+  /** Peak amplitude (0..1) of the latest captured frame. */
+  capturePeak: z.number().min(0).max(1).default(0),
 });
 
 export const liveSnapshotSchema = z.object({
@@ -25,6 +27,8 @@ export const liveSnapshotSchema = z.object({
   error: z.string().nullable(),
   /** Non-fatal capture stall warning; null when audio is flowing. */
   warning: z.string().nullable().default(null),
+  /** The user's mic stream: true while the mic toggle is capturing. */
+  micEnabled: z.boolean().default(false),
 });
 
 export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>;
@@ -45,8 +49,10 @@ export const EMPTY_LIVE_SNAPSHOT: LiveSnapshot = {
     monitorDrops: 0,
     monitorUnderrunSamples: 0,
     captionsReceived: 0,
+    capturePeak: 0,
   },
   captions: [],
   error: null,
   warning: null,
+  micEnabled: false,
 };

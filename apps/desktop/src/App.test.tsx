@@ -73,6 +73,8 @@ describe("control window", () => {
       await screen.findByRole("button", { name: "Stop listening" }),
     ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Stop listening" }));
+    // Stop asks for confirmation: end the session (transcript is kept).
+    fireEvent.click(await screen.findByRole("button", { name: "End session" }));
     expect(
       await screen.findByRole("button", { name: "Start listening" }),
     ).toBeEnabled();

@@ -1,7 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::fs;
 use std::collections::VecDeque;
+use std::fs;
 use std::io::BufRead;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -13,16 +13,17 @@ use std::time::{Duration, Instant};
 use ipc_protocol::{
     AudioPacket, AudioPacketV2, CAPABILITY_IPC_V2, CAPABILITY_MULTI_SOURCE, CaptionLabelStyle,
     CaptionPayload, CaptionStrictness, ClipComparePayload, ClipProcessPayload, ClipResultPayload,
-    Envelope, HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
-    SourceControlPayload, SourcePresentationUpdatePayload, SourceRegistryEntry,
-    SourceRegistryPayload, SourceSnapshot, source_id_from_hex,
+    DEFAULT_SOURCE_ORIGIN, Envelope, HelloAcceptedPayload, HelloPayload, LiveStartPayload,
+    PROTOCOL_V2, PROTOCOL_VERSION, SourceControlPayload, SourcePresentationUpdatePayload,
+    SourceRegistryEntry, SourceRegistryPayload, SourceSnapshot, TranslateResultPayload,
+    TranslateTextPayload, source_id_from_hex,
 };
 use thiserror::Error;
 use tungstenite::{Message, WebSocket};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+
 const CLIP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LIVE_START_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
@@ -116,8 +117,184 @@ impl SidecarConfig {
     }
 }
 
+/// A running sidecar subprocess that can host one or more authenticated
+/// connections. The provider factories in the sidecar are cached per
+/// process, so multiple live sessions attached to the same process share
+/// loaded models (whisper / NLLB are loaded once, not per session).
+pub struct SidecarProcess {
+    child: Mutex<Child>,
+    port: u16,
+    token: String,
+    config: SidecarConfig,
+    /// Most recent sidecar stderr lines (bounded ring buffer). Native crashes
+    /// (segfaults in onnxruntime/sherpa-onnx etc.) usually leave a trace here
+    /// — surfaced in transport-failure messages so crashes self-report.
+    stderr_tail: Arc<Mutex<VecDeque<String>>>,
+}
+
+impl SidecarProcess {
+    fn spawn(config: &SidecarConfig) -> Result<Arc<Self>, SupervisorError> {
+        config.validate()?;
+        let port = reserve_loopback_port()?;
+        let token = random_hex::<32>()?;
+
+        let mut command = Command::new(&config.python_executable);
+        command
+            .arg("-m")
+            .arg("local_squad_inference.sidecar")
+            .env("PYTHONPATH", &config.python_source_root)
+            .env("LST_IPC_PORT", port.to_string())
+            .env("LST_IPC_TOKEN", &token)
+            .env("LST_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
+            .env("LST_MODEL_DIR", &config.model_root)
+            .env("LST_TRANSLATION_RUNNER", &config.translation_runner)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        for (key, value) in &config.extra_env {
+            command.env(key, value);
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(runtime_library_dir) = &config.runtime_library_dir {
+            command.env("DYLD_LIBRARY_PATH", runtime_library_dir);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // Never show a console window for the sidecar: the app owns its
+            // own GUI, and a visible console (with its own close button)
+            // makes users think the terminal controls the app — closing it
+            // kills the inference sidecar and the whole app with it.
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let mut child = command.spawn().map_err(SupervisorError::Spawn)?;
+
+        // Keep the last stderr lines in a bounded ring buffer so crash traces
+        // (faulthandler dumps, onnxruntime abort messages) can be surfaced in
+        // transport-failure errors. The reader thread ends when the pipe closes.
+        let stderr_tail = Arc::new(Mutex::new(VecDeque::with_capacity(24)));
+        if let Some(stderr) = child.stderr.take() {
+            let tail = Arc::clone(&stderr_tail);
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(stderr);
+                let mut line = String::new();
+                while matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+                    if let Ok(mut tail) = tail.lock() {
+                        if tail.len() == 24 {
+                            tail.pop_front();
+                        }
+                        tail.push_back(line.trim_end().to_owned());
+                    }
+                    line.clear();
+                }
+            });
+        }
+
+        // The sidecar opens its listen socket lazily; `connect_with_retry`
+        // waits for it. A failed first connection is a spawn failure.
+        let stream = match connect_with_retry(port, &mut child) {
+            Ok(stream) => stream,
+            Err(error) => {
+                terminate_child(&mut child);
+                return Err(error);
+            }
+        };
+        drop(stream);
+
+        Ok(Arc::new(SidecarProcess {
+            child: Mutex::new(child),
+            port,
+            token,
+            config: config.clone(),
+            stderr_tail,
+        }))
+    }
+
+    /// Open a new authenticated connection to this process. Each connection
+    /// gets its own session id; providers stay process-wide so models are
+    /// shared between sessions.
+    fn connect(
+        self: &Arc<Self>,
+    ) -> Result<(WebSocket<TcpStream>, String, [u8; 16], u16), SupervisorError> {
+        let session_bytes = random_bytes::<16>()?;
+        let session_id = to_hex(&session_bytes);
+        let mut child = self.child.lock().map_err(|_| {
+            SupervisorError::Io(std::io::Error::other("sidecar child lock poisoned"))
+        })?;
+        let stream = connect_with_retry(self.port, &mut child)?;
+        drop(child);
+        stream
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        stream
+            .set_write_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        let request = format!("ws://127.0.0.1:{}", self.port);
+        let (mut socket, _) = tungstenite::client(request, stream)
+            .map_err(|error| SupervisorError::Handshake(error.to_string()))?;
+        let hello = Envelope {
+            protocol_version: PROTOCOL_VERSION,
+            message_id: "hello-1".to_owned(),
+            session_id: session_id.clone(),
+            message_type: "hello".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: HelloPayload {
+                token: self.token.clone(),
+                desktop_version: env!("CARGO_PKG_VERSION").to_owned(),
+                protocol_versions: vec![PROTOCOL_V2, PROTOCOL_VERSION],
+                capabilities: vec![
+                    "pcm_f32le".to_owned(),
+                    "caption_revisions".to_owned(),
+                    CAPABILITY_IPC_V2.to_owned(),
+                    CAPABILITY_MULTI_SOURCE.to_owned(),
+                ],
+            },
+        };
+        write_json(&mut socket, &hello)?;
+        let accepted: Envelope<HelloAcceptedPayload> = read_json(&mut socket)?;
+        accepted
+            .validate_version()
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        Ok((
+            socket,
+            session_id,
+            session_bytes,
+            accepted.payload.protocol_version,
+        ))
+    }
+
+    fn terminate(&self) {
+        if let Ok(mut child) = self.child.lock() {
+            terminate_child(&mut child);
+        }
+    }
+
+    fn stderr_tail(&self) -> Vec<String> {
+        self.stderr_tail
+            .lock()
+            .map(|tail| tail.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn child_exit_status(&self) -> Option<String> {
+        self.child
+            .lock()
+            .ok()
+            .and_then(|mut child| child.try_wait().ok().flatten())
+            .map(|status| status.to_string())
+    }
+}
+
+impl Drop for SidecarProcess {
+    /// The last connection dropping kills the subprocess. `stop()` also
+    /// terminates explicitly; killing an already-exited child is a no-op.
+    fn drop(&mut self) {
+        self.terminate();
+    }
+}
+
 pub struct SidecarSupervisor {
-    child: Child,
+    process: Arc<SidecarProcess>,
     socket: WebSocket<TcpStream>,
     session_id: String,
     session_bytes: [u8; 16],
@@ -126,31 +303,34 @@ pub struct SidecarSupervisor {
     /// sidecar shares `ipc_v2`, otherwise 1 (v0.2 compatibility).
     negotiated_version: u16,
     stopped: bool,
-    /// Retained spawn config so a crashed sidecar can be restarted in place
-    /// (`restart()`) without the caller re-supplying anything.
-    config: SidecarConfig,
-    /// Most recent sidecar stderr lines (bounded ring buffer). Native crashes
-    /// (segfaults in onnxruntime/sherpa-onnx etc.) usually leave a trace here
-    /// — surfaced in transport-failure messages so crashes self-report.
-    stderr_tail: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl SidecarSupervisor {
+    /// Spawn a new sidecar process and attach the first connection.
     pub fn start(config: &SidecarConfig) -> Result<Self, SupervisorError> {
-        config.validate()?;
-        let (child, socket, session_id, session_bytes, negotiated_version, stderr_tail) =
-            spawn_and_handshake(config)?;
+        let process = SidecarProcess::spawn(config)?;
+        Self::attach(&process)
+    }
+
+    /// Attach a new connection to an existing sidecar process. Multiple live
+    /// sessions attached to the same process share its loaded models.
+    pub fn attach(process: &Arc<SidecarProcess>) -> Result<Self, SupervisorError> {
+        let (socket, session_id, session_bytes, negotiated_version) = process.connect()?;
         Ok(Self {
-            child,
+            process: Arc::clone(process),
             socket,
             session_id,
             session_bytes,
             next_sequence: 0,
             negotiated_version,
             stopped: false,
-            config: config.clone(),
-            stderr_tail,
         })
+    }
+
+    /// The shared process backing this connection (so another live session
+    /// can attach to it and reuse loaded models).
+    pub fn shared_process(&self) -> &Arc<SidecarProcess> {
+        &self.process
     }
 
     /// Restart the sidecar subprocess and re-establish the authenticated
@@ -161,35 +341,30 @@ impl SidecarSupervisor {
         if self.stopped {
             return Err(SupervisorError::SidecarExited("stopped".to_owned()));
         }
-        let config = self.config.clone();
+        let config = self.process.config.clone();
         let _ = self.socket.close(None);
-        terminate_child(&mut self.child);
-        let (child, socket, session_id, session_bytes, negotiated_version, stderr_tail) =
-            spawn_and_handshake(&config)?;
-        self.child = child;
+        self.process.terminate();
+        let process = SidecarProcess::spawn(&config)?;
+        let (socket, session_id, session_bytes, negotiated_version) = process.connect()?;
+        self.process = process;
         self.socket = socket;
         self.session_id = session_id;
         self.session_bytes = session_bytes;
         self.next_sequence = 0;
         self.negotiated_version = negotiated_version;
-        self.stderr_tail = stderr_tail;
         Ok(())
     }
 
     /// Last stderr lines from the current sidecar process (bounded tail).
     pub fn stderr_tail(&self) -> Vec<String> {
-        self.stderr_tail.lock().map(|tail| tail.iter().cloned().collect()).unwrap_or_default()
+        self.process.stderr_tail()
     }
 
     /// The subprocess's exit status when it is no longer running, else `None`.
     /// Lets callers distinguish "the sidecar crashed" (the usual cause of a
     /// mid-session connection reset) from a dropped socket on a live process.
-    pub fn child_exit_status(&mut self) -> Option<String> {
-        self.child
-            .try_wait()
-            .ok()
-            .flatten()
-            .map(|status| status.to_string())
+    pub fn child_exit_status(&self) -> Option<String> {
+        self.process.child_exit_status()
     }
 
     pub fn fake_roundtrip(
@@ -347,6 +522,10 @@ impl SidecarSupervisor {
                 label_style: CaptionLabelStyle::Brackets,
                 color: team_snapshot.color.clone(),
                 priority: 200,
+                source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                language_config: None,
+                target_language: None,
+                translation_provider: None,
             },
             SourceRegistryEntry {
                 source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -361,6 +540,10 @@ impl SidecarSupervisor {
                 label_style: CaptionLabelStyle::Brackets,
                 color: discord_snapshot.color.clone(),
                 priority: 100,
+                source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                language_config: None,
+                target_language: None,
+                translation_provider: None,
             },
         ])?;
 
@@ -501,6 +684,7 @@ impl SidecarSupervisor {
         target_language: &str,
         resource_profile: &str,
         vad_sensitivity: u8,
+        segmentation: &str,
     ) -> Result<serde_json::Value, SupervisorError> {
         self.ensure_running()?;
         let request = Envelope {
@@ -517,6 +701,7 @@ impl SidecarSupervisor {
                 target_language: target_language.to_owned(),
                 resource_profile: resource_profile.to_owned(),
                 vad_sensitivity,
+                segmentation: segmentation.to_owned(),
             },
         };
         self.next_sequence = self.next_sequence.saturating_add(1);
@@ -889,13 +1074,67 @@ impl SidecarSupervisor {
         Ok(response.payload)
     }
 
+    /// One-shot typed-chat translation on this sidecar connection. Uses the
+    /// same provider cache as live translation.
+    pub fn translate_text(
+        &mut self,
+        text: &str,
+        source_mode: &str,
+        target_language: &str,
+        translation_provider: &str,
+    ) -> Result<TranslateResultPayload, SupervisorError> {
+        self.ensure_running()?;
+        let request = Envelope {
+            protocol_version: self.negotiated_version,
+            message_id: format!("translate-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "translate.text".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: TranslateTextPayload {
+                text: text.to_owned(),
+                source_mode: source_mode.to_owned(),
+                target_language: target_language.to_owned(),
+                translation_provider: translation_provider.to_owned(),
+            },
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(CLIP_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        response
+            .validate_version_in(&[self.negotiated_version])
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        if response.message_type == "translate.error" {
+            let message = response
+                .payload
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("translation failed");
+            return Err(SupervisorError::TranslateError(message.to_owned()));
+        }
+        if response.message_type != "translate.result" {
+            return Err(SupervisorError::Protocol(
+                "unexpected translate.response".to_owned(),
+            ));
+        }
+        serde_json::from_value(response.payload)
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))
+    }
+
     pub fn ensure_running(&mut self) -> Result<(), SupervisorError> {
         if self.stopped {
             return Err(SupervisorError::SidecarExited("stopped".to_owned()));
         }
-        match self.child.try_wait().map_err(SupervisorError::Io)? {
+        match self.process.child_exit_status() {
             None => Ok(()),
-            Some(status) => Err(SupervisorError::SidecarExited(status.to_string())),
+            Some(status) => Err(SupervisorError::SidecarExited(status)),
         }
     }
 
@@ -904,25 +1143,34 @@ impl SidecarSupervisor {
             return;
         }
         self.stopped = true;
-        let shutdown = Envelope {
-            protocol_version: self.negotiated_version,
-            message_id: "shutdown-1".to_owned(),
-            session_id: self.session_id.clone(),
-            message_type: "shutdown".to_owned(),
-            sent_monotonic_ns: 0,
-            payload: serde_json::json!({}),
-        };
-        let _ = write_json(&mut self.socket, &shutdown);
-        let _ = self.socket.read();
-        let _ = self.socket.close(None);
-        wait_or_kill(&mut self.child, SHUTDOWN_TIMEOUT);
+        // The sidecar's `shutdown` control stops the whole server (shared
+        // stop_event), so it must only be sent when this connection is the
+        // last one holding the process. Other sessions attached to the same
+        // process keep it alive; this connection just closes its socket.
+        let is_last = Arc::strong_count(&self.process) == 1;
+        if is_last {
+            let shutdown = Envelope {
+                protocol_version: self.negotiated_version,
+                message_id: "shutdown-1".to_owned(),
+                session_id: self.session_id.clone(),
+                message_type: "shutdown".to_owned(),
+                sent_monotonic_ns: 0,
+                payload: serde_json::json!({}),
+            };
+            let _ = write_json(&mut self.socket, &shutdown);
+            let _ = self.socket.read();
+            self.process.terminate();
+        } else {
+            let _ = self.socket.close(None);
+        }
     }
 
     /// Test hook for exercising crash detection and restart behavior without
-    /// relying on platform-specific process-control tools.
+    /// relying on platform-specific process-control tools. The supervisor
+    /// stays in its normal (not "stopped") state, exactly like a real crash:
+    /// the process is dead but the connection doesn't know it yet.
     pub fn terminate_for_diagnostics(&mut self) {
-        terminate_child(&mut self.child);
-        self.stopped = true;
+        self.process.terminate();
     }
 
     #[must_use]
@@ -981,6 +1229,8 @@ pub enum SupervisorError {
     InvalidClipPath,
     #[error("clip analysis failed: {0}")]
     ClipProcessing(String),
+    #[error("typed-chat translation failed: {0}")]
+    TranslateError(String),
     #[error("live translation failed: {0}")]
     LiveInference(String),
     #[error("live translation hiccup (recoverable): {0}")]
@@ -1033,135 +1283,6 @@ fn connect_with_retry(port: u16, child: &mut Child) -> Result<TcpStream, Supervi
 /// `restart` (crash recovery) so both paths behave identically. On any
 /// failure the child is terminated before the error is returned.
 #[allow(clippy::type_complexity)]
-fn spawn_and_handshake(
-    config: &SidecarConfig,
-) -> Result<
-    (
-        Child,
-        WebSocket<TcpStream>,
-        String,
-        [u8; 16],
-        u16,
-        Arc<Mutex<VecDeque<String>>>,
-    ),
-    SupervisorError,
-> {
-    let port = reserve_loopback_port()?;
-    let token = random_hex::<32>()?;
-    let session_bytes = random_bytes::<16>()?;
-    let session_id = to_hex(&session_bytes);
-
-    let mut command = Command::new(&config.python_executable);
-    command
-        .arg("-m")
-        .arg("local_squad_inference.sidecar")
-        .env("PYTHONPATH", &config.python_source_root)
-        .env("LST_IPC_PORT", port.to_string())
-        .env("LST_IPC_TOKEN", &token)
-        .env("LST_PROTOCOL_VERSION", PROTOCOL_VERSION.to_string())
-        .env("LST_MODEL_DIR", &config.model_root)
-        .env("LST_TRANSLATION_RUNNER", &config.translation_runner)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-    for (key, value) in &config.extra_env {
-        command.env(key, value);
-    }
-    #[cfg(target_os = "macos")]
-    if let Some(runtime_library_dir) = &config.runtime_library_dir {
-        command.env("DYLD_LIBRARY_PATH", runtime_library_dir);
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // Never show a console window for the sidecar: the app owns its
-        // own GUI, and a visible console (with its own close button)
-        // makes users think the terminal controls the app — closing it
-        // kills the inference sidecar and the whole app with it.
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-    let mut child = command.spawn().map_err(SupervisorError::Spawn)?;
-
-    // Keep the last stderr lines in a bounded ring buffer so crash traces
-    // (faulthandler dumps, onnxruntime abort messages) can be surfaced in
-    // transport-failure errors. The reader thread ends when the pipe closes.
-    let stderr_tail = Arc::new(Mutex::new(VecDeque::with_capacity(24)));
-    if let Some(stderr) = child.stderr.take() {
-        let tail = Arc::clone(&stderr_tail);
-        std::thread::spawn(move || {
-            let mut reader = std::io::BufReader::new(stderr);
-            let mut line = String::new();
-            while matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
-                if let Ok(mut tail) = tail.lock() {
-                    if tail.len() == 24 {
-                        tail.pop_front();
-                    }
-                    tail.push_back(line.trim_end().to_owned());
-                }
-                line.clear();
-            }
-        });
-    }
-
-    let stream = match connect_with_retry(port, &mut child) {
-        Ok(stream) => stream,
-        Err(error) => {
-            terminate_child(&mut child);
-            return Err(error);
-        }
-    };
-    stream
-        .set_read_timeout(Some(IO_TIMEOUT))
-        .map_err(SupervisorError::Io)?;
-    stream
-        .set_write_timeout(Some(IO_TIMEOUT))
-        .map_err(SupervisorError::Io)?;
-    let request = format!("ws://127.0.0.1:{port}");
-    let (mut socket, _) = tungstenite::client(request, stream)
-        .map_err(|error| SupervisorError::Handshake(error.to_string()))?;
-    let hello = Envelope {        protocol_version: PROTOCOL_VERSION,
-        message_id: "hello-1".to_owned(),
-        session_id: session_id.clone(),
-        message_type: "hello".to_owned(),
-        sent_monotonic_ns: 0,
-        payload: HelloPayload {
-            token,
-            desktop_version: env!("CARGO_PKG_VERSION").to_owned(),
-            protocol_versions: vec![PROTOCOL_V2, PROTOCOL_VERSION],
-            capabilities: vec![
-                "pcm_f32le".to_owned(),
-                "caption_revisions".to_owned(),
-                CAPABILITY_IPC_V2.to_owned(),
-                CAPABILITY_MULTI_SOURCE.to_owned(),
-            ],
-        },
-    };
-    write_json(&mut socket, &hello)?;
-    let accepted: Envelope<HelloAcceptedPayload> = read_json(&mut socket)?;
-    accepted
-        .validate_version()
-        .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
-    if accepted.message_type != "hello.accepted" {
-        terminate_child(&mut child);
-        return Err(SupervisorError::HandshakeRejected);
-    }
-    // The sidecar computes and echoes the negotiated version (freeze §1);
-    // the desktop trusts the echo and requires a version it proposed.
-    let negotiated_version = accepted.payload.protocol_version;
-    if negotiated_version != PROTOCOL_V2 && negotiated_version != PROTOCOL_VERSION {
-        terminate_child(&mut child);
-        return Err(SupervisorError::HandshakeRejected);
-    }
-    Ok((
-        child,
-        socket,
-        session_id,
-        session_bytes,
-        negotiated_version,
-        stderr_tail,
-    ))
-}
-
 fn write_json<T: serde::Serialize>(
     socket: &mut WebSocket<TcpStream>,
     value: &T,
@@ -1220,18 +1341,6 @@ fn to_hex(bytes: &[u8]) -> String {
     result
 }
 
-fn wait_or_kill(child: &mut Child, timeout: Duration) {
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        match child.try_wait() {
-            Ok(Some(_)) => return,
-            Ok(None) => thread::sleep(Duration::from_millis(25)),
-            Err(_) => break,
-        }
-    }
-    terminate_child(child);
-}
-
 fn terminate_child(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
@@ -1280,7 +1389,8 @@ mod tests {
         TEAM_SOURCE_ID, packaged_sidecar_available, to_hex, workspace_root_from_manifest,
     };
     use ipc_protocol::{
-        CaptionLabelStyle, CaptionPayload, CaptionStrictness, Envelope, SourceRegistryEntry,
+        CaptionLabelStyle, CaptionPayload, CaptionStrictness, DEFAULT_SOURCE_ORIGIN, Envelope,
+        SourceRegistryEntry,
     };
     use std::time::Duration;
 
@@ -1333,14 +1443,15 @@ mod tests {
         }
         let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("live must start");
         let first_session = supervisor.session_id().to_owned();
 
         // Simulate a native crash: the process dies and the socket goes away,
         // exactly what Windows reports as "forcibly closed" (WSAECONNRESET).
-        supervisor.child.kill().expect("kill must succeed");
-        let _ = supervisor.child.wait();
+        supervisor.terminate_for_diagnostics();
 
         let error = supervisor
             .read_live_caption(Duration::from_millis(10))
@@ -1356,7 +1467,9 @@ mod tests {
             .expect("restart must re-establish the connection");
         assert_ne!(supervisor.session_id(), first_session);
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("live must restart after the crash");
         // A restarted live session routes audio through the real VAD
         // pipeline (not the fake-caption path), so send speech long enough
@@ -1570,6 +1683,10 @@ mod tests {
                     label_style: CaptionLabelStyle::Brackets,
                     color: Some("#7dd3fc".to_owned()),
                     priority: 200,
+                    source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                    language_config: None,
+                    target_language: None,
+                    translation_provider: None,
                 },
                 SourceRegistryEntry {
                     source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -1584,11 +1701,17 @@ mod tests {
                     label_style: CaptionLabelStyle::Brackets,
                     color: Some("#fda4af".to_owned()),
                     priority: 100,
+                    source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                    language_config: None,
+                    target_language: None,
+                    translation_provider: None,
                 },
             ])
             .expect("registry push must succeed");
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50)
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("live must start");
 
         // Interleave speech and silence on both sources; VAD needs ~450 ms
@@ -1669,5 +1792,175 @@ mod tests {
         assert_eq!(stopped_diagnostics["active"], true);
 
         supervisor.stop_live().expect("live must stop");
+    }
+}
+
+#[cfg(test)]
+mod shared_process_tests {
+    use super::*;
+
+    /// Two live sessions attached to ONE sidecar process share the process
+    /// (and therefore its model cache). The first connection spawns the
+    /// process; the second attaches to it; stopping either connection keeps
+    /// the process alive for the other; stopping the last one terminates it.
+    #[test]
+    fn two_connections_share_one_process_and_last_stop_kills_it() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut first = SidecarSupervisor::start(&config).expect("first must start");
+        // The test itself holds one Arc; the supervisor holds another.
+        let shared = Arc::clone(first.shared_process());
+        assert_eq!(
+            Arc::strong_count(&shared),
+            2,
+            "the first connection (plus the test handle) owns the process"
+        );
+
+        let mut second = SidecarSupervisor::attach(&shared).expect("second must attach");
+        assert_eq!(
+            Arc::strong_count(&shared),
+            3,
+            "both connections (plus the test handle) hold the shared process"
+        );
+        assert_ne!(
+            first.session_id(),
+            second.session_id(),
+            "each connection has its own session id"
+        );
+
+        // Each connection can run its own live session on the shared process.
+        first
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
+            .expect("first live must start");
+        second
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
+            .expect("second live must start");
+
+        // Stopping the first connection must NOT terminate the shared process
+        // (the second session still uses it).
+        first.stop();
+        assert!(
+            Arc::strong_count(&shared) >= 2,
+            "process survives while the second connection (plus the test handle) holds it"
+        );
+
+        // The second connection still works after the first stopped.
+        second
+            .stop_live()
+            .expect("second live must stop after first closed");
+        second.stop();
+        // The supervisor structs still hold their Arcs until dropped; the
+        // last one to drop releases the shared process (killing the child).
+        drop(first);
+        drop(second);
+        assert_eq!(
+            Arc::strong_count(&shared),
+            1,
+            "only the test handle remains; the process itself is dropped"
+        );
+    }
+}
+
+#[cfg(test)]
+mod chat_translate_tests {
+    use super::*;
+
+    /// Two rapid one-shot chats on the same supervisor connection must both
+    /// succeed (the sidecar processes control messages sequentially, so the
+    /// second request waits for the first response, then runs).
+    #[test]
+    fn two_rapid_chat_translations_on_one_connection() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        let first = supervisor
+            .translate_text("hello", "english", "zh", "demo")
+            .expect("first chat must succeed");
+        assert!(!first.translated_text.is_empty());
+        let second = supervisor
+            .translate_text("hello again", "english", "zh", "demo")
+            .expect("second chat must succeed");
+        assert!(!second.translated_text.is_empty());
+        supervisor.stop();
+    }
+}
+
+#[cfg(test)]
+mod registry_wire_tests {
+    use super::*;
+
+    /// The app-shaped registry entry (dict capture_target + snake_case
+    /// language_config) must be accepted by the sidecar's StrictModel.
+    /// Regression: `capture_target` was a plain string and `language_config`
+    /// was camelCase, both rejected with 1008 "invalid message", killing
+    /// every live session that pushed a registry (multi-source + you-mic).
+    /// Entries deliberately omit per-source `target_language`/providers so
+    /// the sidecar does not build translation models in this test.
+    #[test]
+    fn app_shaped_registry_entry_survives_the_wire() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        assert_eq!(supervisor.negotiated_version, PROTOCOL_V2);
+        supervisor
+            .push_source_registry(vec![
+                SourceRegistryEntry {
+                    source_id: TEAM_SOURCE_ID.to_owned(),
+                    display_name: "Valorant Team".to_owned(),
+                    caption_tag: "TEAM".to_owned(),
+                    capture_target: serde_json::json!({
+                        "kind": "endpoint",
+                        "endpoint_id": "team-capture",
+                        "loopback": true,
+                    }),
+                    language_profile: "tagalog".to_owned(),
+                    strictness: CaptionStrictness::Balanced,
+                    label_style: CaptionLabelStyle::Brackets,
+                    color: Some("#7dd3fc".to_owned()),
+                    priority: 200,
+                    source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                    language_config: Some(ipc_protocol::LanguageConfig {
+                        primary_language: Some("tl".to_owned()),
+                        secondary_languages: vec!["en".to_owned()],
+                        detection_mode: "primary_preferred".to_owned(),
+                    }),
+                    target_language: None,
+                    translation_provider: None,
+                },
+                SourceRegistryEntry {
+                    source_id: "00000000000000000000000000000000".to_owned(),
+                    display_name: "You".to_owned(),
+                    caption_tag: "YOU".to_owned(),
+                    capture_target: serde_json::json!({
+                        "kind": "endpoint",
+                        "endpoint_id": "you-mic",
+                        "loopback": false,
+                    }),
+                    language_profile: "chinese".to_owned(),
+                    strictness: CaptionStrictness::Off,
+                    label_style: CaptionLabelStyle::Brackets,
+                    color: Some("#dc4d5e".to_owned()),
+                    priority: 100,
+                    source_origin: "physical_microphone".to_owned(),
+                    language_config: None,
+                    target_language: None,
+                    translation_provider: None,
+                },
+            ])
+            .expect("app-shaped registry must be accepted");
+        supervisor.stop();
     }
 }

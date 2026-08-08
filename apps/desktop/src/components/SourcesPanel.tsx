@@ -10,7 +10,6 @@ import type { UIKey } from "../features/i18n/strings";
 import { type AsrProvider } from "../live/bridge";
 import { renderLabel } from "../sources/labels";
 import { SOURCE_PRESETS, createSourceFromPreset } from "../sources/presets";
-import { detectBlackHole } from "../setup/blackHole";
 import { detectVbCable } from "../setup/vbCable";
 import {
   MAX_SOURCES,
@@ -118,7 +117,6 @@ export const PRESET_OPTIONS = SOURCE_PRESETS.map((preset) => ({
  */
 function captureOptions(
   catalog: EndpointCatalog | null,
-  isMacos: boolean,
   t: ReturnType<typeof useT>,
 ): readonly { value: string; label: string; group?: string }[] {
   if (catalog === null) {
@@ -132,18 +130,14 @@ function captureOptions(
       continue;
     }
     if (endpoint.kind === "capture") {
-      if (
-        isMacos &&
-        !/blackhole|black hole/i.test(endpoint.friendlyName)
-      ) {
-        continue;
-      }
+      // Capture endpoints are microphones.
       microphones.push({
         value: endpoint.id,
         label: endpoint.friendlyName,
         group: t("sourcesMicrophoneGroup"),
       });
     } else {
+      // Render endpoints are capturable via WASAPI loopback.
       loopback.push({
         value: endpoint.id,
         label: `${endpoint.friendlyName} · loopback`,
@@ -209,10 +203,9 @@ function AudioSourceFields({
   onChange: (patch: Partial<AudioSourceConfig>) => void;
 }) {
   const t = useT();
-  const isMacos = catalog?.platform === "macos";
   const captureChoices = useMemo(
-    () => captureOptions(catalog, isMacos, t),
-    [catalog, isMacos, t],
+    () => captureOptions(catalog, t),
+    [catalog, t],
   );
   const renderChoices = useMemo(
     () =>
@@ -235,7 +228,10 @@ function AudioSourceFields({
   const monitoring = source.monitoring;
 
   return (
-    <section className="source-audio-fields" aria-label={t("sourcesAudioSection")}>
+    <section
+      className="source-audio-fields"
+      aria-label={t("sourcesAudioSection")}
+    >
       <div className="form-grid">
         <label className="field">
           <span>{t("sourcesAudioSource")}</span>
@@ -253,9 +249,7 @@ function AudioSourceFields({
             }}
             options={captureChoices}
           />
-          <small className="field-note">
-            {t("sourcesAudioSourceNote")}
-          </small>
+          <small className="field-note">{t("sourcesAudioSourceNote")}</small>
         </label>
       </div>
 
@@ -371,7 +365,11 @@ function SourceCard({
         </span>
       </div>
 
-      <AudioSourceFields source={source} catalog={catalog} onChange={onChange} />
+      <AudioSourceFields
+        source={source}
+        catalog={catalog}
+        onChange={onChange}
+      />
 
       <div className="form-grid">
         <label className="field">
@@ -537,37 +535,6 @@ function SourceCard({
   );
 }
 
-function MacosSetupHint() {
-  const t = useT();
-  const audio = useAudioMeter();
-  const catalog = audio.catalog;
-  const detection = catalog !== null ? detectBlackHole(catalog) : null;
-
-  if (detection?.installed === true) {
-    return (
-      <div className="inline-alert ok" role="status">
-        <div>
-          <strong>{t("sourcesBlackHoleDetected")}</strong>
-          <p>
-            Route VALORANT voice-chat output to “BlackHole 2ch” in the game's
-            audio settings, then capture its input here. Your microphone is
-            always available as its own source.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="inline-alert" role="status">
-      <div>
-        <strong>macOS setup</strong>
-        <p>{t("sourcesMacosHint")}</p>
-      </div>
-    </div>
-  );
-}
-
 export function SourcesPanel({
   asrProvider = "local",
 }: {
@@ -581,7 +548,6 @@ export function SourcesPanel({
 
   return (
     <div className="page-stack">
-      {audio.catalog?.platform === "macos" && <MacosSetupHint />}
       <VbCableCard />
       <section className="card" aria-labelledby="sources-title">
         <div className="card-head">
@@ -595,8 +561,8 @@ export function SourcesPanel({
         </div>
         <p className="card-note">
           Each source captures one voice channel and labels its captions. Pick
-          its audio source and monitoring below; names and tags are free to
-          edit — the internal identity never changes.
+          its audio source and monitoring below; names and tags are free to edit
+          — the internal identity never changes.
         </p>
       </section>
 

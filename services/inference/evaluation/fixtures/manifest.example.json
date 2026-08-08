@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "clips": [
+    {
+      "id": "zh-clean-001",
+      "audio_path": "private/zh-clean-001.wav",
+      "reference_text": "他们两个在B点后面",
+      "primary_language": "zh",
+      "secondary_languages": ["en"],
+      "domain": "gaming",
+      "source_origin": "virtual_voice_channel",
+      "conditions": ["clean", "short_callout"],
+      "private": true
+    },
+    {
+      "id": "tl-clean-001",
+      "audio_path": "private/tl-clean-001.wav",
+      "reference_text": "Adto ta sa B, naa na sila sa A",
+      "primary_language": "tl",
+      "secondary_languages": [],
+      "domain": "gaming",
+      "source_origin": "virtual_voice_channel",
+      "conditions": ["clean", "short_callout"],
+      "private": true
+    }
+  ]
+}

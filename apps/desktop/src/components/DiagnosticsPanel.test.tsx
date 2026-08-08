@@ -46,8 +46,10 @@ const SNAPSHOT: DiagnosticsSnapshot = {
   },
 };
 
-const SOURCE_CONFIGS = {
-  schemaVersion: 3 as const,
+import type { SourceConfigs } from "../sources/model";
+
+const SOURCE_CONFIGS: SourceConfigs = {
+  schemaVersion: 4 as const,
   sources: [
     {
       sourceId: "11111111111111111111111111111111",
@@ -59,6 +61,12 @@ const SOURCE_CONFIGS = {
       captureTarget: { kind: "endpoint" as const, endpointId: null },
       monitoring: { enabled: false, headphoneEndpointId: null, volume: 0.5 },
       languageProfile: "tagalog" as const,
+      sourceOrigin: "virtual_voice_channel",
+      languageConfig: {
+        primaryLanguage: "tl",
+        secondaryLanguages: [],
+        detectionMode: "fixed",
+      },
       strictness: "balanced" as const,
     },
   ],

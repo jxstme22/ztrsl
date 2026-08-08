@@ -3,7 +3,13 @@ import { GripHorizontal } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { type HistoryEntry, loadHistoryState, visibleHistoryEntries } from "./captions/history";
+import {
+  currentSessionEntries,
+  type HistoryEntry,
+  loadHistoryDisplayOptions,
+  loadHistoryState,
+  visibleHistoryEntries,
+} from "./captions/history";
 import { CaptionStack } from "./components/CaptionStack";
 import { useT } from "./features/i18n/store";
 import {
@@ -18,10 +24,13 @@ import { DEFAULT_OVERLAY_SNAPSHOT } from "./overlay/model";
 
 export function OverlayApp() {
   const [snapshot, setSnapshot] = useState(DEFAULT_OVERLAY_SNAPSHOT);
-  const [history, setHistory] = useState<HistoryEntry[]>(
-    () => loadHistoryState().entries,
+  const [history, setHistory] = useState<HistoryEntry[]>(() =>
+    currentSessionEntries(loadHistoryState()),
   );
   const t = useT();
+  // The "you" bubble color picked in the History display-options menu, so
+  // the overlay's YOU badge matches the picked color (not a hardcoded red).
+  const youBubbleColor = useRef(loadHistoryDisplayOptions().youColor);
 
   // The overlay is always dark-styled: a transparent caption bar over the
   // game (or a dark history panel) must never pick up the app's light theme.
@@ -97,12 +106,29 @@ export function OverlayApp() {
   // re-apply the stored placement — that would fight the drag, especially
   // when captions are arriving mid-move.
   const draggingRef = useRef(false);
+  // Snapshot events arrive constantly while live translation runs; every
+  // event carries a freshly-created settings object. Only re-apply the
+  // placement when the placement fields actually changed, so an unchanged
+  // settings object can never yank the window back mid-move.
+  const lastPlacementKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (draggingRef.current) {
       return;
     }
-    void restoreOverlayPlacement(snapshot.settings);
+    const settings = snapshot.settings;
+    const key = JSON.stringify([
+      settings.monitorId,
+      settings.xNormalized,
+      settings.yNormalized,
+      settings.widthNormalized,
+      settings.heightNormalized,
+    ]);
+    if (key === lastPlacementKeyRef.current) {
+      return;
+    }
+    lastPlacementKeyRef.current = key;
+    void restoreOverlayPlacement(settings);
   }, [snapshot.settings]);
 
   // Chat order: entries are stored oldest-first, newest last. The list uses
@@ -183,21 +209,25 @@ export function OverlayApp() {
               {reversedHistory.map((entry) => (
                 <li
                   key={entry.id}
-                  className="overlay-history-entry"
+                  className={`overlay-history-entry ${entry.fromSelf ? "self" : ""}`}
                   data-uncertain={entry.uncertain || undefined}
                 >
                   {(entry.displayName !== "" || entry.sourceLabel !== "") && (
                     <span
                       className="overlay-history-source"
                       style={{
-                        ...badgeStyle(entry.color),
+                        ...badgeStyle(
+                          entry.fromSelf ? youBubbleColor.current : entry.color,
+                        ),
                         fontSize:
                           String(Math.round(historyFontSize * 0.78)) + "px",
                       }}
                     >
-                      {entry.displayName !== ""
-                        ? entry.displayName
-                        : entry.sourceLabel}
+                      {entry.fromSelf
+                        ? t("historyYou")
+                        : entry.displayName !== ""
+                          ? entry.displayName
+                          : entry.sourceLabel}
                     </span>
                   )}
                   <span
@@ -212,7 +242,7 @@ export function OverlayApp() {
           )}
         </div>
       ) : (
-        <CaptionStack snapshot={snapshot} mode="latest" />
+        <CaptionStack snapshot={snapshot} mode="mini" />
       )}
     </main>
   );

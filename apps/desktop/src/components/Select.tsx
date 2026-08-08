@@ -36,6 +36,7 @@ export function Select({
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+  const [flipUp, setFlipUp] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const generatedId = useId();
@@ -50,6 +51,27 @@ export function Select({
   );
   const selectedIndex = items.findIndex((item) => item.value === value);
   const activeIndex = highlighted >= 0 ? highlighted : selectedIndex;
+
+  // Responsive dropdown: when the button sits near the bottom of the
+  // viewport (or the card is close to the page bottom), the listbox opens
+  // upward instead of downward so it is never clipped by the window edge.
+  const measureFlip = () => {
+    const button = buttonRef.current;
+    if (button === null) {
+      return;
+    }
+    const rect = button.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const estimate = Math.min(264, items.length * 34 + 20);
+    setFlipUp(spaceBelow < estimate && spaceAbove > spaceBelow);
+  };
+
+  const openListbox = () => {
+    measureFlip();
+    setOpen(true);
+    setHighlighted(selectedIndex);
+  };
 
   useEffect(() => {
     setOverlayVisible(!open);
@@ -112,8 +134,7 @@ export function Select({
     ) {
       event.preventDefault();
       if (!open) {
-        setOpen(true);
-        setHighlighted(selectedIndex);
+        openListbox();
         return;
       }
     }
@@ -182,7 +203,11 @@ export function Select({
         }}
         onClick={() => {
           if (!disabled) {
-            setOpen((current) => !current);
+            if (open) {
+              setOpen(false);
+            } else {
+              openListbox();
+            }
           }
         }}
         onKeyDown={onButtonKeyDown}
@@ -201,7 +226,7 @@ export function Select({
           id={listboxId}
           role="listbox"
           aria-label={label}
-          className="lst-select-listbox"
+          className={`lst-select-listbox ${flipUp ? "up" : ""}`}
         >
           {rows.map((row) =>
             row.kind === "group" ? (

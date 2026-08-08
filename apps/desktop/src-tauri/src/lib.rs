@@ -2,8 +2,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -24,7 +25,7 @@ use ipc_protocol::{
 };
 use serde::{Deserialize, Serialize};
 use sidecar_supervisor::{
-    SidecarConfig, SidecarSupervisor, SupervisorError, workspace_root_from_manifest,
+    SidecarConfig, SidecarProcess, SidecarSupervisor, SupervisorError, workspace_root_from_manifest,
 };
 use tauri::{Emitter, Manager};
 
@@ -172,10 +173,59 @@ impl ModelRuntime {
     }
 }
 
+/// Bundle identifier mirrored from tauri.conf.json. Needed to resolve the App
+/// Sandbox container directory on macOS (`~/Library/Containers/<id>/Data`).
+const APP_IDENTIFIER: &str = "app.localsquadtranslator.desktop";
+
+/// macOS App Sandbox container root (`~/Library/Containers/<id>/Data`), the
+/// ONLY directory outside the bundle the sandbox lets us write. `None` when
+/// not sandboxed (dev/workspace runs, non-macOS). All user-visible writes —
+/// the model store, sidecar logs, inference caches — must land under this
+/// container; writing to the real home directory fails with EPERM
+/// ("Operation not permitted") under the sandbox.
+fn sandbox_container_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if !is_macos_sandboxed() {
+            return None;
+        }
+        let home = std::env::var_os("HOME")?;
+        let data = PathBuf::from(home)
+            .join("Library")
+            .join("Containers")
+            .join(APP_IDENTIFIER)
+            .join("Data");
+        // The container is materialized by the sandbox on first launch; make
+        // sure it exists so the model store and sidecar can write into it.
+        let _ = std::fs::create_dir_all(&data);
+        Some(data)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// True when this process runs under the macOS App Sandbox. `sandbox_check`
+/// is deprecated but still functional and requires no extra linkage beyond
+/// libSystem.
+#[cfg(target_os = "macos")]
+fn is_macos_sandboxed() -> bool {
+    unsafe extern "C" {
+        fn sandbox_check(pid: i32, operation: *const std::ffi::c_char, style: i32, ...) -> i32;
+    }
+    let operation = std::ffi::CString::new("sandbox").expect("static operation string");
+    // SANDBOX_FILTER_NONE = 0; returns 1 when the operation is permitted
+    // (i.e. the process IS sandboxed and the "sandbox" operation applies).
+    unsafe { sandbox_check(0, operation.as_ptr(), 0) == 1 }
+}
+
 /// Dev builds resolve the model store next to the workspace so existing
 /// checked-out artifacts keep working; packaged builds use the per-user app
 /// data directory (never `Program Files`, which is read-only for standard
-/// users).
+/// users). On macOS the packaged build runs under App Sandbox, so the store
+/// is redirected into the sandbox container; `app_data_dir()` resolves to the
+/// real `~/Library/Application Support`, which the sandbox denies with EPERM.
 fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
     let workspace = workspace_root_from_manifest();
     if workspace
@@ -185,10 +235,16 @@ fn resolve_models_dir(app: &tauri::AppHandle) -> PathBuf {
         .is_dir()
     {
         workspace.join("models")
+    } else if let Some(container) = sandbox_container_dir() {
+        container
+            .join("Library")
+            .join("Application Support")
+            .join(APP_IDENTIFIER)
+            .join("models")
     } else {
         app.path()
             .app_data_dir()
-            .unwrap_or_else(|_| std::env::temp_dir().join("yTSRL"))
+            .unwrap_or_else(|_| std::env::temp_dir().join("yTRSL"))
             .join("models")
     }
 }
@@ -227,6 +283,26 @@ fn sidecar_config(bundled: Option<&BundledPaths>, extra_env: &[(String, String)]
     // (live worker, clip analysis, accuracy lab) can call os.add_dll_directory
     // before importing ctranslate2 — not just the live worker.
     let mut env = extra_env.to_vec();
+    // Under the macOS App Sandbox the sidecar's HOME must point into the
+    // sandbox container: it derives its log directory from `Path.home()`
+    // (services/inference sidecar.py `_configure_file_logging`), and Python
+    // inference runtimes cache into `$HOME/.cache`. Writes to the real home
+    // are denied by the sandbox with EPERM. Cache env vars are forwarded so
+    // torch/transformers/matplotlib never touch the real home either.
+    if let Some(container) = sandbox_container_dir() {
+        let home = container.display().to_string();
+        env.push(("HOME".to_owned(), home.clone()));
+        env.push(("LOCALAPPDATA".to_owned(), home.clone()));
+        for (key, sub) in [
+            ("HF_HOME", "hf-cache"),
+            ("XDG_CACHE_HOME", "cache"),
+            ("TORCH_HOME", "cache/torch"),
+            ("MPLCONFIGDIR", "cache/mpl"),
+            ("PYTHONPYCACHEPREFIX", "tmp/pycache"),
+        ] {
+            env.push((key.to_owned(), container.join(sub).display().to_string()));
+        }
+    }
     env.push((
         "LST_CUDA_LIBS_DIR".to_owned(),
         model_root
@@ -308,15 +384,17 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
             ids.push("whisper-large-v3-turbo");
             ids.push("whisper-large-v3");
         }
-        "mlx" | "mlx-whisper" => ids.push("mlx-whisper-large-v3-turbo-q4"),
         "ncspeech" => ids.push("ncspeech-tl-fastconformer-hybrid-large"),
         "ncspeech-zh" => ids.push("ncspeech-zh-citrinet-1024-gamma"),
         "ncspeech-zh-parakeet" => ids.push("ncspeech-zh-parakeet-ctc-0.6b"),
         "paraformer-zh-streaming" => ids.push("paraformer-zh-streaming"),
         "sensevoice-small" | "sense-voice" => ids.push("sensevoice-small"),
         // Cloud ASR (Groq / NVIDIA NIM): no local model to check.
-        "groq-whisper" | "nvidia-whisper-large-v3" | "nvidia-nemotron-asr-streaming"
-        | "nvidia-parakeet-1.1b" | "nvidia-canary-1b" => {}
+        "groq-whisper"
+        | "nvidia-whisper-large-v3"
+        | "nvidia-nemotron-asr-streaming"
+        | "nvidia-parakeet-1.1b"
+        | "nvidia-canary-1b" => {}
         _ => {}
     }
     match translation_provider {
@@ -324,11 +402,8 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "madlad" => ids.push("madlad400-3b-mt"),
         "opus-mt-en-zh" => ids.push("opus-mt-en-zh-ct2-int8"),
         "opus-mt-zh-en" => ids.push("opus-mt-zh-en-ct2-int8"),
-        // Cloud translation (NVIDIA Riva): no local model to check.
-        "nvidia-riva-4b" | "nvidia-riva-1.6b" => {}
         // Cloud translation (NVIDIA Riva / Baidu): no local model to check.
         "nvidia-riva-4b" | "nvidia-riva-1.6b" | "baidu-translate" => {}
-
         _ => {}
     }
     ids
@@ -522,11 +597,7 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
                     source: model.source.clone(),
                     revision: model.revision.clone(),
                     file_count: 0,
-                    capabilities: model_manager::CapabilitiesView {
-                        language_capability: "unknown".to_owned(),
-                        recommended_profiles: Vec::new(),
-                        vram_class: "low".to_owned(),
-                    },
+                    capabilities: custom_import_capabilities(),
                 },
                 status: "installed".to_owned(),
                 installed_size_bytes: size,
@@ -540,6 +611,18 @@ async fn models_list(models: tauri::State<'_, ModelRuntime>) -> Result<ModelsLis
         known,
         custom,
     })
+}
+
+/// Capabilities for a URL-imported (custom) model: the capability contract
+/// is unknown, so report the conservative "post-filter" default — the
+/// frontend schema accepts (forced/preferred/post-filter) — "unknown"
+/// would break the whole models list at parse time.
+fn custom_import_capabilities() -> model_manager::CapabilitiesView {
+    model_manager::CapabilitiesView {
+        language_capability: "post-filter".to_owned(),
+        recommended_profiles: Vec::new(),
+        vram_class: "low".to_owned(),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -827,7 +910,7 @@ async fn models_install_from_url(
     if !runtime.is_empty()
         && !matches!(
             runtime.as_str(),
-            "faster-whisper" | "ctranslate2" | "sherpa-onnx" | "candle" | "mlx"
+            "faster-whisper" | "ctranslate2" | "sherpa-onnx" | "candle"
         )
     {
         return Err(format!("unsupported runtime: {runtime}"));
@@ -1092,6 +1175,77 @@ fn reveal_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
     reveal_in_file_manager(&canonical)
 }
 
+/// Windowed overlay mode: the control window morphs into a compact,
+/// always-on-top caption strip (and back). Exiting restores the normal app
+/// window. The webview renders only the caption stack while active.
+const OVERLAY_MODE_SIZE: (f64, f64) = (900.0, 150.0);
+const APP_MODE_SIZE: (f64, f64) = (995.0, 904.0);
+const APP_MODE_MIN_SIZE: (f64, f64) = (994.0, 904.0);
+
+/// Remembers the normal-mode window geometry while the mini (windowed)
+/// overlay is active, so leaving mini mode returns the app window to exactly
+/// where it was instead of leaving a tiny strip at the bottom of the screen.
+static APP_MODE_GEOMETRY: std::sync::Mutex<Option<(f64, f64, f64, f64)>> =
+    std::sync::Mutex::new(None);
+
+#[tauri::command]
+fn set_overlay_mode(active: bool, window: tauri::Window) -> Result<(), String> {
+    use tauri::LogicalSize;
+    if active {
+        // Remember where the normal app window is before shrinking into the
+        // caption strip (overwrite every entry: after a restore the saved
+        // geometry is the app geometry again).
+        if let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) {
+            let mut saved = APP_MODE_GEOMETRY
+                .lock()
+                .map_err(|error| format!("geometry lock poisoned: {error}"))?;
+            *saved = Some((
+                position.x as f64,
+                position.y as f64,
+                size.width as f64,
+                size.height as f64,
+            ));
+        }
+        // The configured min size (994x904) would clamp the caption strip,
+        // so drop it first and restore it when leaving overlay mode.
+        window
+            .set_min_size(Some(LogicalSize::new(300.0, 80.0)))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_size(LogicalSize::new(OVERLAY_MODE_SIZE.0, OVERLAY_MODE_SIZE.1))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_always_on_top(true)
+            .map_err(|error| error.to_string())?;
+    } else {
+        window
+            .set_min_size(Some(LogicalSize::new(
+                APP_MODE_MIN_SIZE.0,
+                APP_MODE_MIN_SIZE.1,
+            )))
+            .map_err(|error| error.to_string())?;
+        let saved = APP_MODE_GEOMETRY
+            .lock()
+            .map_err(|error| format!("geometry lock poisoned: {error}"))?;
+        if let Some((x, y, width, height)) = *saved {
+            window
+                .set_size(tauri::PhysicalSize::new(width as u32, height as u32))
+                .map_err(|error| error.to_string())?;
+            window
+                .set_position(tauri::PhysicalPosition::new(x as i32, y as i32))
+                .map_err(|error| error.to_string())?;
+        } else {
+            window
+                .set_size(LogicalSize::new(APP_MODE_SIZE.0, APP_MODE_SIZE.1))
+                .map_err(|error| error.to_string())?;
+        }
+        window
+            .set_always_on_top(false)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 /// Platform-specific "open this folder in the file manager" without blocking.
 fn reveal_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -1179,6 +1333,31 @@ struct SidecarRuntime {
     supervisor: Arc<Mutex<Option<SidecarSupervisor>>>,
 }
 
+/// The typed-chat translation sidecar. Kept SEPARATE from `SidecarRuntime`
+/// (clip analysis) and from the live sidecar pool so that starting/stopping
+/// a live session never kills a supervisor the chat box is using — a killed
+/// supervisor silently drops the next chat request.
+#[derive(Clone, Default)]
+struct ChatRuntime {
+    supervisor: Arc<Mutex<Option<SidecarSupervisor>>>,
+}
+
+/// Pool of live sidecar processes, shared between the main live session and
+/// the separated live session. A process is kept alive while any connection
+/// holds it; the separated session attaches to the running process so loaded
+/// models (whisper / NLLB) are reused instead of duplicated.
+struct SidecarPool {
+    inner: Arc<Mutex<Option<Weak<SidecarProcess>>>>,
+}
+
+impl Default for SidecarPool {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SidecarStatus {
@@ -1230,15 +1409,28 @@ struct LiveStartRequest {
     /// quieter speech as speech and closes utterances sooner.
     #[serde(default = "default_vad_sensitivity")]
     vad_sensitivity: u8,
+    /// Caption segmentation style: "chunk" (short callouts), "balanced"
+    /// (sensitivity-derived), "sentence" (complete sentences).
+    #[serde(default = "default_segmentation")]
+    segmentation: String,
     /// Multi-source mode: one capture per entry, each tagged with its
     /// `source_id` and captioned under its own tag. Empty means the classic
     /// single-channel session driven by `endpoint_id`.
     #[serde(default)]
     sources: Vec<LiveSourceRequest>,
+    /// The user's own microphone stream: translated in a direction the user
+    /// picks (default: reversed from the session pair) and captioned as
+    /// "you". Captured on the same live session when the mic toggle is on.
+    #[serde(default)]
+    mic_source: Option<LiveSourceRequest>,
 }
 
 fn default_vad_sensitivity() -> u8 {
     50
+}
+
+fn default_segmentation() -> String {
+    "balanced".to_string()
 }
 
 fn default_target_language() -> String {
@@ -1264,6 +1456,18 @@ struct LiveSourceRequest {
     color: Option<String>,
     #[serde(default = "default_source_priority")]
     priority: u32,
+    #[serde(default = "default_source_origin_value")]
+    source_origin: String,
+    #[serde(default)]
+    language_config: Option<ipc_protocol::LanguageConfig>,
+    #[serde(default)]
+    target_language: Option<String>,
+    #[serde(default)]
+    translation_provider: Option<String>,
+}
+
+fn default_source_origin_value() -> String {
+    ipc_protocol::DEFAULT_SOURCE_ORIGIN.to_owned()
 }
 
 fn default_source_strictness() -> String {
@@ -1292,6 +1496,10 @@ struct LiveSource {
     label_style: String,
     color: Option<String>,
     priority: u32,
+    source_origin: String,
+    language_config: Option<ipc_protocol::LanguageConfig>,
+    target_language: Option<String>,
+    translation_provider: Option<String>,
 }
 
 impl LiveSource {
@@ -1300,7 +1508,11 @@ impl LiveSource {
             source_id: self.source_id.clone(),
             display_name: self.display_name.clone(),
             caption_tag: self.caption_tag.clone(),
-            capture_target: serde_json::Value::String(self.endpoint_name.clone()),
+            capture_target: serde_json::json!({
+                "kind": "endpoint",
+                "endpoint_id": self.endpoint_name,
+                "loopback": self.loopback,
+            }),
             language_profile: self.language_profile.clone(),
             strictness: match self.strictness.as_str() {
                 "off" => CaptionStrictness::Off,
@@ -1316,6 +1528,10 @@ impl LiveSource {
             },
             color: self.color.clone(),
             priority: self.priority,
+            source_origin: self.source_origin.clone(),
+            language_config: self.language_config.clone(),
+            target_language: self.target_language.clone(),
+            translation_provider: self.translation_provider.clone(),
         }
     }
 }
@@ -1333,10 +1549,21 @@ struct LiveWorkerConfig {
     /// True when the selected endpoint is a Render endpoint captured via WASAPI
     /// shared-mode loopback rather than a microphone capture stream.
     loopback: bool,
+    /// macOS only: the "system-audio" pseudo-endpoint, captured through
+    /// ScreenCaptureKit instead of cpal. Always false on other platforms.
+    system_audio: bool,
     monitor_enabled: bool,
     vad_sensitivity: u8,
+    segmentation: String,
     /// Multi-source captures; empty for classic single-channel sessions.
     sources: Vec<LiveSource>,
+    /// The user's own microphone source (None = the mic feature is off for
+    /// this session). Shared with the runtime so the "you" mic button can
+    /// add it mid-session; the capture is gated by `mic_enabled`.
+    mic_source: Arc<Mutex<Option<LiveSource>>>,
+    /// Shared flag toggled by the "you" mic button. The live loop opens and
+    /// closes the mic capture around this flag.
+    mic_enabled: Arc<AtomicBool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -1348,6 +1575,11 @@ struct LiveMetrics {
     monitor_drops: u64,
     monitor_underrun_samples: u64,
     captions_received: u64,
+    /// Peak amplitude (0..1) of the most recently captured frame. Lets the
+    /// UI show whether audio actually reaches the app: zero with a source
+    /// that should be live means the endpoint receives silence (e.g. a
+    /// virtual device with nothing routed into it).
+    capture_peak: f32,
 }
 
 #[derive(Debug, Serialize)]
@@ -1366,6 +1598,9 @@ struct LiveSnapshot {
     error: Option<String>,
     /// Non-fatal capture stall warning ("" when healthy).
     warning: Option<String>,
+    /// The user's mic stream: whether it is configured and whether the mic
+    /// toggle is currently capturing.
+    mic_enabled: bool,
 }
 
 enum LiveWorkerEvent {
@@ -1389,10 +1624,23 @@ struct LiveRuntimeState {
     /// Non-fatal capture stall warning; cleared when audio flows again.
     warning: Option<String>,
     stopped: bool,
+    /// The user's own mic stream (shared slot, so the mic button can be
+    /// enabled mid-session); `mic_enabled` is the shared toggle the "you"
+    /// mic button flips (the live loop opens/closes the capture).
+    mic_source: Arc<Mutex<Option<LiveSource>>>,
+    mic_enabled: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
 struct LiveRuntime {
+    state: Arc<Mutex<LiveRuntimeState>>,
+}
+
+/// Second, independent live session ("separated live") started from the
+/// history page. Shares the sidecar process (and loaded models) with the
+/// main live session, but has its own capture endpoint and configuration.
+#[derive(Default)]
+struct SeparateLiveRuntime {
     state: Arc<Mutex<LiveRuntimeState>>,
 }
 
@@ -1425,15 +1673,16 @@ fn app_status(
     }
 }
 
-#[tauri::command]
-async fn start_live_translation(
+#[allow(clippy::too_many_arguments)]
+async fn launch_live_translation(
     request: LiveStartRequest,
-    audio: tauri::State<'_, AudioRuntime>,
-    sidecar: tauri::State<'_, SidecarRuntime>,
-    live: tauri::State<'_, LiveRuntime>,
-    translation_api: tauri::State<'_, TranslationApiRuntime>,
-    models: tauri::State<'_, ModelRuntime>,
-    paths: tauri::State<'_, SidecarPaths>,
+    audio: &AudioRuntime,
+    paths: &SidecarPaths,
+    state: Arc<Mutex<LiveRuntimeState>>,
+    sidecar: Arc<Mutex<Option<SidecarSupervisor>>>,
+    pool: Arc<Mutex<Option<Weak<SidecarProcess>>>>,
+    translation_api: Arc<Mutex<Vec<(String, String)>>>,
+    live_models: Arc<Mutex<ModelRuntimeState>>,
 ) -> Result<LiveSnapshot, String> {
     let LiveStartRequest {
         endpoint_id,
@@ -1446,8 +1695,11 @@ async fn start_live_translation(
         resource_profile,
         monitor_enabled,
         vad_sensitivity,
+        segmentation,
         sources: request_sources,
+        mic_source: request_mic_source,
     } = request;
+    let mic_enabled = Arc::new(AtomicBool::new(false));
     if source_mode != "filipino"
         && source_mode != "chinese"
         && source_mode != "english"
@@ -1475,8 +1727,6 @@ async fn start_live_translation(
             | "ncspeech"
             | "ncspeech-zh"
             | "ncspeech-zh-parakeet"
-            | "mlx"
-            | "mlx-whisper"
             | "paraformer-zh-streaming"
             | "sensevoice-small"
             | "sense-voice"
@@ -1523,21 +1773,34 @@ async fn start_live_translation(
     if vad_sensitivity > 100 {
         return Err("vad_sensitivity must be between 0 and 100".to_string());
     }
-    let endpoints = platform_endpoints(&audio)?;
+    if !matches!(segmentation.as_str(), "chunk" | "balanced" | "sentence") {
+        return Err("unknown caption segmentation".to_string());
+    }
+    let endpoints = platform_endpoints(audio)?;
     let endpoint = endpoints
         .iter()
         .find(|candidate| candidate.id == endpoint_id)
+        .or_else(|| {
+            // Legacy/stale persisted ids (numeric CoreAudio ids from older
+            // builds) no longer match the stable name-based catalog; fall
+            // back to the friendly name so a saved selection still works.
+            endpoints
+                .iter()
+                .find(|candidate| candidate.friendly_name == endpoint_id)
+        })
         .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
     if endpoint.state != EndpointState::Active {
         return Err(AudioError::EndpointInvalidated.to_string());
     }
     // A Capture endpoint captures a microphone; a Render endpoint is opened in
     // WASAPI shared-mode loopback to capture the game/teammates mix being
-    // played through that render endpoint (e.g. headphones or speakers).
+    // played through that render endpoint (e.g. headphones or speakers). The
+    // macOS "system-audio" pseudo-endpoint is captured via ScreenCaptureKit.
     let loopback = match endpoint.kind {
         EndpointKind::Capture => false,
         EndpointKind::Render => true,
     };
+    let system_audio = endpoint.id == audio_core::SYSTEM_AUDIO_ENDPOINT_ID;
 
     let playback_endpoint_name = if monitor_enabled {
         let raw_playback_id = playback_endpoint_id.as_deref().unwrap_or("").trim();
@@ -1549,6 +1812,11 @@ async fn start_live_translation(
         let playback_endpoint = endpoints
             .iter()
             .find(|candidate| candidate.id == raw_playback_id)
+            .or_else(|| {
+                endpoints
+                    .iter()
+                    .find(|candidate| candidate.friendly_name == raw_playback_id)
+            })
             .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
         if playback_endpoint.kind != EndpointKind::Render
             || playback_endpoint.state != EndpointState::Active
@@ -1565,10 +1833,6 @@ async fn start_live_translation(
         None
     };
 
-    let state = Arc::clone(&live.state);
-    let sidecar = Arc::clone(&sidecar.supervisor);
-    let translation_api = Arc::clone(&translation_api.env);
-    let live_models = Arc::clone(&models.state);
     let bundled = paths.bundled.clone();
     let endpoint_name = endpoint.friendly_name.clone();
     // Multi-source mode: one capture per configured source, each tagged with
@@ -1623,9 +1887,17 @@ async fn start_live_translation(
                 label_style: source.label_style.clone(),
                 color: source.color.clone(),
                 priority: source.priority,
+                source_origin: source.source_origin.clone(),
+                language_config: source.language_config.clone(),
+                target_language: source.target_language.clone(),
+                translation_provider: source.translation_provider.clone(),
             });
         }
         resolved
+    };
+    let mic_source = match request_mic_source {
+        None => Arc::new(Mutex::new(None)),
+        Some(source) => Arc::new(Mutex::new(Some(resolve_mic_source(&endpoints, &source)?))),
     };
     let worker_config = LiveWorkerConfig {
         endpoint_name,
@@ -1637,9 +1909,13 @@ async fn start_live_translation(
         target_language,
         resource_profile,
         loopback,
+        system_audio,
         monitor_enabled,
         vad_sensitivity,
+        segmentation,
         sources,
+        mic_source,
+        mic_enabled,
     };
     tauri::async_runtime::spawn_blocking(move || {
         start_live_translation_blocking(
@@ -1649,10 +1925,118 @@ async fn start_live_translation(
             translation_api,
             live_models,
             bundled,
+            Some(pool),
         )
     })
     .await
     .map_err(|error| format!("live start worker failed: {error}"))?
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn start_live_translation(
+    request: LiveStartRequest,
+    audio: tauri::State<'_, AudioRuntime>,
+    sidecar: tauri::State<'_, SidecarRuntime>,
+    live: tauri::State<'_, LiveRuntime>,
+    pool: tauri::State<'_, SidecarPool>,
+    translation_api: tauri::State<'_, TranslationApiRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
+) -> Result<LiveSnapshot, String> {
+    launch_live_translation(
+        request,
+        &audio,
+        &paths,
+        Arc::clone(&live.state),
+        Arc::clone(&sidecar.supervisor),
+        Arc::clone(&pool.inner),
+        Arc::clone(&translation_api.env),
+        Arc::clone(&models.state),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn start_separated_live_translation(
+    request: LiveStartRequest,
+    audio: tauri::State<'_, AudioRuntime>,
+    live: tauri::State<'_, SeparateLiveRuntime>,
+    pool: tauri::State<'_, SidecarPool>,
+    translation_api: tauri::State<'_, TranslationApiRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
+) -> Result<LiveSnapshot, String> {
+    // The separated session shares the live sidecar pool (loaded models)
+    // but runs its own worker; it does not own the clip-analysis sidecar.
+    launch_live_translation(
+        request,
+        &audio,
+        &paths,
+        Arc::clone(&live.state),
+        Arc::new(Mutex::new(None)),
+        Arc::clone(&pool.inner),
+        Arc::clone(&translation_api.env),
+        Arc::clone(&models.state),
+    )
+    .await
+}
+
+/// Resolve the user's own microphone source request. The endpoint must be
+/// an active Capture (mic) endpoint — never a Render loopback, so the "you"
+/// stream can never feed back into the team capture.
+fn resolve_mic_source(
+    endpoints: &[audio_core::AudioEndpoint],
+    source: &LiveSourceRequest,
+) -> Result<LiveSource, String> {
+    if !(source.source_id.len() == 32
+        && source
+            .source_id
+            .chars()
+            .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase()))
+    {
+        return Err(format!(
+            "mic source id must be 32 lowercase hex: {}",
+            source.source_id
+        ));
+    }
+    let endpoint = endpoints
+        .iter()
+        .find(|candidate| candidate.id == source.endpoint_id)
+        .ok_or_else(|| {
+            format!(
+                "mic source '{}' endpoint was not found: {}",
+                source.display_name, source.endpoint_id
+            )
+        })?;
+    if endpoint.kind != EndpointKind::Capture {
+        return Err(format!(
+            "mic source '{}' must be a microphone endpoint, not a render device",
+            source.display_name
+        ));
+    }
+    if endpoint.state != EndpointState::Active {
+        return Err(format!(
+            "mic source '{}' endpoint is not active",
+            source.display_name
+        ));
+    }
+    Ok(LiveSource {
+        source_id: source.source_id.clone(),
+        endpoint_name: endpoint.friendly_name.clone(),
+        loopback: false,
+        display_name: source.display_name.clone(),
+        caption_tag: source.caption_tag.clone(),
+        language_profile: source.language_profile.clone(),
+        strictness: source.strictness.clone(),
+        label_style: source.label_style.clone(),
+        color: source.color.clone(),
+        priority: source.priority,
+        source_origin: source.source_origin.clone(),
+        language_config: source.language_config.clone(),
+        target_language: source.target_language.clone(),
+        translation_provider: source.translation_provider.clone(),
+    })
 }
 
 fn start_live_translation_blocking(
@@ -1662,6 +2046,7 @@ fn start_live_translation_blocking(
     translation_api: Arc<Mutex<Vec<(String, String)>>>,
     live_models: Arc<Mutex<ModelRuntimeState>>,
     bundled: Option<BundledPaths>,
+    pool: Option<Arc<Mutex<Option<Weak<SidecarProcess>>>>>,
 ) -> Result<LiveSnapshot, String> {
     let mut state = live.lock().map_err(lock_error)?;
     if state.worker.is_some() && !state.stopped {
@@ -1679,6 +2064,11 @@ fn start_live_translation_blocking(
         &worker_config.asr_provider,
         &worker_config.translation_provider,
     );
+    let worker_pool = pool.map(|inner| Arc::clone(&inner));
+    // The mic stream's registry identity lives with the session; the worker
+    // takes the config, so snapshot the identity before moving it.
+    let session_mic_source = worker_config.mic_source.clone();
+    let session_mic_enabled = Arc::clone(&worker_config.mic_enabled);
     let worker = thread::Builder::new()
         .name("live-translation".to_owned())
         .spawn(move || {
@@ -1689,6 +2079,7 @@ fn start_live_translation_blocking(
                 ready_tx,
                 Arc::clone(&translation_api),
                 bundled,
+                worker_pool,
             );
         })
         .map_err(|error| format!("live worker could not start: {error}"))?;
@@ -1712,6 +2103,9 @@ fn start_live_translation_blocking(
     state.error = None;
     state.warning = None;
     state.stopped = false;
+    state.mic_source = session_mic_source;
+    state.mic_enabled = session_mic_enabled;
+    state.mic_enabled.store(false, Ordering::Relaxed);
     // Mark the model artifacts this session loads so deletion is refused
     // while they are on disk in use.
     if let Ok(mut models) = live_models.lock() {
@@ -1726,6 +2120,41 @@ fn start_live_translation_blocking(
 fn live_translation_snapshot(live: tauri::State<'_, LiveRuntime>) -> Result<LiveSnapshot, String> {
     let mut state = live.state.lock().map_err(lock_error)?;
     Ok(live_snapshot(&mut state))
+}
+
+#[tauri::command]
+fn set_live_mic_enabled(
+    enabled: bool,
+    mic_source: Option<LiveSourceRequest>,
+    audio: tauri::State<'_, AudioRuntime>,
+    live: tauri::State<'_, LiveRuntime>,
+) -> Result<bool, String> {
+    let state = live.state.lock().map_err(lock_error)?;
+    if state.worker.is_none() || state.stopped {
+        return Err("a live translation session must be running to use your mic".to_owned());
+    }
+    if enabled {
+        let mut slot = state
+            .mic_source
+            .lock()
+            .map_err(|error| format!("mic source lock poisoned: {error}"))?;
+        if slot.is_none() {
+            // The session started before the mic was configured: resolve the
+            // request now and hand it to the live loop through the shared
+            // slot. The loop re-pushes the sidecar registry when it sees the
+            // slot go from None to Some.
+            let Some(source) = mic_source else {
+                return Err(
+                    "pick a microphone in the config dialog first, then toggle your voice"
+                        .to_owned(),
+                );
+            };
+            let endpoints = platform_endpoints(&audio)?;
+            *slot = Some(resolve_mic_source(&endpoints, &source)?);
+        }
+    }
+    state.mic_enabled.store(enabled, Ordering::Relaxed);
+    Ok(enabled)
 }
 
 #[tauri::command]
@@ -1754,11 +2183,33 @@ fn stop_live_translation_blocking(
             .map_err(|_| "live worker terminated unexpectedly".to_owned())?;
     }
     state.stopped = true;
+    state.mic_source = Arc::new(Mutex::new(None));
+    state.mic_enabled.store(false, Ordering::Relaxed);
     // The session is over; every model it marked in use is free to delete.
     if let Ok(mut models) = live_models.lock() {
         models.in_use.clear();
     }
     Ok(live_snapshot(&mut state))
+}
+
+#[tauri::command]
+fn separated_live_translation_snapshot(
+    live: tauri::State<'_, SeparateLiveRuntime>,
+) -> Result<LiveSnapshot, String> {
+    let mut state = live.state.lock().map_err(lock_error)?;
+    Ok(live_snapshot(&mut state))
+}
+
+#[tauri::command]
+async fn stop_separated_live_translation(
+    live: tauri::State<'_, SeparateLiveRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
+) -> Result<LiveSnapshot, String> {
+    let state = Arc::clone(&live.state);
+    let live_models = Arc::clone(&models.state);
+    tauri::async_runtime::spawn_blocking(move || stop_live_translation_blocking(state, live_models))
+        .await
+        .map_err(|error| format!("separated live stop worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -1873,6 +2324,79 @@ fn analyze_clip_compare_blocking(
             include_transcripts,
         )
         .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranslateTextResult {
+    translated_text: String,
+    provider: String,
+    latency_ms: f64,
+}
+
+/// One-shot typed-chat translation. Works standalone: the on-demand
+/// `SidecarRuntime` supervisor is spawned on first use and reused (the same
+/// model cache as clip analysis), so no live session is required.
+#[tauri::command]
+async fn translate_text(
+    text: String,
+    source_mode: String,
+    target_language: String,
+    translation_provider: String,
+    runtime: tauri::State<'_, ChatRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
+) -> Result<TranslateTextResult, String> {
+    let supervisor = Arc::clone(&runtime.supervisor);
+    let bundled = paths.bundled.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        translate_text_blocking(
+            supervisor,
+            text,
+            source_mode,
+            target_language,
+            translation_provider,
+            bundled,
+        )
+    })
+    .await
+    .map_err(|error| format!("translation worker failed: {error}"))?
+}
+
+fn translate_text_blocking(
+    runtime: Arc<Mutex<Option<SidecarSupervisor>>>,
+    text: String,
+    source_mode: String,
+    target_language: String,
+    translation_provider: String,
+    bundled: Option<BundledPaths>,
+) -> Result<TranslateTextResult, String> {
+    if text.trim().is_empty() {
+        return Err("nothing to translate".to_owned());
+    }
+    if text.len() > 2000 {
+        return Err("text is too long (2000 characters max)".to_owned());
+    }
+    let mut supervisor = runtime.lock().map_err(lock_error)?;
+    let needs_restart = supervisor
+        .as_mut()
+        .is_some_and(|running| running.ensure_running().is_err());
+    if needs_restart {
+        let _ = supervisor.take();
+    }
+    if supervisor.is_none() {
+        let config = sidecar_config(bundled.as_ref(), &[]);
+        *supervisor = Some(SidecarSupervisor::start(&config).map_err(|error| error.to_string())?);
+    }
+    let result = supervisor
+        .as_mut()
+        .expect("sidecar was started above")
+        .translate_text(&text, &source_mode, &target_language, &translation_provider)
+        .map_err(|error| error.to_string())?;
+    Ok(TranslateTextResult {
+        translated_text: result.translated_text,
+        provider: result.provider,
+        latency_ms: result.latency_ms,
+    })
 }
 
 #[tauri::command]
@@ -2138,6 +2662,11 @@ fn start_audio_meter(
     let endpoint = endpoints
         .iter()
         .find(|endpoint| endpoint.id == endpoint_id)
+        .or_else(|| {
+            endpoints
+                .iter()
+                .find(|endpoint| endpoint.friendly_name == endpoint_id)
+        })
         .ok_or_else(|| AudioError::EndpointNotFound.to_string())?;
     if endpoint.kind != EndpointKind::Capture || endpoint.state != EndpointState::Active {
         return Err(AudioError::EndpointInvalidated.to_string());
@@ -2351,12 +2880,7 @@ fn push_live_registry(
     supervisor: &mut SidecarSupervisor,
     sources: &[LiveSource],
 ) -> Result<(), SupervisorError> {
-    supervisor.push_source_registry(
-        sources
-            .iter()
-            .map(LiveSource::to_registry_entry)
-            .collect(),
-    )
+    supervisor.push_source_registry(sources.iter().map(LiveSource::to_registry_entry).collect())
 }
 
 fn run_live_worker(
@@ -2366,6 +2890,7 @@ fn run_live_worker(
     ready: SyncSender<Result<LiveStarted, String>>,
     translation_env: Arc<Mutex<Vec<(String, String)>>>,
     bundled: Option<BundledPaths>,
+    pool: Option<Arc<Mutex<Option<Weak<SidecarProcess>>>>>,
 ) {
     let LiveWorkerConfig {
         endpoint_name,
@@ -2377,17 +2902,43 @@ fn run_live_worker(
         target_language,
         resource_profile,
         loopback,
+        system_audio: _system_audio,
         monitor_enabled,
         vad_sensitivity,
+        segmentation,
         sources: config_sources,
+        mic_source: config_mic_source,
+        mic_enabled: config_mic_enabled,
     } = config;
     let sidecar_config = worker_sidecar_config(&translation_env, bundled.as_ref());
-    let mut supervisor = match SidecarSupervisor::start(&sidecar_config) {
-        Ok(supervisor) => supervisor,
-        Err(error) => {
-            let _ = ready.send(Err(error.to_string()));
-            return;
-        }
+    // Attach to an already-running live sidecar when one exists (separated
+    // live shares models with the main session); otherwise spawn fresh.
+    let shared_process = pool
+        .as_ref()
+        .and_then(|inner| inner.lock().ok())
+        .and_then(|slot| slot.as_ref()?.upgrade());
+    let mut supervisor = match shared_process {
+        Some(shared) => match SidecarSupervisor::attach(&shared) {
+            Ok(supervisor) => supervisor,
+            Err(error) => {
+                let _ = ready.send(Err(error.to_string()));
+                return;
+            }
+        },
+        None => match SidecarSupervisor::start(&sidecar_config) {
+            Ok(supervisor) => {
+                if let Some(inner) = pool.as_ref() {
+                    if let Ok(mut slot) = inner.lock() {
+                        *slot = Some(Arc::downgrade(supervisor.shared_process()));
+                    }
+                }
+                supervisor
+            }
+            Err(error) => {
+                let _ = ready.send(Err(error.to_string()));
+                return;
+            }
+        },
     };
     let detail = match supervisor.start_live(
         &source_mode,
@@ -2397,6 +2948,7 @@ fn run_live_worker(
         &target_language,
         &resource_profile,
         vad_sensitivity,
+        &segmentation,
     ) {
         Ok(detail) => detail,
         Err(error) => {
@@ -2405,9 +2957,19 @@ fn run_live_worker(
         }
     };
     // Multi-source sessions: tell the sidecar which sources exist so every
-    // caption gets stamped with its own tag/color/language profile.
-    if !config_sources.is_empty() {
-        if let Err(error) = push_live_registry(&mut supervisor, &config_sources) {
+    // caption gets stamped with its own tag/color/language profile. The
+    // user's mic stream is registered too (its capture is gated separately).
+    let mut registry_sources = config_sources.clone();
+    let current_mic = config_mic_source
+        .lock()
+        .map(|slot| slot.clone())
+        .unwrap_or(None);
+    if let Some(mic_source) = &current_mic {
+        registry_sources.push(mic_source.clone());
+    }
+    let mut mic_registry_pushed = current_mic.is_some();
+    if !registry_sources.is_empty() {
+        if let Err(error) = push_live_registry(&mut supervisor, &registry_sources) {
             let _ = ready.send(Err(error.to_string()));
             return;
         }
@@ -2458,6 +3020,9 @@ fn run_live_worker(
                     loopback,
                     monitor_enabled,
                     playback_endpoint_name.clone(),
+                    &config_mic_source,
+                    &config_mic_enabled,
+                    &mut mic_registry_pushed,
                     &stop,
                     &events,
                     &mut supervisor,
@@ -2469,8 +3034,12 @@ fn run_live_worker(
                     &config_sources,
                     endpoint_name.clone(),
                     loopback,
+                    _system_audio,
                     monitor_enabled,
                     playback_endpoint_name.clone(),
+                    &config_mic_source,
+                    &config_mic_enabled,
+                    &mut mic_registry_pushed,
                     &stop,
                     &events,
                     &mut supervisor,
@@ -2498,7 +3067,10 @@ fn run_live_worker(
                 } else {
                     format!(
                         " Sidecar stderr:\n{}",
-                        tail.iter().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n")
+                        tail.iter()
+                            .map(|line| format!("  {line}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
                     )
                 };
                 let _ = events.try_send(LiveWorkerEvent::Warning(format!(
@@ -2506,6 +3078,13 @@ fn run_live_worker(
                      inference session automatically…"
                 )));
                 match supervisor.restart().and_then(|_| {
+                    // The restart spawned a fresh process; re-register it so
+                    // other sessions attach to the new one.
+                    if let Some(inner) = pool.as_ref() {
+                        if let Ok(mut slot) = inner.lock() {
+                            *slot = Some(Arc::downgrade(supervisor.shared_process()));
+                        }
+                    }
                     supervisor
                         .start_live(
                             &source_mode,
@@ -2515,6 +3094,7 @@ fn run_live_worker(
                             &target_language,
                             &resource_profile,
                             vad_sensitivity,
+                            &segmentation,
                         )
                         .and_then(|_| {
                             if config_sources.is_empty() {
@@ -2583,18 +3163,59 @@ impl std::fmt::Display for LiveLoopError {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
 fn run_windows_live_loop(
     config_sources: &[LiveSource],
     endpoint_name: String,
     loopback: bool,
     monitor_enabled: bool,
     playback_endpoint_name: Option<String>,
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
+    mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), LiveLoopError> {
-    if !config_sources.is_empty() {
-        return run_windows_multi_source_loop(config_sources, stop, events, supervisor);
+    // The user's mic stream lives on the same session: when configured, route
+    // through the multi-source loop (with the classic endpoint synthesized as
+    // a team source) so both captures share one loop and one sequence.
+    let mic_present = mic_source
+        .lock()
+        .map(|slot| slot.is_some())
+        .unwrap_or(false);
+    let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
+        config_sources.to_vec()
+    } else if mic_present {
+        vec![LiveSource {
+            source_id: "00000000000000000000000000000001".to_owned(),
+            endpoint_name: endpoint_name.clone(),
+            loopback,
+            display_name: "Team".to_owned(),
+            caption_tag: "TEAM".to_owned(),
+            language_profile: String::new(),
+            strictness: "balanced".to_owned(),
+            label_style: "brackets".to_owned(),
+            color: None,
+            priority: 100,
+            source_origin: ipc_protocol::DEFAULT_SOURCE_ORIGIN.to_owned(),
+            language_config: None,
+            target_language: None,
+            translation_provider: None,
+        }]
+    } else {
+        Vec::new()
+    };
+    if !effective_sources.is_empty() {
+        return run_windows_multi_source_loop(
+            &effective_sources,
+            mic_source,
+            mic_enabled,
+            mic_registry_pushed,
+            stop,
+            events,
+            supervisor,
+        );
     }
     let capture = if loopback {
         audio_core::WindowsAudioCapture::start_loopback(&endpoint_name, 32)
@@ -2609,8 +3230,10 @@ fn run_windows_live_loop(
                 "monitoring output endpoint is missing".to_owned(),
             ));
         };
-        Some(audio_core::WindowsAudioPlayback::start(name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
+        Some(
+            audio_core::WindowsAudioPlayback::start(name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
     } else {
         None
     };
@@ -2637,12 +3260,19 @@ fn run_windows_live_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
+        match capture
+            .try_next()
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+        {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
                 metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                 metrics.capture_drops = capture.dropped_frames();
+                metrics.capture_peak = frame
+                    .samples
+                    .iter()
+                    .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
                 if let Some(playback) = playback.as_mut() {
                     metrics.monitor_drops = playback.dropped_frames();
                     metrics.monitor_underrun_samples = playback.underrun_samples();
@@ -2703,6 +3333,9 @@ fn run_windows_live_loop(
 #[cfg(target_os = "windows")]
 fn run_windows_multi_source_loop(
     config_sources: &[LiveSource],
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
+    mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -2729,6 +3362,10 @@ fn run_windows_multi_source_loop(
             resampler,
         });
     }
+    // The user's mic capture is opened lazily: the mic button flips
+    // `mic_enabled`, and this loop opens/closes the device around it so no
+    // audio is captured while the mic is off.
+    let mut mic_capture: Option<(audio_core::WindowsAudioCapture, StreamingLinearResampler)> = None;
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
     let mut last_frame_at: Option<Instant> = None;
@@ -2737,30 +3374,85 @@ fn run_windows_multi_source_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
+        // Read the shared mic slot: the "you" button may add the source
+        // mid-session. When it appears for the first time, re-push the
+        // sidecar registry so captions carry the mic's tag/color.
+        let current_mic = mic_source.lock().map(|slot| slot.clone()).unwrap_or(None);
+        if current_mic.is_some() && !*mic_registry_pushed {
+            let mut all = config_sources.to_vec();
+            if let Some(mic) = &current_mic {
+                all.push(mic.clone());
+            }
+            if let Err(error) = push_live_registry(supervisor, &all) {
+                return Err(LiveLoopError::Supervisor(error));
+            }
+            *mic_registry_pushed = true;
+        }
+        if mic_enabled.load(Ordering::Relaxed) && mic_capture.is_none() {
+            if let Some(mic) = &current_mic {
+                match audio_core::WindowsAudioCapture::start(&mic.endpoint_name, 32) {
+                    Ok(capture) => {
+                        let resampler =
+                            StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
+                                .map_err(|error| {
+                                    LiveLoopError::Audio(audio_error_to_string(error))
+                                })?;
+                        mic_capture = Some((capture, resampler));
+                    }
+                    Err(error) => {
+                        let _ = events.try_send(LiveWorkerEvent::Warning(format!(
+                            "could not open the microphone: {}",
+                            audio_error_to_string(error)
+                        )));
+                    }
+                }
+            }
+        } else if !mic_enabled.load(Ordering::Relaxed) {
+            mic_capture = None; // dropping the capture stops the device
+        }
         let mut any_frame = false;
         for active in sources.iter_mut() {
-            match active
+            if let Some(frame) = active
                 .capture
                 .try_next()
                 .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
             {
-                Some(frame) => {
+                any_frame = true;
+                metrics.captured_frames = metrics.captured_frames.saturating_add(1);
+                metrics.capture_drops = active.capture.dropped_frames();
+                let samples = active.resampler.process(&frame.samples);
+                if !samples.is_empty() {
+                    supervisor
+                        .send_live_audio_for_source(
+                            frame.capture_monotonic_ns,
+                            &active.source.source_id,
+                            samples,
+                        )
+                        .map_err(LiveLoopError::Supervisor)?;
+                    metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
+                }
+            }
+        }
+        if let Some((capture, resampler)) = mic_capture.as_mut() {
+            if let Some(mic) = &current_mic {
+                if let Some(frame) = capture
+                    .try_next()
+                    .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+                {
                     any_frame = true;
                     metrics.captured_frames = metrics.captured_frames.saturating_add(1);
-                    metrics.capture_drops = active.capture.dropped_frames();
-                    let samples = active.resampler.process(&frame.samples);
+                    let samples = resampler.process(&frame.samples);
                     if !samples.is_empty() {
                         supervisor
                             .send_live_audio_for_source(
                                 frame.capture_monotonic_ns,
-                                &active.source.source_id,
+                                &mic.source_id,
                                 samples,
                             )
                             .map_err(LiveLoopError::Supervisor)?;
                         metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
                     }
                 }
-                None => {}
             }
         }
         if any_frame {
@@ -2789,26 +3481,114 @@ fn run_windows_multi_source_loop(
     }
 }
 
+/// Unified capture surface for the macOS live loop: cpal (mic / BlackHole
+/// input) or ScreenCaptureKit (system audio mix). Both expose the same
+/// bounded-channel read API, so the loop body is source-agnostic.
 #[cfg(target_os = "macos")]
+enum MacosLiveCapture {
+    CoreAudio(audio_core::MacosAudioCapture),
+    SystemAudio(audio_core::MacosSystemAudioCapture),
+}
+
+#[cfg(target_os = "macos")]
+impl MacosLiveCapture {
+    fn try_next(&self) -> Result<Option<audio_core::AudioFrame>, audio_core::AudioError> {
+        match self {
+            MacosLiveCapture::CoreAudio(capture) => capture.try_next(),
+            MacosLiveCapture::SystemAudio(capture) => capture.try_next(),
+        }
+    }
+
+    fn dropped_frames(&self) -> u64 {
+        match self {
+            MacosLiveCapture::CoreAudio(capture) => capture.dropped_frames(),
+            MacosLiveCapture::SystemAudio(capture) => capture.dropped_frames(),
+        }
+    }
+
+    fn frames_received(&self) -> u64 {
+        match self {
+            MacosLiveCapture::CoreAudio(_) => 0,
+            MacosLiveCapture::SystemAudio(capture) => capture.frames_received(),
+        }
+    }
+
+    fn format(&self) -> audio_core::AudioFormat {
+        match self {
+            MacosLiveCapture::CoreAudio(capture) => capture.format(),
+            MacosLiveCapture::SystemAudio(capture) => capture.format(),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
 fn run_macos_live_loop(
     config_sources: &[LiveSource],
     endpoint_name: String,
     loopback: bool,
+    system_audio: bool,
     monitor_enabled: bool,
     playback_endpoint_name: Option<String>,
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
+    mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), LiveLoopError> {
-    if !config_sources.is_empty() {
-        return run_macos_multi_source_loop(config_sources, stop, events, supervisor);
-    }
-    let capture = if loopback {
-        audio_core::MacosAudioCapture::start_loopback(&endpoint_name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+    let mic_present = mic_source
+        .lock()
+        .map(|slot| slot.is_some())
+        .unwrap_or(false);
+    let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
+        config_sources.to_vec()
+    } else if mic_present {
+        vec![LiveSource {
+            source_id: "00000000000000000000000000000001".to_owned(),
+            endpoint_name: endpoint_name.clone(),
+            loopback,
+            display_name: "Team".to_owned(),
+            caption_tag: "TEAM".to_owned(),
+            language_profile: String::new(),
+            strictness: "balanced".to_owned(),
+            label_style: "brackets".to_owned(),
+            color: None,
+            priority: 100,
+            source_origin: ipc_protocol::DEFAULT_SOURCE_ORIGIN.to_owned(),
+            language_config: None,
+            target_language: None,
+            translation_provider: None,
+        }]
     } else {
-        audio_core::MacosAudioCapture::start(&endpoint_name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+        Vec::new()
+    };
+    if !effective_sources.is_empty() {
+        return run_macos_multi_source_loop(
+            &effective_sources,
+            mic_source,
+            mic_enabled,
+            mic_registry_pushed,
+            stop,
+            events,
+            supervisor,
+        );
+    }
+    let capture = if system_audio {
+        MacosLiveCapture::SystemAudio(
+            audio_core::MacosSystemAudioCapture::start(32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
+    } else if loopback {
+        MacosLiveCapture::CoreAudio(
+            audio_core::MacosAudioCapture::start_loopback(&endpoint_name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
+    } else {
+        MacosLiveCapture::CoreAudio(
+            audio_core::MacosAudioCapture::start(&endpoint_name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
     };
     let mut playback = if monitor_enabled {
         let Some(name) = playback_endpoint_name.as_deref() else {
@@ -2816,8 +3596,10 @@ fn run_macos_live_loop(
                 "monitoring output endpoint is missing".to_owned(),
             ));
         };
-        Some(audio_core::MacosAudioPlayback::start(name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
+        Some(
+            audio_core::MacosAudioPlayback::start(name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
     } else {
         None
     };
@@ -2839,12 +3621,33 @@ fn run_macos_live_loop(
     // some endpoints take a moment to start producing buffers, so counting
     // silence before the first frame would false-positive on a slow warmup.
     let mut last_frame_at: Option<Instant> = None;
+    // ScreenCaptureKit "system audio" starts up but delivers NOTHING when the
+    // app lacks Screen Recording permission (silent TCC denial — the stream
+    // itself does not error). cpal captures deliver buffers even in silence,
+    // so zero buffers after a grace period is definitive, not a quiet room.
+    let started_at = Instant::now();
     let mut stall_warned = false;
     loop {
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
+        if system_audio
+            && capture.frames_received() == 0
+            && started_at.elapsed() >= Duration::from_secs(4)
+        {
+            return Err(LiveLoopError::Endpoint(
+                "System Audio received no audio from ScreenCaptureKit. macOS is \
+                 not letting this app capture the output mix — grant Screen Recording \
+                 permission to yTRSL in System Settings > Privacy & Security > \
+                 Screen Recording (add/check it, then restart the app), or switch to \
+                 a BlackHole loopback source instead."
+                    .to_owned(),
+            ));
+        }
+        match capture
+            .try_next()
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+        {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
@@ -2900,6 +3703,9 @@ fn run_macos_live_loop(
 #[cfg(target_os = "macos")]
 fn run_macos_multi_source_loop(
     config_sources: &[LiveSource],
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
+    mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -2926,6 +3732,9 @@ fn run_macos_multi_source_loop(
             resampler,
         });
     }
+    // The user's mic capture opens/closes around the mic button flag, same
+    // as the Windows loop: no mic audio is captured while the toggle is off.
+    let mut mic_capture: Option<(audio_core::MacosAudioCapture, StreamingLinearResampler)> = None;
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
     let mut last_frame_at: Option<Instant> = None;
@@ -2934,30 +3743,82 @@ fn run_macos_multi_source_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
+        let current_mic = mic_source.lock().map(|slot| slot.clone()).unwrap_or(None);
+        if current_mic.is_some() && !*mic_registry_pushed {
+            let mut all = config_sources.to_vec();
+            if let Some(mic) = &current_mic {
+                all.push(mic.clone());
+            }
+            if let Err(error) = push_live_registry(supervisor, &all) {
+                return Err(LiveLoopError::Supervisor(error));
+            }
+            *mic_registry_pushed = true;
+        }
+        if mic_enabled.load(Ordering::Relaxed) && mic_capture.is_none() {
+            if let Some(mic) = &current_mic {
+                match audio_core::MacosAudioCapture::start(&mic.endpoint_name, 32) {
+                    Ok(capture) => {
+                        let resampler =
+                            StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
+                                .map_err(|error| {
+                                    LiveLoopError::Audio(audio_error_to_string(error))
+                                })?;
+                        mic_capture = Some((capture, resampler));
+                    }
+                    Err(error) => {
+                        let _ = events.try_send(LiveWorkerEvent::Warning(format!(
+                            "could not open the microphone: {}",
+                            audio_error_to_string(error)
+                        )));
+                    }
+                }
+            }
+        } else if !mic_enabled.load(Ordering::Relaxed) {
+            mic_capture = None;
+        }
         let mut any_frame = false;
         for active in sources.iter_mut() {
-            match active
+            if let Some(frame) = active
                 .capture
                 .try_next()
                 .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
             {
-                Some(frame) => {
+                any_frame = true;
+                metrics.captured_frames = metrics.captured_frames.saturating_add(1);
+                metrics.capture_drops = active.capture.dropped_frames();
+                let samples = active.resampler.process(&frame.samples);
+                if !samples.is_empty() {
+                    supervisor
+                        .send_live_audio_for_source(
+                            frame.capture_monotonic_ns,
+                            &active.source.source_id,
+                            samples,
+                        )
+                        .map_err(LiveLoopError::Supervisor)?;
+                    metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
+                }
+            }
+        }
+        if let Some((capture, resampler)) = mic_capture.as_mut() {
+            if let Some(mic) = &current_mic {
+                if let Some(frame) = capture
+                    .try_next()
+                    .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+                {
                     any_frame = true;
                     metrics.captured_frames = metrics.captured_frames.saturating_add(1);
-                    metrics.capture_drops = active.capture.dropped_frames();
-                    let samples = active.resampler.process(&frame.samples);
+                    let samples = resampler.process(&frame.samples);
                     if !samples.is_empty() {
                         supervisor
                             .send_live_audio_for_source(
                                 frame.capture_monotonic_ns,
-                                &active.source.source_id,
+                                &mic.source_id,
                                 samples,
                             )
                             .map_err(LiveLoopError::Supervisor)?;
                         metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
                     }
                 }
-                None => {}
             }
         }
         if any_frame {
@@ -3099,6 +3960,12 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         captions,
         error: state.error.clone(),
         warning: state.warning.clone(),
+        mic_enabled: state
+            .mic_source
+            .lock()
+            .map(|slot| slot.is_some())
+            .unwrap_or(false)
+            && state.mic_enabled.load(Ordering::Relaxed),
     }
 }
 
@@ -3189,7 +4056,10 @@ pub fn run() {
         .manage(create_runtime())
         .manage(RoutingRuntime::default())
         .manage(SidecarRuntime::default())
+        .manage(ChatRuntime::default())
         .manage(LiveRuntime::default())
+        .manage(SeparateLiveRuntime::default())
+        .manage(SidecarPool::default())
         .manage(TranslationApiRuntime::default())
         .setup(|app| {
             let models_dir = resolve_models_dir(app.handle());
@@ -3227,11 +4097,16 @@ pub fn run() {
             fake_multi_source_roundtrip,
             stop_fake_sidecar,
             start_live_translation,
+            start_separated_live_translation,
             live_translation_snapshot,
+            separated_live_translation_snapshot,
+            set_live_mic_enabled,
             stop_live_translation,
+            stop_separated_live_translation,
             set_translation_env,
             analyze_clip,
             clip_compare,
+            translate_text,
             apply_window_shell,
             models_list,
             models_install,
@@ -3246,7 +4121,8 @@ pub fn run() {
             gpu_runtime_install,
             gpu_runtime_cancel,
             gpu_runtime_delete,
-            reveal_path
+            reveal_path,
+            set_overlay_mode,
         ])
         .run(tauri::generate_context!());
 

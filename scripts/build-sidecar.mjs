@@ -25,7 +25,6 @@ const PYTHON = existsSync(VENV_PYTHON)
     : "python";
 // macOS ships the Apple Silicon (MLX) ASR runtime in the sidecar so captions
 // run on the Metal GPU/ANE. Windows/CUDA keeps faster-whisper only.
-const IS_MACOS = process.platform === "darwin";
 
 const BUILD_ROOT = resolve(ROOT, "target", "sidecar-build");
 const DIST_DIR = resolve(BUILD_ROOT, "dist");
@@ -86,16 +85,6 @@ const args = [
   "websockets",
   "--hidden-import",
   "numpy",
-  ...(IS_MACOS
-    ? [
-        "--hidden-import",
-        "mlx_whisper",
-        "--collect-all",
-        "mlx_whisper",
-        "--collect-all",
-        "mlx",
-      ]
-    : []),
   "--collect-all",
   "ctranslate2",
   "--collect-all",
@@ -117,13 +106,27 @@ const args = [
 // process on the standalone 1.27.0 DLL before PyInstaller collects it.
 if (process.platform === "win32") {
   const sitePackages = resolve(VENV_PYTHON, "..", "..", "Lib", "site-packages");
-  const bundled = resolve(sitePackages, "sherpa_onnx", "lib", "onnxruntime.dll");
-  const standalone = resolve(sitePackages, "onnxruntime", "capi", "onnxruntime.dll");
+  const bundled = resolve(
+    sitePackages,
+    "sherpa_onnx",
+    "lib",
+    "onnxruntime.dll",
+  );
+  const standalone = resolve(
+    sitePackages,
+    "onnxruntime",
+    "capi",
+    "onnxruntime.dll",
+  );
   if (existsSync(bundled) && existsSync(standalone)) {
     copyFileSync(standalone, bundled);
-    console.log("aligned sherpa_onnx/lib/onnxruntime.dll to the standalone 1.27.0 build");
+    console.log(
+      "aligned sherpa_onnx/lib/onnxruntime.dll to the standalone 1.27.0 build",
+    );
   } else {
-    console.warn("onnxruntime alignment skipped: bundled/standalone DLL missing");
+    console.warn(
+      "onnxruntime alignment skipped: bundled/standalone DLL missing",
+    );
   }
 }
 

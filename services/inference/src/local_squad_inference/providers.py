@@ -77,10 +77,14 @@ HALLUCINATION_PHRASES: frozenset[str] = frozenset(
     }
 )
 
-# Faster-whisper reports per-segment no_speech_prob; segments above this are
-# overwhelmingly not speech (silence, clicks, fan noise) and only feed the
-# hallucination patterns above.
+# Faster-whisper reports per-segment no_speech_prob; a high value alone is
+# NOT enough to drop a segment — confident speech (strong avg_logprob) can
+# legitimately score high on noisy but speechy audio. The joint decision
+# drops only when BOTH no_speech_prob is high AND the logprob is poor.
+# Segments without a logprob (absent field) default to "poor" so the
+# conservative drop still applies.
 NO_SPEECH_PROB_LIMIT = 0.6
+STRONG_LOGPROB_LIMIT = -0.5
 
 
 def is_hallucination(text: str) -> bool:
@@ -91,41 +95,33 @@ def is_hallucination(text: str) -> bool:
 def keep_asr_segment(segment: object) -> bool:
     """Drop empty, non-speech, and pure-hallucination ASR segments.
 
-    ``segment`` is any object exposing ``text`` (whisper-style) and an
-    optional ``no_speech_prob``; kept separate so it can be unit-tested
-    without loading whisper.
+    ``segment`` is any object exposing ``text`` (whisper-style) plus
+    optional ``no_speech_prob``/``avg_logprob``; kept separate so it can be
+    unit-tested without loading whisper. A segment is dropped when:
+
+    - the text is empty;
+    - ``no_speech_prob`` is high AND ``avg_logprob`` is poor (joint noise
+      decision, DS-103) — confident speech survives;
+    - the text is an exact known hallucination phrase;
+    - either metric is non-finite (never trusted).
     """
     text = str(getattr(segment, "text", "") or "").strip()
     if not text:
         return False
     no_speech_prob = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
-    if no_speech_prob >= NO_SPEECH_PROB_LIMIT:
+    raw_logprob = getattr(segment, "avg_logprob", None)
+    avg_logprob = -1.0 if raw_logprob is None else float(raw_logprob or -1.0)
+    if not math.isfinite(no_speech_prob) or not math.isfinite(avg_logprob):
+        return False
+    if no_speech_prob >= NO_SPEECH_PROB_LIMIT and avg_logprob < STRONG_LOGPROB_LIMIT:
         return False
     return not is_hallucination(text)
 
 
-class _SegmentView:
-    """Adapter exposing mlx-whisper dict segments as whisper-style objects.
-
-    `mlx_whisper.transcribe` returns `segments` as a list of dicts
-    (`text`, `start`, `end`, `avg_logprob`, `no_speech_prob`); faster-whisper
-    returns objects. `keep_asr_segment` and callers use attribute access, so
-    wrap dict segments in a tiny attribute view.
-    """
-
-    def __init__(self, segment: dict[str, Any]) -> None:
-        self.text = str(segment.get("text", "") or "")
-        self.no_speech_prob = float(segment.get("no_speech_prob", 0.0) or 0.0)
-        self.avg_logprob = float(segment.get("avg_logprob", 0.0) or 0.0)
-        self.start = float(segment.get("start", 0.0) or 0.0)
-        self.end = float(segment.get("end", 0.0) or 0.0)
+def whisper_language_code(source_mode: str) -> str:
+    return WHISPER_LANGUAGE_CODES.get(source_mode, "tl")
 
 
-# Maps the app's source_mode identifiers to Whisper ISO-639-1 language tokens
-# used by faster-whisper's `language` parameter. Filipino ("tl") is the safest
-# Latin-script decoder constraint for Tagalog/Cebuano; Chinese ("zh") covers
-# Mandarin and Cantonese transcription in simplified/traditional script;
-# English ("en") feeds the en->target translation path.
 WHISPER_LANGUAGE_CODES: dict[str, str] = {
     "filipino": "tl",
     "cebuano": "tl",
@@ -137,10 +133,6 @@ WHISPER_LANGUAGE_CODES: dict[str, str] = {
     "thai": "th",
     "malay": "ms",
 }
-
-
-def whisper_language_code(source_mode: str) -> str:
-    return WHISPER_LANGUAGE_CODES.get(source_mode, "tl")
 
 
 @dataclass(frozen=True)
@@ -536,8 +528,15 @@ class SenseVoiceProvider:
                 "sherpa-onnx and numpy are required for local ASR"
             ) from error
         self._numpy: Any = numpy
+        self._model_path = str(model)
+        self._tokens_path = str(tokens)
+        self._num_threads = num_threads
+        # DS-705: recognizers are language-specific, so cache one per
+        # language. "auto" covers unknown/full-auto profiles; explicit
+        # source languages force the matching recognizer.
+        self._recognizers: dict[str, Any] = {}
         try:
-            self._recognizer: Any = sherpa.OfflineRecognizer.from_sense_voice(
+            self._recognizers["auto"] = sherpa.OfflineRecognizer.from_sense_voice(
                 model=str(model),
                 tokens=str(tokens),
                 num_threads=num_threads,
@@ -552,12 +551,33 @@ class SenseVoiceProvider:
                 "SenseVoice model could not load (ONNX export required)"
             ) from error
 
+    def _recognizer_for(self, source_mode: str) -> Any:
+        """SenseVoice language for a source mode: explicit zh/en when the
+        intent is known, otherwise auto (never an unrelated language)."""
+        language = {"chinese": "zh", "english": "en"}.get(source_mode, "auto")
+        recognizer = self._recognizers.get(language)
+        if recognizer is None:
+            importlib.import_module("sherpa_onnx")
+            recognizer = importlib.import_module("sherpa_onnx").OfflineRecognizer.from_sense_voice(
+                model=self._model_path,
+                tokens=self._tokens_path,
+                num_threads=self._num_threads,
+                language=language,
+                use_itn=True,
+                decoding_method="greedy_search",
+                provider="cpu",
+                debug=False,
+            )
+            self._recognizers[language] = recognizer
+        return recognizer
+
     def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
         started = time.perf_counter()
-        stream = self._recognizer.create_stream()
+        recognizer = self._recognizer_for(source_mode)
+        stream = recognizer.create_stream()
         samples = self._numpy.asarray(utterance.pcm_f32, dtype=self._numpy.float32)
         stream.accept_waveform(utterance.sample_rate, samples)
-        self._recognizer.decode_stream(stream)
+        recognizer.decode_stream(stream)
         text = str(stream.result.text).strip()
         elapsed_ms = (time.perf_counter() - started) * 1_000
         # SenseVoice results expose the detected language ("zh", "en", "ja",
@@ -692,125 +712,6 @@ class FasterWhisperProvider:
                 inference_ms=per_segment_ms,
                 model_id=self._model_id,
                 confidence=max(0.0, min(1.0, math.exp(float(segment.avg_logprob)))),
-            )
-            for segment in materialized
-        )
-
-
-class MlxWhisperProvider:
-    """Apple Silicon ASR via mlx-whisper (GPU/ANE accelerated).
-
-    `faster-whisper`/CTranslate2 has no Metal backend — on M-series it runs
-    CPU-only (~3x real-time for large-v3). `mlx-whisper` runs on the Metal
-    GPU/ANE, making `large-v3-turbo` roughly real-time+ on an M4, which is the
-    latency budget captions need.
-
-    The model artifact is the MLX weight format (`config.json` + `weights.npz`,
-    optionally quantized to 4-bit for real-time speed). We pin the
-    `mlx-community/whisper-large-v3-turbo-q4` repo and verify checksums just
-    like every other model.
-
-    Greedy decoding only (mlx-whisper has no beam search) — acceptable for
-    captions; `condition_on_previous_text=False` avoids drift between
-    utterances.
-    """
-
-    def __init__(self, model_dir: Path, *, model_id: str | None = None) -> None:
-        manifest = verify_manifest(model_dir, model_dir / "manifest.json")
-        try:
-            importlib.import_module("mlx_whisper")
-        except ImportError as error:
-            raise ModelUnavailableError(
-                "mlx-whisper is required for Apple Silicon local ASR"
-            ) from error
-        manifest_id = manifest.get("id")
-        self._model_id = (
-            model_id or (manifest_id if isinstance(manifest_id, str) else None) or model_dir.name
-        )
-        self._model_dir = model_dir
-        self._device = "metal"
-        self._compute_type = "mlx-4bit"
-
-    @property
-    def model_id(self) -> str:
-        return self._model_id
-
-    @property
-    def runtime_detail(self) -> str:
-        return f"{self._device}/{self._compute_type}"
-
-    def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
-        try:
-            numpy = importlib.import_module("numpy")
-            mlx_whisper = importlib.import_module("mlx_whisper")
-        except ImportError as error:
-            raise ModelUnavailableError("mlx-whisper is required for live ASR") from error
-        samples = numpy.asarray(utterance.pcm_f32, dtype=numpy.float32)
-        started = time.perf_counter()
-        try:
-            result = mlx_whisper.transcribe(
-                samples,
-                path_or_hf_repo=str(self._model_dir.resolve()),
-                language=whisper_language_code(source_mode),
-                condition_on_previous_text=False,
-                temperature=0.0,
-                word_timestamps=False,
-                verbose=False,
-            )
-        except (OSError, RuntimeError, ValueError) as error:
-            raise ModelUnavailableError("MLX Whisper ASR model could not run") from error
-        materialized = [
-            segment for segment in result["segments"] if keep_asr_segment(_SegmentView(segment))
-        ]
-        elapsed_ms = (time.perf_counter() - started) * 1_000
-        text = " ".join(str(segment["text"]).strip() for segment in materialized).strip()
-        confidences = [
-            max(0.0, min(1.0, float(segment.get("avg_logprob", 0.0) or 0.0)))
-            for segment in materialized
-        ]
-        confidence = sum(confidences) / len(confidences) if confidences else None
-        return AsrResult(
-            utterance_id=utterance.utterance_id,
-            text=text,
-            source_mode=source_mode,
-            is_final=utterance.is_final,
-            inference_ms=elapsed_ms,
-            model_id=self._model_id,
-            confidence=confidence,
-            language=whisper_language_code(source_mode),
-        )
-
-    def transcribe_file(self, source: Path, source_mode: str) -> tuple[FileAsrSegment, ...]:
-        try:
-            mlx_whisper = importlib.import_module("mlx_whisper")
-        except ImportError as error:
-            raise ModelUnavailableError("mlx-whisper is required for file ASR") from error
-        started = time.perf_counter()
-        try:
-            result = mlx_whisper.transcribe(
-                str(source.resolve()),
-                path_or_hf_repo=str(self._model_dir.resolve()),
-                language=whisper_language_code(source_mode),
-                condition_on_previous_text=False,
-                temperature=0.0,
-                word_timestamps=False,
-                verbose=False,
-            )
-        except (OSError, RuntimeError, ValueError) as error:
-            raise ModelUnavailableError("MLX Whisper ASR model could not run") from error
-        materialized = [
-            segment for segment in result["segments"] if keep_asr_segment(_SegmentView(segment))
-        ]
-        elapsed_ms = (time.perf_counter() - started) * 1_000
-        per_segment_ms = elapsed_ms / max(len(materialized), 1)
-        return tuple(
-            FileAsrSegment(
-                start_ms=max(0, round(segment["start"] * 1_000)),
-                end_ms=max(0, round(segment["end"] * 1_000)),
-                text=str(segment["text"]).strip(),
-                inference_ms=per_segment_ms,
-                model_id=self._model_id,
-                confidence=max(0.0, min(1.0, float(segment.get("avg_logprob", 0.0) or 0.0))),
             )
             for segment in materialized
         )
