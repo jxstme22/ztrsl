@@ -464,6 +464,11 @@ export const historyDisplayOptionsSchema = z.object({
   /** History translation layout: "chat" = bubble chat, "classic" = the old
    * flat list (default; "you" entries stay right-aligned). */
   layout: z.enum(["chat", "classic"]).default("classic"),
+  /** Solid background color of "you" bubbles ("#rrggbb"). */
+  youColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default("#3b82f6"),
 });
 
 export type HistoryDisplayOptions = z.infer<typeof historyDisplayOptionsSchema>;
@@ -483,6 +488,7 @@ export const DEFAULT_DISPLAY_OPTIONS: HistoryDisplayOptions = {
   showAvatars: true,
   bubbleColor: "source",
   layout: "classic",
+  youColor: "#3b82f6",
 };
 
 export function loadHistoryDisplayOptions(
