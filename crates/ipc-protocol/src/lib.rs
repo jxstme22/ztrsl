@@ -211,6 +211,31 @@ pub struct ClipComparePayload {
     pub include_transcripts: bool,
 }
 
+/// One-shot typed-chat translation (the history-page chat box). Uses the
+/// same provider cache as live translation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TranslateTextPayload {
+    pub text: String,
+    pub source_mode: String,
+    #[serde(default = "default_target_language")]
+    pub target_language: String,
+    #[serde(default = "default_translation_provider")]
+    pub translation_provider: String,
+}
+
+pub fn default_translation_provider() -> String {
+    "nllb".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranslateResultPayload {
+    pub translated_text: String,
+    #[serde(default = "default_translation_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub latency_ms: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LiveStartPayload {
     pub source_mode: String,
@@ -288,6 +313,14 @@ pub struct SourceRegistryEntry {
     /// DS-201: explicit language configuration (optional, older payloads).
     #[serde(default)]
     pub language_config: Option<LanguageConfig>,
+    /// Per-source translation direction (e.g. the user's own microphone in
+    /// a direction reversed from the session default). Optional so payloads
+    /// from older desktops still validate; when absent the source uses the
+    /// session default target language / translation provider.
+    #[serde(default)]
+    pub target_language: Option<String>,
+    #[serde(default)]
+    pub translation_provider: Option<String>,
 }
 
 fn default_source_origin() -> String {

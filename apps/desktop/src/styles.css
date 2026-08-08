@@ -43,6 +43,8 @@
   --glass: rgba(12, 16, 26, 0.18);
   --glass-strong: rgba(12, 16, 26, 0.28);
   --glass-hover: rgba(12, 16, 26, 0.38);
+  /* Raised input/field surfaces (search box, rename input, chat input). */
+  --bg-elevated: rgba(12, 16, 26, 0.2);
   --stroke: rgba(12, 16, 26, 0.18);
   --stroke-strong: rgba(12, 16, 26, 0.32);
   --field: rgba(12, 16, 26, 0.16);
@@ -91,6 +93,8 @@
   --glass: rgba(255, 255, 255, 0.28);
   --glass-strong: rgba(255, 255, 255, 0.42);
   --glass-hover: rgba(255, 255, 255, 0.58);
+  /* Raised input/field surfaces (search box, rename input, chat input). */
+  --bg-elevated: rgba(255, 255, 255, 0.3);
   --stroke: rgba(22, 26, 34, 0.1);
   --stroke-strong: rgba(22, 26, 34, 0.2);
   --field: rgba(22, 26, 34, 0.06);
@@ -407,6 +411,10 @@ select:disabled {
   color: var(--muted);
 }
 
+.window-actions .titlebar-history-count {
+  margin-right: 2px;
+}
+
 .window-actions button:hover {
   background: var(--glass-hover);
   color: var(--fg-strong);
@@ -486,6 +494,13 @@ select:disabled {
   /* Guarantee the last card never touches the bottom border when scrolled to
      the end, regardless of the page's own layout. */
   scroll-padding-bottom: 72px;
+}
+
+/* The chat-room history page fills the content area (its own scroll region
+   handles the message list and the input card pins to the bottom). */
+.content:has(.history-page-stack) {
+  overflow-y: hidden;
+  padding-bottom: 18px;
 }
 
 .page-stack {
@@ -762,10 +777,12 @@ select:disabled {
 
 /* The "On-screen captions" preview card is a later sibling with its own
    stacking context (backdrop-filter), so a bare z-index on the listbox
-   cannot escape it. Lift the whole panel while a listbox is open. */
+   cannot escape it. Lift the whole panel while a listbox is open to the
+   dropdown tier — above every sibling card, sticky card-head, and toolbar,
+   but below the modal (40) and first-run welcome (50) overlays. */
 .card:has(.lst-select-listbox) {
   position: relative;
-  z-index: 10;
+  z-index: 30;
 }
 
 .lst-select-button {
@@ -2498,6 +2515,13 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.45;
 }
 
+/* The user's own mic/chat bubbles sit on the right in the overlay history. */
+.overlay-history-entry.self {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+  text-align: right;
+}
+
 .overlay-history-entry[data-uncertain] .overlay-history-text {
   opacity: 0.72;
 }
@@ -2519,6 +2543,32 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* History page in the control window. */
+/* Chat-room layout: the panel is a flex column that fills the content area —
+   toolbar stays put, the message list scrolls internally (auto-bottom), and
+   the input card is pinned at the bottom. */
+.history-page-stack {
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+}
+
+.history-panel.history-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding-bottom: 14px;
+}
+
+.history-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px 6px;
+  scroll-behavior: smooth;
+}
+
 .history-list {
   display: flex;
   flex-direction: column;
@@ -2528,14 +2578,90 @@ input[type="range"]::-moz-range-thumb {
   list-style: none;
 }
 
-.history-entry {
-  padding: 10px 14px;
+/* Bubble chat rows: profile icon beside a rounded bubble; "you" (own mic /
+   typed chat) bubbles sit on the right, everyone else on the left. */
+.history-entry.chat-bubble {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  max-width: min(640px, 88%);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.history-entry.chat-bubble.self {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.chat-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  /* Same surface as the bubble it sits beside. */
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  user-select: none;
+}
+
+.history-entry.chat-bubble.self .chat-avatar {
+  background: rgba(220, 77, 94, 0.12);
+  color: #f8728a;
+}
+
+.chat-bubble-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.history-entry.chat-bubble.self .chat-bubble-body {
+  align-items: flex-end;
+}
+
+/* Bubble row: bubble + copy button side by side (copy beside the caption,
+   not below it). */
+.chat-bubble-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.history-entry.chat-bubble.self .chat-bubble-row {
+  flex-direction: row-reverse;
+}
+
+/* The corner beside the profile icon (top) is the "pointed" one — the
+   bubble points at who said it, and the icon sits at the top. */
+.chat-bubble-tip {
+  padding: 9px 13px;
   border: 1px solid var(--stroke);
-  border-radius: var(--radius-md);
+  border-radius: 4px 14px 14px 14px;
   background: var(--bg-elevated);
 }
 
-.history-entry[data-uncertain] .history-text {
+.history-entry.chat-bubble.self .chat-bubble-tip {
+  border-radius: 14px 4px 14px 14px;
+  border-color: rgba(220, 77, 94, 0.35);
+  background: rgba(220, 77, 94, 0.12);
+}
+
+/* Multiple messages from the same speaker in one bubble. */
+.chat-bubble-message + .chat-bubble-message {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--stroke);
+}
+
+.history-entry.chat-bubble[data-uncertain] .history-text {
   opacity: 0.72;
 }
 
@@ -2544,6 +2670,7 @@ input[type="range"]::-moz-range-thumb {
   gap: 8px;
   align-items: center;
   margin-bottom: 4px;
+  min-height: 16px;
 }
 
 .history-entry-meta time {
@@ -2585,14 +2712,138 @@ input[type="range"]::-moz-range-thumb {
   opacity: 0.8;
 }
 
+.history-copy {
+  display: grid;
+  width: 24px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+/* Input card: chat input + settings + mic + send, pinned at the bottom of
+   the history page. Fully rounded pill. */
+.history-input-card {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
+
+.history-input-settings {
+  flex: 0 0 auto;
+  min-height: 34px;
+  min-width: 34px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.history-mic-button {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--stroke);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.history-mic-button:hover:not(:disabled) {
+  background: var(--glass);
+  color: var(--fg-strong);
+}
+
+.history-mic-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.history-mic-button.on {
+  border-color: rgba(220, 77, 94, 0.55);
+  background: rgba(220, 77, 94, 0.16);
+  color: #f8728a;
+  animation: pulse 1.6s infinite;
+}
+
+.history-chat-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.history-chat-input:focus {
+  outline: none;
+}
+
+.history-send-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 16px;
+}
+
+.history-send-button:disabled {
+  opacity: 0.5;
+}
+
+.history-send-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.history-mic-error {
+  position: absolute;
+  right: 14px;
+  bottom: calc(100% + 6px);
+  max-width: 420px;
+  padding: 6px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--popup);
+  color: var(--danger);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.history-input-card {
+  position: relative;
+}
+
 /* History page: fixed compact toolbar with session picker, rename, delete,
-   search and the display-options ("Settings") menu. */
+   search and the display-options ("Settings") menu. Same surface as the
+   input card so the top and bottom bars match. */
 .history-toolbar {
   display: flex;
   gap: 8px;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  flex: 0 0 auto;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--bg-elevated);
 }
 
 .history-toolbar-group {
@@ -2624,11 +2875,19 @@ input[type="range"]::-moz-range-thumb {
   position: relative;
 }
 
+/* While any history dropdown is open, lift the whole panel above the
+   sticky card-head (z-index 5) and every sibling card to the dropdown
+   tier — below the modal (40) and first-run welcome (50) overlays. */
+.history-panel:has(.history-menu) {
+  position: relative;
+  z-index: 30;
+}
+
 .history-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 20;
+  z-index: 999;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -2638,7 +2897,10 @@ input[type="range"]::-moz-range-thumb {
   padding: 6px;
   border: 1px solid var(--stroke);
   border-radius: 12px;
-  background: var(--bg-elevated);
+  /* Solid surface: the history dropdown previously used an undefined
+     variable and rendered transparent, letting card content show through
+     behind the menu rows. */
+  background: var(--popup);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 
@@ -2807,19 +3069,6 @@ input[type="range"]::-moz-range-thumb {
   font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.history-copy {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  margin-left: auto;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
 }
 
 .history-copy:hover {
@@ -2999,15 +3248,6 @@ input[type="range"]::-moz-range-thumb {
 /* History toolbar stays visible while the list scrolls beneath it. The
    negative margins bleed the sticky head over the card padding so the
    buttons never slide under the card's own edge. */
-.history-panel .card-head {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  margin: -16px -20px 10px;
-  padding: 14px 20px 12px;
-  background: rgba(10, 14, 22, 0.92);
-  border-bottom: 1px solid var(--stroke);
-}
 .history-panel {
   overflow: visible;
 }
@@ -3383,6 +3623,71 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 4px;
 }
 
+/* "You" voice & chat config dialog (mic endpoint, direction, models).
+   No backdrop blur (the user asked for a flat dim): the dropdowns below it
+   are plain overlays. */
+.you-config-backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.you-config-dialog {
+  width: min(560px, calc(100vw - 48px));
+  /* The modal normally clips its content (overflow: auto); the selects here
+     open dropdowns that must escape the dialog, so let them overflow. */
+  overflow: visible;
+  max-height: none;
+}
+
+.you-config-section + .you-config-section {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--stroke);
+}
+
+.you-config-section-title {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.you-config-dialog .field {
+  margin-bottom: 12px;
+}
+
+.you-config-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.you-config-dialog .field > span {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.you-config-dialog .field input[type="checkbox"] {
+  accent-color: var(--primary);
+  margin: 0;
+}
+
+.you-config-dialog .lst-modal-actions {
+  margin-top: 8px;
+}
+
+.you-config-dialog .lst-modal-actions .button {
+  min-height: 34px;
+  padding: 0 16px;
+  font-size: 12.5px;
+}
+
 /* Blocking first-run welcome */
 .lst-welcome-backdrop {
   position: fixed;
@@ -3400,7 +3705,7 @@ input[type="range"]::-moz-range-thumb {
   overflow: auto;
   border-radius: var(--radius-lg);
   border: 1px solid var(--stroke);
-  background: var(--glass-strong);
+  background: var(--modal);
   padding: 26px 28px 22px;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.6);
 }
@@ -3468,8 +3773,52 @@ input[type="range"]::-moz-range-thumb {
   color: var(--fg-strong);
   background: rgba(255, 255, 255, 0.04);
 }
-.lst-welcome-optional-grid {
-  margin-top: 10px;
+.lst-welcome-optional-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lst-welcome-optional-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.lst-welcome-optional-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.lst-welcome-optional-info h4 {
+  margin: 0 0 3px;
+  font-size: 13px;
+  color: var(--fg-strong);
+}
+
+.lst-welcome-optional-info p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.lst-welcome-optional-action {
+  flex: none;
+}
+
+.lst-welcome-optional-action .button {
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
 }
 .lst-welcome-loading {
   display: flex;

@@ -199,17 +199,47 @@ export function WelcomeModelsDialog({
                   {t("welcomeShowOptional")} ({others.length})
                 </button>
                 {showOptional && (
-                  <div className="lst-model-grid lst-welcome-optional-grid">
-                    {others.map((model) => (
-                      <ChoiceRow
-                        key={model.id}
-                        model={model}
-                        models={models}
-                        onInstall={onInstall}
-                        t={t}
-                      />
-                    ))}
-                  </div>
+                  <ul className="lst-welcome-optional-list">
+                    {others.map((model) => {
+                      const progress = models.progress[model.id];
+                      const installing =
+                        progress !== undefined && !progress.done;
+                      const failed =
+                        progress?.done === true && progress.error !== null;
+                      return (
+                        <li key={model.id} className="lst-welcome-optional-row">
+                          <div className="lst-welcome-optional-info">
+                            <h4>{model.name}</h4>
+                            <p>{model.description}</p>
+                            {installing && <ProgressBar event={progress} />}
+                            {failed && (
+                              <p className="lst-error-text">{progress.error}</p>
+                            )}
+                          </div>
+                          <div className="lst-welcome-optional-action">
+                            {installing ? (
+                              <button
+                                type="button"
+                                className="button secondary"
+                                onClick={() => { void models.cancel(model.id); }}
+                              >
+                                {t("cancel")}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="button primary btn-shine"
+                                onClick={() => { onInstall(model.id); }}
+                              >
+                                <HardDriveDownload aria-hidden="true" size={14} />
+                                {t("install")}
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </section>
             )}

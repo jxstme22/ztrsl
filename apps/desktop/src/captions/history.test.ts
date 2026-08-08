@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   SESSION_MAX_ENTRIES,
+  YOU_ACCENT_COLOR,
+  YOU_SOURCE_ID,
   clearHistoryState,
   currentSessionEntries,
   historyReducer,
@@ -423,6 +425,8 @@ describe("history display options", () => {
       showTimestamp: false,
       showLatency: true,
       showModels: true,
+      showAvatars: true,
+      bubbleColor: "source" as const,
     };
     saveHistoryDisplayOptions(options, storage);
     expect(loadHistoryDisplayOptions(storage)).toEqual(options);
@@ -435,6 +439,8 @@ describe("history display options", () => {
       showTimestamp: true,
       showLatency: true,
       showModels: true,
+      showAvatars: true,
+      bubbleColor: "source",
     });
   });
 
@@ -470,6 +476,7 @@ describe("visibleHistoryEntries", () => {
     preset: "",
     sessionId: "",
     latencyMs: 0,
+    fromSelf: false,
   }));
 
   it("keeps every buffered entry in auto mode", () => {
@@ -494,5 +501,101 @@ describe("visibleHistoryEntries", () => {
     const before = entries.length;
     visibleHistoryEntries(entries, 5);
     expect(entries).toHaveLength(before);
+  });
+});
+
+describe("historyReducer recordChat", () => {
+  it("records a typed-chat bubble as a 'you' entry", () => {
+    const next = historyReducer(liveState("sess-1"), {
+      type: "recordChat",
+      id: "chat-1",
+      text: "Hello there",
+      sourceText: "你好",
+      provider: "nllb",
+    });
+    const entries = next.sessions[0]?.entries ?? [];
+    expect(entries).toHaveLength(1);
+    const entry = entries[0];
+    expect(entry?.fromSelf).toBe(true);
+    expect(entry?.displayName).toBe("You");
+    expect(entry?.sourceLabel).toBe("YOU");
+    expect(entry?.sourceId).toBe(YOU_SOURCE_ID);
+    expect(entry?.color).toBe(YOU_ACCENT_COLOR);
+    expect(entry?.text).toBe("Hello there");
+    expect(entry?.sourceText).toBe("你好");
+    expect(entry?.provider).toBe("nllb");
+  });
+
+  it("drops empty chat bubbles", () => {
+    const next = historyReducer(liveState("sess-1"), {
+      type: "recordChat",
+      id: "chat-1",
+      text: "   ",
+      sourceText: "",
+    });
+    expect(next.sessions[0]?.entries ?? []).toHaveLength(0);
+  });
+
+  it("records nothing when no session is open", () => {
+    const next = historyReducer(empty(), {
+      type: "recordChat",
+      id: "chat-1",
+      text: "Hello",
+      sourceText: "",
+    });
+    expect(next.sessions).toHaveLength(0);
+  });
+
+  it("caps chat bubbles at the session entry limit", () => {
+    const state = empty();
+    const id = "sess-big";
+    let next = historyReducer(state, { type: "beginSession", id, name: "Big" });
+    for (let index = 0; index < SESSION_MAX_ENTRIES; index += 1) {
+      next = historyReducer(next, {
+        type: "recordChat",
+        id: `chat-${String(index)}`,
+        text: `message ${String(index)}`,
+        sourceText: "",
+      });
+    }
+    const session = next.sessions.find((s) => s.id === id);
+    expect(session?.entries).toHaveLength(SESSION_MAX_ENTRIES);
+    expect(session?.entries[0]?.text).toBe("message 0");
+  });
+});
+
+describe("history entries from the you-mic source", () => {
+  it("marks captions from the fixed you-source id as fromSelf", () => {
+    const next = historyReducer(liveState("sess-1"), {
+      type: "record",
+      caption: caption({
+        source: {
+          sourceId: YOU_SOURCE_ID,
+          captionTag: "YOU",
+          labelStyle: "brackets",
+          captionAlignment: "center",
+          color: YOU_ACCENT_COLOR,
+        },
+      }),
+    });
+    const entry = next.sessions[0]?.entries[0];
+    expect(entry?.fromSelf).toBe(true);
+  });
+
+  it("keeps teammate captions as non-self", () => {
+    const next = historyReducer(liveState("sess-1"), {
+      type: "record",
+      caption: caption({
+        source: {
+          sourceId: "0123456789abcdef0123456789abcdef",
+          captionTag: "TEAM",
+          labelStyle: "brackets",
+          captionAlignment: "center",
+          color: "#7dd3fc",
+        },
+      }),
+    });
+    const entry = next.sessions[0]?.entries[0];
+    expect(entry?.fromSelf).toBe(false);
   });
 });

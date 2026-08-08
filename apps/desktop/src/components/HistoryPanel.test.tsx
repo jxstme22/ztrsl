@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -28,6 +28,7 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
     preset: "",
     sessionId: "sess-1",
     latencyMs: 0,
+    fromSelf: false,
     ...overrides,
   };
 }
@@ -58,6 +59,13 @@ function renderPanel(
       onRenameSession={handlers.onRenameSession ?? vi.fn()}
       onDeleteSession={handlers.onDeleteSession ?? vi.fn()}
       onClearSession={handlers.onClearSession ?? vi.fn()}
+      micEnabled={false}
+      micConfigured={true}
+      liveRunning={true}
+      onToggleMic={vi.fn()}
+      onSendChat={vi.fn()}
+      onOpenYouConfig={vi.fn()}
+      onOpenMicSettings={vi.fn()}
     />,
   );
 }
@@ -158,10 +166,198 @@ describe("HistoryPanel", () => {
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
         onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={true}
+        onToggleMic={vi.fn()}
+        onSendChat={vi.fn()}
+        onOpenYouConfig={vi.fn()}
+        onOpenMicSettings={vi.fn()}
       />,
     );
     // The toolbar button shows the selected (live) session's name.
     fireEvent.click(screen.getByRole("button", { name: /session · 14:45/i }));
     expect(screen.getAllByLabelText(/live session/i)).toHaveLength(1);
+  });
+});
+
+describe("HistoryPanel chat room", () => {
+  it("renders 'you' bubbles right-aligned with the you label", () => {
+    renderPanel([session({
+      entries: [
+        entry({ id: "e1", text: "Nice shot", displayName: "Team", fromSelf: false }),
+        entry({
+          id: "e2",
+          text: "Thank you",
+          sourceText: "谢谢",
+          displayName: "You",
+          sourceId: "00000000000000000000000000000000",
+          color: "#dc4d5e",
+          fromSelf: true,
+        }),
+      ],
+    })]);
+    const bubbles = screen.getAllByRole("listitem");
+    expect(bubbles).toHaveLength(2);
+    const selfBubble = bubbles[1];
+    expect(selfBubble?.className).toContain("self");
+    expect(selfBubble?.className).toContain("chat-bubble");
+    expect(screen.getAllByText("You")).not.toHaveLength(0);
+  });
+
+  it("submits the chat box and clears it on success", async () => {
+    const onSendChat = vi.fn().mockResolvedValue("chat-1");
+    render(
+      <HistoryPanel
+        sessions={[session({ entries: [] })]}
+        currentSessionId={null}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={true}
+        onToggleMic={vi.fn()}
+        onSendChat={onSendChat}
+        onOpenYouConfig={vi.fn()}
+        onOpenMicSettings={vi.fn()}
+      />,
+    );
+    const input = screen.getByPlaceholderText(/type a message/i);
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+    await waitFor(() => { expect(onSendChat).toHaveBeenCalledWith("hello"); });
+    await waitFor(() => { expect((input as HTMLInputElement).value).toBe(""); });
+  });
+
+  it("keeps the draft when translation fails", async () => {
+    const onSendChat = vi.fn().mockResolvedValue(null);
+    render(
+      <HistoryPanel
+        sessions={[session({ entries: [] })]}
+        currentSessionId={null}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={true}
+        onToggleMic={vi.fn()}
+        onSendChat={onSendChat}
+        onOpenYouConfig={vi.fn()}
+        onOpenMicSettings={vi.fn()}
+      />,
+    );
+    const input = screen.getByPlaceholderText(/type a message/i);
+    fireEvent.change(input, { target: { value: "hola" } });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+    await waitFor(() => { expect(onSendChat).toHaveBeenCalledWith("hola"); });
+    expect((input as HTMLInputElement).value).toBe("hola");
+  });
+
+  it("disables the mic button without a live session", () => {
+    render(
+      <HistoryPanel
+        sessions={[session({ entries: [] })]}
+        currentSessionId={null}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={false}
+        onToggleMic={vi.fn()}
+        onSendChat={vi.fn()}
+        onOpenYouConfig={vi.fn()}
+        onOpenMicSettings={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /translate my voice/i })).toBeDisabled();
+  });
+
+  it("toggles the mic on a live session", () => {
+    const onToggleMic = vi.fn().mockResolvedValue(true);
+    render(
+      <HistoryPanel
+        sessions={[session({ entries: [] })]}
+        currentSessionId={null}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={true}
+        onToggleMic={onToggleMic}
+        onSendChat={vi.fn()}
+        onOpenYouConfig={vi.fn()}
+        onOpenMicSettings={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /translate my voice/i }));
+    expect(onToggleMic).toHaveBeenCalled();
+  });
+
+  it("shows the profile icons toggle in the settings menu", () => {
+    renderPanel([session({ entries: [] })]);
+    fireEvent.click(screen.getByRole("button", { name: /display options/i }));
+    expect(screen.getByRole("menuitemcheckbox", { name: /profile icons/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitemcheckbox", { name: /tint bubbles with source colors/i }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("HistoryPanel bubble grouping", () => {
+  it("merges consecutive same-speaker entries into one bubble", () => {
+    renderPanel([
+      session({
+        entries: [
+          entry({
+            id: "e1",
+            text: "First",
+            displayName: "Team",
+            sourceId: "0123456789abcdef0123456789abcdef",
+            fromSelf: false,
+          }),
+          entry({
+            id: "e2",
+            text: "Second",
+            displayName: "Team",
+            sourceId: "0123456789abcdef0123456789abcdef",
+            fromSelf: false,
+          }),
+          entry({
+            id: "e3",
+            text: "Other speaker",
+            displayName: "Discord",
+            sourceId: "22222222222222222222222222222222",
+            fromSelf: false,
+          }),
+        ],
+      }),
+    ]);
+    // Two bubbles: Team's two messages merged, Discord separate.
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText("First")).toBeInTheDocument();
+    expect(screen.getByText("Second")).toBeInTheDocument();
+    expect(screen.getByText("Other speaker")).toBeInTheDocument();
+  });
+
+  it("keeps different speakers as separate bubbles", () => {
+    renderPanel([
+      session({
+        entries: [
+          entry({ id: "e1", text: "A", displayName: "Team", fromSelf: false }),
+          entry({
+            id: "e2",
+            text: "B",
+            displayName: "You",
+            fromSelf: true,
+          }),
+          entry({ id: "e3", text: "C", displayName: "Team", fromSelf: false }),
+        ],
+      }),
+    ]);
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
   });
 });

@@ -39,6 +39,32 @@ export function useCaptionHistory() {
     );
   }, []);
 
+  /**
+   * Record a typed-chat "you" bubble into the current session. Returns the
+   * id that was recorded (callers use it to dedupe), or null when no session
+   * is open — the caller should open one first (standalone chat).
+   */
+  const recordChat = useCallback(
+    (entry: {
+      id: string;
+      text: string;
+      sourceText: string;
+      provider?: string;
+    }) => {
+      const next = historyReducer(stateRef.current, {
+        type: "recordChat",
+        ...entry,
+      });
+      stateRef.current = next;
+      setState(next);
+      const recorded = next.sessions.some((session) =>
+        session.entries.some((item) => item.id === entry.id),
+      );
+      return recorded ? entry.id : null;
+    },
+    [],
+  );
+
   const beginSession = useCallback((id: string, name: string) => {
     setState((current) =>
       historyReducer(current, { type: "beginSession", id, name }),
@@ -94,6 +120,7 @@ export function useCaptionHistory() {
     activeSession,
     activeEntries: activeSession?.entries ?? [],
     record,
+    recordChat,
     beginSession,
     endSession,
     renameSession,

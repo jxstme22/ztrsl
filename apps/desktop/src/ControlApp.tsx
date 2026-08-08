@@ -4,22 +4,25 @@ import {
   Gauge,
   GripHorizontal,
   Info,
+  MessageSquareText,
   Mic,
   Minus,
   PictureInPicture2,
   Pin,
   ScrollText,
   Settings,
-  SlidersHorizontal,
+  Sparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
 
 import { HistoryPanel } from "./captions/HistoryPanel";
 import { useCaptionHistory } from "./captions/useCaptionHistory";
+import { translateText } from "./chat/bridge";
+import { YouConfigDialog } from "./components/YouConfigDialog";
 import { AudioDevicePanel } from "./components/AudioDevicePanel";
 import { AccuracyLabPanel } from "./components/AccuracyLabPanel";
 import { CaptionStack } from "./components/CaptionStack";
@@ -38,16 +41,27 @@ import { Select } from "./components/Select";
 import { SourcesPanel } from "./components/SourcesPanel";
 import { WelcomeModelsDialog } from "./components/WelcomeModelsDialog";
 import { useAudioMeter } from "./audio/useAudioMeter";
-import { requestMicrophonePermission } from "./audio/bridge";
+import {
+  microphoneAuthStatus,
+  openMicrophoneSettings,
+  requestMicrophonePermission,
+} from "./audio/bridge";
 import { useDiagnostics } from "./diagnostics/useDiagnostics";
 import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useT } from "./features/i18n/store";
 import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
+import type { LiveSourceRequest, TranslationProvider } from "./live/bridge";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime, emitHistoryToOverlay, beginOverlayDrag } from "./overlay/bridge";
 import type { Caption, OverlaySettings } from "./overlay/model";
+import {
+  buildYouSourceRequest,
+  loadYouConfig,
+  resolveYouDirection,
+  type YouStreamConfig,
+} from "./you/config";
 import { useOverlayController } from "./overlay/useOverlayController";
 import { loadSourceConfigs } from "./sources/storage";
 import { captionTrustEnabled } from "./sources/captionTrustFlag";
@@ -91,8 +105,8 @@ function navItems(
 
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
-  history: ScrollText,
-  profile: SlidersHorizontal,
+  history: MessageSquareText,
+  profile: Sparkles,
   sources: Mic,
   models: Boxes,
   settings: Settings,
@@ -139,27 +153,59 @@ export function ControlApp() {
   );
   const live = useLiveTranslation(ingestCaption);
   liveRef.current = live;
+  // The user's own voice & chat stream config (mic endpoint, direction,
+  // models). Defaults auto-reverse of the live pair when a live session
+  // runs; the config dialog lets the user override.
+  const [youConfig, setYouConfig] = useState<YouStreamConfig>(loadYouConfig);
+  const [youConfigOpen, setYouConfigOpen] = useState(false);
+  // The live pair drives the "you" direction default (auto-reverse).
+  const livePair = useMemo(
+    () => ({
+      sourceMode: live.snapshot.sourceMode,
+      targetLanguage: live.snapshot.targetLanguage,
+    }),
+    [live.snapshot.sourceMode, live.snapshot.targetLanguage],
+  );
+  const youSource = useMemo(
+    () =>
+      buildYouSourceRequest(
+        youConfig,
+        livePair,
+        window.localStorage.getItem("lst.live.translation-provider") ?? "nllb",
+      ),
+    [livePair, youConfig],
+  );
   const models = useModels();
   const gpuRuntime = useGpuRuntime();
   const diagnostics = useDiagnostics();
   const language = useUiLanguage();
   const desktop = isDesktopRuntime();
   const [section, setSection] = useState<SectionId>("live");
+  // Total translation count of the session currently shown in HistoryPanel,
+  // lifted up so it can be displayed in the titlebar window-actions.
+  const [historyCount, setHistoryCount] = useState(0);
   // Show the welcome card only on a fresh install — when no models are
   // installed yet. Once the user has models, the welcome never reappears.
   const [showWelcome, setShowWelcome] = useState(
     () => !models.hasInstalledModels,
   );
 
-  // On macOS, ask for microphone access once per launch: without a granted
-  // TCC entry, cpal opens the mic but CoreAudio delivers silence (no error,
-  // no prompt). wry's webview delegate auto-grants the getUserMedia request,
-  // so this is what surfaces the real macOS permission prompt.
+  // On macOS, ask for microphone access once per launch (only while the
+  // status is still undetermined — a denied grant must go through System
+  // Settings, not a re-prompt). Without a granted TCC entry, cpal opens the
+  // mic but CoreAudio delivers silence (no error, no prompt). wry's webview
+  // delegate auto-grants the getUserMedia request, so this is what surfaces
+  // the real macOS permission prompt.
   useEffect(() => {
     if (audio.catalog?.platform !== "macos") {
       return;
     }
-    void requestMicrophonePermission();
+    void (async () => {
+      const status = await microphoneAuthStatus();
+      if (status === "notDetermined") {
+        await requestMicrophonePermission().catch(() => undefined);
+      }
+    })();
   }, [audio.catalog?.platform]);
 
   // Keep the overlay window's history view in sync (it also boots from the
@@ -212,6 +258,83 @@ export function ControlApp() {
     [live],
   );
 
+  // The "you" mic toggle: flips the shared flag the Rust live loop watches.
+  // Requires a running live session with a configured mic stream. On macOS
+  // the TCC gate must be granted first — request it now (user action, window
+  // focused) so the prompt reliably presents instead of silently no-opping.
+  const toggleMic = useCallback(async (): Promise<boolean> => {
+    if (audio.catalog?.platform === "macos") {
+      const status = await microphoneAuthStatus();
+      if (status === "notDetermined") {
+        const requested = await requestMicrophonePermission();
+        if (requested !== "authorized") {
+          throw new Error(
+            "Microphone permission is required to translate your voice — open System Settings → Privacy & Security → Microphone and enable yTSRL.",
+          );
+        }
+      } else if (status === "denied" || status === "restricted") {
+        throw new Error(
+          "Microphone permission was denied — open System Settings → Privacy & Security → Microphone and enable yTSRL, then try again.",
+        );
+      }
+    }
+    const next = !live.snapshot.micEnabled;
+    const applied = await live.setMicEnabled(next);
+    return applied === next;
+  }, [audio.catalog?.platform, live]);
+
+  // Typed-chat translation: translate on demand (standalone sidecar), then
+  // record the "you" bubble. When no session is open (e.g. chat before any
+  // live run), open a "Chat" session first so the bubble is saved.
+  const sendChat = useCallback(
+    async (text: string): Promise<string | null> => {
+      const direction = resolveYouDirection(youConfig, livePair);
+      const liveTranslationProvider =
+        window.localStorage.getItem("lst.live.translation-provider") ?? "nllb";
+      let result;
+      try {
+        result = await translateText(
+          text,
+          direction.sourceMode,
+          direction.targetLanguage,
+          liveTranslationProvider as TranslationProvider,
+        );
+      } catch (cause) {
+        console.error("chat translation failed:", cause);
+        return null;
+      }
+      if (historyRef.current.currentSessionId === null) {
+        const id = `sess-${String(Date.now())}`;
+        const locale = language.language === "zh" ? "zh-CN" : "en-US";
+        const date = new Date().toLocaleString(locale, {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        historyRef.current.beginSession(
+          id,
+          `${language.t("chatStandaloneSession")} · ${date}`,
+        );
+      }
+      const entryId = `chat-${String(Date.now())}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const recorded = historyRef.current.recordChat({
+        id: entryId,
+        text: result.translatedText,
+        sourceText: text,
+        provider: result.provider,
+      });
+      if (recorded === null) {
+        return null;
+      }
+      void emitHistoryToOverlay(historyRef.current.activeEntries);
+      return recorded;
+    },
+    [language, livePair, youConfig],
+  );
+
   const minimize = () => {
     if (desktop) {
       void getCurrentWindow().minimize();
@@ -233,7 +356,9 @@ export function ControlApp() {
     const historyView = controller.snapshot.historyView;
     const maxRows = controller.snapshot.settings.historyMaxRows;
     const shownHistory =
-      maxRows === "auto" ? history.entries : history.entries.slice(-maxRows);
+      maxRows === "auto"
+        ? history.activeEntries
+        : history.activeEntries.slice(-maxRows);
     const reversedHistory = [...shownHistory].reverse();
 
     // Mini history needs a taller window than the caption strip (150px).
@@ -290,7 +415,7 @@ export function ControlApp() {
         </div>
         {historyView ? (
           <div className="overlay-history windowed-history">
-            {history.entries.length === 0 ? (
+            {history.activeEntries.length === 0 ? (
               <p className="overlay-history-empty">
                 {language.t("overlayHistoryEmpty")}
               </p>
@@ -299,7 +424,7 @@ export function ControlApp() {
                 {reversedHistory.map((entry) => (
                   <li
                     key={entry.id}
-                    className="overlay-history-entry"
+                    className={`overlay-history-entry ${entry.fromSelf ? "self" : ""}`}
                     data-uncertain={entry.uncertain || undefined}
                   >
                     <span className="overlay-history-text">{entry.text}</span>
@@ -331,6 +456,9 @@ export function ControlApp() {
         </span>
         {desktop && (
           <div className="window-actions">
+            <span className="lst-model-count pill titlebar-history-count">
+              {historyCount}
+            </span>
             <button
               type="button"
               aria-label={language.t("overlayToggleHistory")}
@@ -403,6 +531,7 @@ export function ControlApp() {
               models={models}
               sessionIdHint={history.currentSessionId}
               onRequestStop={requestStop}
+              micSource={youSource}
             />
           )}
           {section === "profile" && (
@@ -417,13 +546,21 @@ export function ControlApp() {
             <ModelsPage models={models} gpuRuntime={gpuRuntime} />
           )}
           {section === "history" && (
-            <div className="page-stack">
+            <div className="page-stack history-page-stack">
               <HistoryPanel
                 sessions={history.sessions}
                 currentSessionId={history.currentSessionId}
                 onRenameSession={history.renameSession}
                 onDeleteSession={history.deleteSession}
                 onClearSession={history.clearSession}
+                onCountChange={setHistoryCount}
+                micEnabled={live.snapshot.micEnabled}
+                micConfigured={youConfig.micEndpointId !== null}
+                liveRunning={live.state === "listening"}
+                onToggleMic={toggleMic}
+                onSendChat={sendChat}
+                onOpenYouConfig={() => { setYouConfigOpen(true); }}
+                onOpenMicSettings={() => { void openMicrophoneSettings(); }}
               />
             </div>
           )}
@@ -504,6 +641,17 @@ export function ControlApp() {
           language={language}
         />
       )}
+
+      {youConfigOpen && (
+        <YouConfigDialog
+          endpoints={audio.catalog?.endpoints ?? []}
+          installedModelIds={new Set(
+            models.installed.map((model) => model.id),
+          )}
+          onSaved={(config) => { setYouConfig(config); }}
+          onClose={() => { setYouConfigOpen(false); }}
+        />
+      )}
     </main>
   );
 }
@@ -529,6 +677,7 @@ function LivePage({
   models,
   sessionIdHint,
   onRequestStop,
+  micSource,
 }: {
   controller: Controller;
   audio: AudioController;
@@ -536,6 +685,7 @@ function LivePage({
   models: ModelsController;
   sessionIdHint: string | null;
   onRequestStop: () => void;
+  micSource: LiveSourceRequest | null;
 }) {
   const { snapshot } = controller;
   const t = useT();
@@ -574,6 +724,7 @@ function LivePage({
         models={models}
         sessionIdHint={sessionIdHint}
         onRequestStop={onRequestStop}
+        micSource={micSource}
       />
 
       <section className="card" aria-labelledby="overlay-customize">

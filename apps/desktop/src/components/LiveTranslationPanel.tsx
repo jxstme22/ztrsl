@@ -21,7 +21,6 @@ import {
 } from "../presets/quality";
 import { useT } from "../features/i18n/store";
 import type { UIKey } from "../features/i18n/strings";
-import { loadSourceConfigs } from "../sources/storage";
 import { Select } from "./Select";
 import type { SelectOption } from "./Select";
 
@@ -37,6 +36,9 @@ type LiveTranslationPanelProps = {
   sessionIdHint?: string | null;
   /** When provided, Stop asks the caller (confirmation modal) first. */
   onRequestStop?: () => void;
+  /** The user's own mic stream request (null = mic not configured). Added
+   * to the same live session so the mic toggle works mid-session. */
+  micSource: import("../live/bridge").LiveSourceRequest | null;
 };
 
 const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
@@ -226,6 +228,7 @@ export function LiveTranslationPanel({
   models,
   sessionIdHint = null,
   onRequestStop,
+  micSource,
 }: LiveTranslationPanelProps) {
   const [inputEndpointId, setInputEndpointId] = useState<string | null>(() =>
     loadStored(INPUT_ENDPOINT_KEY),
@@ -712,6 +715,7 @@ export function LiveTranslationPanel({
                       languageConfig: source.languageConfig,
                     })),
                   sessionIdHint,
+                  micSource,
                 );
               })();
               }

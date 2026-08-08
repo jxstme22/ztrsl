@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -59,6 +59,8 @@ from local_squad_inference.protocol import (
     SourceSnapshot,
     Strictness,
     SuppressionReason,
+    TranslateResultPayload,
+    TranslateTextPayload,
     UncertaintyReason,
     dump_caption,
     encode_source_id_hex,
@@ -80,6 +82,7 @@ from local_squad_inference.providers import (
     SenseVoiceProvider,
     StreamingParaformerProvider,
     TranslationProvider,
+    TranslationResult,
     provider_readiness,
 )
 from local_squad_inference.scheduler import (
@@ -487,6 +490,29 @@ def build_translation_provider(name: str, target_language: str = "en") -> Transl
     HTTP providers are opt-in: when selected, the recognized source transcript
     (text only — never raw audio) is sent over HTTP to the configured endpoint.
     """
+    return _resolve_translation_provider(name, target_language)
+
+
+def translate_text(provider: TranslationProvider, text: str, source_mode: str) -> TranslationResult:
+    """One-shot typed-chat translation through an already-built provider.
+    A module-level helper so the callable stays mypy-friendly inside
+    asyncio.to_thread."""
+    from local_squad_inference.providers import AsrResult
+
+    return provider.translate(
+        AsrResult(
+            utterance_id="chat",
+            text=text,
+            source_mode=source_mode,
+            is_final=True,
+            inference_ms=0.0,
+            model_id="chat",
+            confidence=None,
+        )
+    )
+
+
+def _resolve_translation_provider(name: str, target_language: str) -> TranslationProvider:
     if name in {"nllb", "local", ""}:
         return local_translation_provider(target_language)
     if name in {"madlad"}:
@@ -1157,6 +1183,14 @@ async def drain_live_results(
                 )
             continue
         for _index, caption in enumerate(result, start=1):
+            # Session-scope the caption id: the sidecar (and its VAD utterance
+            # sequence) restarts on every live start, so a kept-open history
+            # session would otherwise collide run N+1's `clip-utterance-1` with
+            # run N's entry and upsert it in place mid-list. The connection
+            # session id is unique per spawn, so ids never repeat across runs.
+            caption = caption.model_copy(
+                update={"caption_id": f"{session_id}-{caption.caption_id}"}
+            )
             # A provisional that surfaces after its own final is stale (the
             # VAD cadence raced inference completion) — drop it so the client
             # never sees "Listening..." overwrite a delivered final.
@@ -1235,6 +1269,10 @@ async def handle_connection(
         # the presentation snapshots the sidecar stamps onto captions.
         source_registry: dict[str, SourceRegistryEntry] = {}
         source_snapshots: dict[str, SourceSnapshot] = {}
+        # Per-source translation providers keyed by source id, built when the
+        # registry declares a per-source target language (e.g. the user's own
+        # microphone in a reversed direction).
+        source_translations: dict[str, TranslationProvider] = {}
 
         def snapshot_for(source_id: bytes) -> tuple[SourceSnapshot | None, Strictness | None]:
             entry = source_registry.get(encode_source_id_hex(source_id))
@@ -1303,6 +1341,7 @@ async def handle_connection(
                             source_hex,
                             source_mode=source_mode,
                             processing=processing,
+                            translation=source_translations.get(source_hex),
                         )
                         live_worker.submit(packet_v2)
                         continue
@@ -1414,9 +1453,30 @@ async def handle_connection(
                     return
                 registry = SourceRegistryPayload.model_validate(control.payload)
                 source_registry.clear()
+                source_snapshots.clear()
                 for entry in registry.sources:
                     source_registry[entry.source_id] = entry
                     source_snapshots[entry.source_id] = entry_snapshot(entry)
+                # Per-source translation directions: entries that declare
+                # their own target language get their own provider (cached
+                # per direction), so e.g. the user's mic can translate
+                # opposite to the session default. Providers are shared
+                # across registry re-pushes.
+                source_translations.clear()
+                for entry in registry.sources:
+                    if entry.target_language is None:
+                        continue
+                    try:
+                        source_translations[entry.source_id] = await asyncio.to_thread(
+                            build_translation_provider,
+                            entry.translation_provider or "nllb",
+                            entry.target_language,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "per-source translation provider failed for %s",
+                            entry.source_id,
+                        )
                 await connection.send(
                     json.dumps(
                         envelope(
@@ -1833,7 +1893,53 @@ async def handle_connection(
                                 "captions": [asdict(caption) for caption in result.captions],
                                 "truncated": result.truncated,
                                 "mode": result.mode,
-                            },
+                            },                            version=negotiated_version,
+                        )
+                    )
+                )
+            elif control.type == "translate.text":
+                try:
+                    chat_request = TranslateTextPayload.model_validate(control.payload)
+                    provider = await asyncio.to_thread(
+                        build_translation_provider,
+                        chat_request.translation_provider,
+                        chat_request.target_language,
+                    )
+                    started_at = time.perf_counter()
+                    chat_result = await asyncio.to_thread(
+                        partial(
+                            translate_text,
+                            provider,
+                            chat_request.text,
+                            chat_request.source_mode,
+                        )
+                    )
+                    latency_ms = (time.perf_counter() - started_at) * 1000.0
+                except Exception as error:
+                    logger.exception("translate.text failed: %s", error)
+                    await connection.send(
+                        json.dumps(
+                            envelope(
+                                "translate.error",
+                                control.message_id,
+                                control.session_id,
+                                {"message": str(error)},
+                                version=negotiated_version,
+                            )
+                        )
+                    )
+                    continue
+                await connection.send(
+                    json.dumps(
+                        envelope(
+                            "translate.result",
+                            control.message_id,
+                            control.session_id,
+                            TranslateResultPayload(
+                                translated_text=chat_result.english_text,
+                                provider=chat_request.translation_provider,
+                                latency_ms=latency_ms,
+                            ).model_dump(),
                             version=negotiated_version,
                         )
                     )

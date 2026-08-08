@@ -97,3 +97,20 @@ export async function requestMicrophonePermission(): Promise<
   }
   return await invoke("request_microphone_permission");
 }
+
+/** Read the current macOS microphone permission without prompting. */
+export async function microphoneAuthStatus(): Promise<
+  "authorized" | "denied" | "restricted" | "notDetermined" | "unsupported"
+> {
+  if (!isTauri()) {
+    return "unsupported";
+  }
+  return await invoke("microphone_auth_status");
+}
+
+/** Open the macOS Microphone privacy pane (denied-mic recovery path). */
+export async function openMicrophoneSettings(): Promise<void> {
+  if (isTauri()) {
+    await invoke("open_microphone_settings");
+  }
+}

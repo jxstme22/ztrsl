@@ -15,7 +15,8 @@ use ipc_protocol::{
     CaptionPayload, CaptionStrictness, ClipComparePayload, ClipProcessPayload, ClipResultPayload,
     Envelope, HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
     SourceControlPayload, SourcePresentationUpdatePayload, SourceRegistryEntry,
-    SourceRegistryPayload, SourceSnapshot, DEFAULT_SOURCE_ORIGIN, source_id_from_hex,
+    SourceRegistryPayload, SourceSnapshot, TranslateResultPayload, TranslateTextPayload,
+    DEFAULT_SOURCE_ORIGIN, source_id_from_hex,
 };
 use thiserror::Error;
 use tungstenite::{Message, WebSocket};
@@ -349,6 +350,8 @@ impl SidecarSupervisor {
                 priority: 200,
                 source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
                 language_config: None,
+                target_language: None,
+                translation_provider: None,
             },
             SourceRegistryEntry {
                 source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -365,6 +368,8 @@ impl SidecarSupervisor {
                 priority: 100,
                 source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
                 language_config: None,
+                target_language: None,
+                translation_provider: None,
             },
         ])?;
 
@@ -895,6 +900,60 @@ impl SidecarSupervisor {
         Ok(response.payload)
     }
 
+    /// One-shot typed-chat translation on this sidecar connection. Uses the
+    /// same provider cache as live translation.
+    pub fn translate_text(
+        &mut self,
+        text: &str,
+        source_mode: &str,
+        target_language: &str,
+        translation_provider: &str,
+    ) -> Result<TranslateResultPayload, SupervisorError> {
+        self.ensure_running()?;
+        let request = Envelope {
+            protocol_version: self.negotiated_version,
+            message_id: format!("translate-{}", self.next_sequence),
+            session_id: self.session_id.clone(),
+            message_type: "translate.text".to_owned(),
+            sent_monotonic_ns: 0,
+            payload: TranslateTextPayload {
+                text: text.to_owned(),
+                source_mode: source_mode.to_owned(),
+                target_language: target_language.to_owned(),
+                translation_provider: translation_provider.to_owned(),
+            },
+        };
+        self.next_sequence = self.next_sequence.saturating_add(1);
+        write_json(&mut self.socket, &request)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(CLIP_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
+        response
+            .validate_version_in(&[self.negotiated_version])
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))?;
+        if response.message_type == "translate.error" {
+            let message = response
+                .payload
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("translation failed");
+            return Err(SupervisorError::TranslateError(message.to_owned()));
+        }
+        if response.message_type != "translate.result" {
+            return Err(SupervisorError::Protocol(
+                "unexpected translate.response".to_owned(),
+            ));
+        }
+        serde_json::from_value(response.payload)
+            .map_err(|error| SupervisorError::Protocol(error.to_string()))
+    }
+
     pub fn ensure_running(&mut self) -> Result<(), SupervisorError> {
         if self.stopped {
             return Err(SupervisorError::SidecarExited("stopped".to_owned()));
@@ -987,6 +1046,8 @@ pub enum SupervisorError {
     InvalidClipPath,
     #[error("clip analysis failed: {0}")]
     ClipProcessing(String),
+    #[error("typed-chat translation failed: {0}")]
+    TranslateError(String),
     #[error("live translation failed: {0}")]
     LiveInference(String),
     #[error("live translation hiccup (recoverable): {0}")]
@@ -1579,6 +1640,8 @@ mod tests {
                     priority: 200,
                     source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
                     language_config: None,
+                    target_language: None,
+                    translation_provider: None,
                 },
                 SourceRegistryEntry {
                     source_id: DISCORD_SOURCE_ID.to_owned(),
@@ -1595,6 +1658,8 @@ mod tests {
                     priority: 100,
                     source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
                     language_config: None,
+                    target_language: None,
+                    translation_provider: None,
                 },
             ])
             .expect("registry push must succeed");

@@ -30,6 +30,7 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
     preset: "",
     latencyMs: 0,
     sessionId: "",
+    fromSelf: false,
     ...overrides,
   };
 }

@@ -67,6 +67,9 @@ class _SourceVadState:
     # DS-300/301: per-source audio health + processing policy (DS-303).
     health: AudioHealthMetrics = field(default_factory=AudioHealthMetrics)
     processing: SourceProcessingPolicy = field(default_factory=SourceProcessingPolicy)
+    # Per-source translation direction (e.g. the user's own mic reversed
+    # from the session default). None = use the pipeline's default provider.
+    translation: TranslationProvider | None = None
 
 
 def source_key_of(packet: Any) -> str | None:
@@ -209,11 +212,13 @@ class LivePipeline:
         source_mode: SourceMode | None = None,
         use_silero: bool | None = None,
         processing: SourceProcessingPolicy | None = None,
+        translation: TranslationProvider | None = None,
     ) -> bool:
         """Create VAD state for a v2 source. Idempotent: an existing state
         is returned untouched, so registry re-pushes and presentation
         edits never reset an in-flight utterance. Returns True when a new
-        state was created."""
+        state was created. `translation` overrides the session-default
+        direction for this source (e.g. the user's own mic reversed)."""
         with self._metrics_lock:
             if source_id in self._sources:
                 return False
@@ -232,6 +237,7 @@ class LivePipeline:
                     namespace=source_id,
                 ),
                 processing=processing or SourceProcessingPolicy(),
+                translation=translation,
             )
             self._sources[source_id] = state
             return True
@@ -478,7 +484,8 @@ class LivePipeline:
             warnings.append("LOW_CONFIDENCE")
 
         try:
-            translated = self._translation.translate(transcript)
+            translator = state.translation or self._translation
+            translated = translator.translate(transcript)
             english_text = _normalize_transcript(translated.english_text)
             # v0.4 Phase 4: preferred translation overrides the MT output, and
             # preserved terms are re-inserted verbatim after MT.

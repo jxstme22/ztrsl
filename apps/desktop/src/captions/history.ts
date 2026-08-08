@@ -14,6 +14,13 @@ import type { Caption } from "../overlay/model";
 /** Hard safety net so a runaway session cannot exhaust localStorage (~5MB). */
 export const SESSION_MAX_ENTRIES = 2000;
 
+/** The fixed source id of the user's own microphone stream ("you" bubbles).
+ * Immutable 32 lowercase hex, never collides with user-configured sources. */
+export const YOU_SOURCE_ID = "00000000000000000000000000000000";
+
+/** CTA accent used for "you" bubbles (matches the send-button accent). */
+export const YOU_ACCENT_COLOR = "#dc4d5e";
+
 export const historyEntrySchema = z.object({
   /** Caption id; the same id upserts in place (final replaces provisional). */
   id: z.string().min(1).max(128),
@@ -53,6 +60,8 @@ export const historyEntrySchema = z.object({
   sessionId: z.string().max(64).default(""),
   /** End-to-end pipeline time the sidecar reported (capture → caption, ms). */
   latencyMs: z.number().nonnegative().default(0),
+  /** True for the user's own mic stream / typed chat ("you" bubbles). */
+  fromSelf: z.boolean().default(false),
 });
 
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
@@ -86,6 +95,17 @@ export type HistoryState = z.infer<typeof historyStateSchema>;
 
 export type HistoryAction =
   | { type: "record"; caption: Caption; context?: HistoryContext }
+  | {
+      type: "recordChat";
+      /** Unique entry id (must not collide with caption ids). */
+      id: string;
+      /** Translated (target-language) text shown in the bubble. */
+      text: string;
+      /** The user's original typed text (source language). */
+      sourceText: string;
+      /** Translation provider label, e.g. "nllb". */
+      provider?: string;
+    }
   | { type: "beginSession"; id: string; name: string; startedAtMs?: number }
   | { type: "endSession"; id: string; endedAtMs?: number }
   | { type: "renameSession"; id: string; name: string }
@@ -147,12 +167,13 @@ function entryForCaption(
 ): HistoryEntry {
   const text = caption.englishText.trim() || caption.sourceText.trim();
   const nowMs = Date.now();
+  const sourceId = caption.source?.sourceId ?? "";
   return {
     id: caption.id,
     text,
     sourceText: caption.sourceText.trim(),
     sourceLabel: caption.source?.captionTag ?? "",
-    sourceId: caption.source?.sourceId ?? "",
+    sourceId,
     displayName: context.displayName ?? "",
     color: caption.source?.color ?? "",
     audioSource: context.audioSource ?? "",
@@ -168,6 +189,7 @@ function entryForCaption(
     preset: context.preset ?? "",
     sessionId: context.sessionId ?? "",
     latencyMs: caption.latencyMs ?? 0,
+    fromSelf: sourceId === YOU_SOURCE_ID,
   };
 }
 
@@ -240,6 +262,52 @@ export function historyReducer(
         return state;
       }
       sessions[current] = recordIntoSession(session, caption, context);
+      return { ...state, sessions };
+    }
+    case "recordChat": {
+      const current = state.sessions.findIndex(
+        (session) => session.id === state.currentSessionId,
+      );
+      if (current === -1) {
+        // No open session (e.g. standalone chat with no live run): record
+        // nothing — the caller decides whether to open a session first.
+        return state;
+      }
+      const sessions = state.sessions.slice();
+      const session = sessions[current];
+      if (session === undefined) {
+        return state;
+      }
+      const nowMs = Date.now();
+      const entry: HistoryEntry = {
+        id: action.id,
+        text: action.text.trim(),
+        sourceText: action.sourceText.trim(),
+        sourceLabel: "YOU",
+        sourceId: YOU_SOURCE_ID,
+        displayName: "You",
+        color: YOU_ACCENT_COLOR,
+        audioSource: "chat",
+        timestampMs: nowMs,
+        uncertain: false,
+        startedAtMs: nowMs,
+        status: "final",
+        confidenceCategory: "high",
+        provider: action.provider ?? "",
+        detectedLanguage: "",
+        warnings: [],
+        preset: "",
+        sessionId: session.id,
+        latencyMs: 0,
+        fromSelf: true,
+      };
+      if (entry.text === "") {
+        return state;
+      }
+      sessions[current] = {
+        ...session,
+        entries: [...session.entries, entry].slice(-SESSION_MAX_ENTRIES),
+      };
       return { ...state, sessions };
     }
     case "beginSession": {
@@ -388,11 +456,17 @@ export const historyDisplayOptionsSchema = z.object({
   showTimestamp: z.boolean(),
   showLatency: z.boolean(),
   showModels: z.boolean(),
+  /** Show the profile icon (avatar) beside each chat bubble. */
+  showAvatars: z.boolean().default(true),
+  /** "source" tints bubbles with their audio-source color; "default" keeps
+   * the neutral theme bubble for everyone. */
+  bubbleColor: z.enum(["source", "default"]).default("source"),
 });
 
 export type HistoryDisplayOptions = z.infer<typeof historyDisplayOptionsSchema>;
 
-const DISPLAY_OPTIONS_KEY = "lst.history.options.v2";
+const DISPLAY_OPTIONS_KEY = "lst.history.options.v3";
+const LEGACY_OPTIONS_KEY = "lst.history.options.v2";
 const LEGACY_SOURCE_KEY = "lst.history.showSource";
 
 export const DEFAULT_DISPLAY_OPTIONS: HistoryDisplayOptions = {
@@ -403,12 +477,16 @@ export const DEFAULT_DISPLAY_OPTIONS: HistoryDisplayOptions = {
   showTimestamp: true,
   showLatency: true,
   showModels: true,
+  showAvatars: true,
+  bubbleColor: "source",
 };
 
 export function loadHistoryDisplayOptions(
   storage: Pick<Storage, "getItem"> = window.localStorage,
 ): HistoryDisplayOptions {
-  const serialized = storage.getItem(DISPLAY_OPTIONS_KEY);
+  const serialized =
+    storage.getItem(DISPLAY_OPTIONS_KEY) ??
+    storage.getItem(LEGACY_OPTIONS_KEY);
   if (serialized !== null) {
     try {
       const parsed = historyDisplayOptionsSchema.safeParse(
@@ -433,5 +511,6 @@ export function saveHistoryDisplayOptions(
   storage: Pick<Storage, "setItem" | "removeItem"> = window.localStorage,
 ): void {
   storage.setItem(DISPLAY_OPTIONS_KEY, JSON.stringify(options));
+  storage.removeItem(LEGACY_OPTIONS_KEY);
   storage.removeItem(LEGACY_SOURCE_KEY);
 }

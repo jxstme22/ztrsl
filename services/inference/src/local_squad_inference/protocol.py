@@ -227,6 +227,12 @@ class SourceRegistryEntry(StrictModel):
         "recorded_file",
     ] = "virtual_voice_channel"
     language_config: LanguageConfig | None = None
+    # Per-source translation direction (e.g. the user's own microphone in a
+    # direction reversed from the session default). Optional so payloads from
+    # older desktops still validate; when absent the source uses the session
+    # default target language / translation provider.
+    target_language: Literal["en", "zh", "fil", "ind", "vie", "tha", "zsm"] | None = None
+    translation_provider: str | None = Field(default=None, max_length=64)
 
 
 class SourceRegistryPayload(StrictModel):
@@ -261,6 +267,23 @@ class ClipComparePayload(StrictModel):
     # build_translation_provider.
     configs: list[list[str]] = Field(default_factory=list, max_length=8)
     include_transcripts: bool = False
+
+
+class TranslateTextPayload(StrictModel):
+    """One-shot typed-chat translation (the history-page chat box). Uses the
+    same provider cache as live translation, so a running live session does
+    not reload models. `source_mode` selects the NLLB source token."""
+
+    text: str = Field(min_length=1, max_length=2000)
+    source_mode: SourceMode = "filipino"
+    target_language: Literal["en", "zh", "fil", "ind", "vie", "tha", "zsm"] = "en"
+    translation_provider: str = Field(default="nllb", max_length=64)
+
+
+class TranslateResultPayload(StrictModel):
+    translated_text: str = Field(min_length=1, max_length=2000)
+    provider: str = Field(default="nllb", max_length=64)
+    latency_ms: float = Field(default=0.0, ge=0.0)
 
 
 class LiveStartPayload(StrictModel):

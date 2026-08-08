@@ -7,6 +7,7 @@ import { readingDurationMs } from "../overlay/reducer";
 import { loadSourceConfigs } from "../sources/storage";
 import {
   fetchLiveSnapshot,
+  setLiveMicEnabled,
   startLiveTranslation,
   stopLiveTranslation,
   type AsrProvider,
@@ -150,6 +151,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       segmentation: "chunk" | "balanced" | "sentence" = "balanced",
       sources: LiveSourceRequest[] = [],
       sessionIdHint: string | null = null,
+      micSource: LiveSourceRequest | null = null,
     ) => {
       setState("starting");
       setError(null);
@@ -172,6 +174,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
             vadSensitivity,
             segmentation,
             sources,
+            micSource,
           ),
         );
       } catch (cause) {
@@ -182,6 +185,20 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       }
     },
     [applySnapshot],
+  );
+
+  const setMicEnabled = useCallback(
+    async (enabled: boolean): Promise<boolean> => {
+      try {
+        const next = await setLiveMicEnabled(enabled);
+        setSnapshot((current) => ({ ...current, micEnabled: next }));
+        return next;
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return false;
+      }
+    },
+    [],
   );
 
   const stop = useCallback(async () => {
@@ -204,6 +221,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
     lastCaption,
     sessionEndpointId,
     sessionId,
+    setMicEnabled,
     snapshot,
     start,
     state,

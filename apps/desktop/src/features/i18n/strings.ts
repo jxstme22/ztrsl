@@ -47,6 +47,12 @@ const UI_STRINGS = {
   historyShowTimestamp: { en: "Timestamps", zh: "时间戳" },
   historyShowLatency: { en: "Latency", zh: "延迟" },
   historyShowModels: { en: "Model badges", zh: "模型标签" },
+  historyShowAvatars: { en: "Profile icons", zh: "头像图标" },
+  historyBubbleColor: {
+    en: "Tint bubbles with source colors",
+    zh: "气泡使用来源颜色",
+  },
+  historyYou: { en: "You", zh: "你" },
   historyCopy: { en: "Copy translation", zh: "复制译文" },
   historySearch: { en: "Search captions", zh: "搜索字幕" },
   historySearchEmpty: { en: "No captions match the search.", zh: "没有匹配搜索的字幕。" },
@@ -66,6 +72,62 @@ const UI_STRINGS = {
     zh: "暂无已完成字幕。启动实时会话后，只有最终确定的字幕会被保存到这里。",
   },
   historyUnknownSpeaker: { en: "Unknown speaker", zh: "未知说话人" },
+  // Chat + your voice ("you" bubbles)
+  chatPlaceholder: {
+    en: "Type a message to translate…",
+    zh: "输入要翻译的消息…",
+  },
+  chatSend: { en: "Send", zh: "发送" },
+  chatMic: { en: "Translate my voice", zh: "翻译我的语音" },
+  chatMicLive: { en: "Your voice is being translated — click to stop", zh: "正在翻译你的语音 — 点击停止" },
+  chatMicRequiresLive: {
+    en: "Start a live session first, then use the mic button",
+    zh: "请先启动实时会话，再使用麦克风按钮",
+  },
+  chatMicNeedsConfig: {
+    en: "Choose your mic and languages in the config first",
+    zh: "请先在设置中选择麦克风和语言",
+  },
+  chatConfig: { en: "Your voice & chat settings", zh: "语音与聊天设置" },
+  chatConfigMic: { en: "Microphone", zh: "麦克风" },
+  chatConfigNoMic: { en: "No microphone available", zh: "没有可用的麦克风" },
+  chatConfigYouSection: { en: "Your voice & chat", zh: "你的语音与聊天" },
+  chatConfigLiveSection: {
+    en: "Live translation",
+    zh: "实时翻译",
+  },
+  chatConfigLiveEndpoint: {
+    en: "Input endpoint",
+    zh: "输入端点",
+  },
+  chatConfigLiveSource: {
+    en: "Source language",
+    zh: "源语言",
+  },
+  chatConfigLiveTarget: {
+    en: "Translate into",
+    zh: "翻译为",
+  },
+  chatConfigSource: { en: "Your language", zh: "你的语言" },
+  chatConfigTarget: { en: "Translate into", zh: "翻译为" },
+  chatConfigAuto: {
+    en: "Auto (reverse of the live pair)",
+    zh: "自动（与实时翻译方向相反）",
+  },
+  chatConfigAsr: { en: "Voice recognition model", zh: "语音识别模型" },
+  chatConfigTranslate: { en: "Translation model", zh: "翻译模型" },
+  chatConfigSave: { en: "Save", zh: "保存" },
+  chatTranslateFailed: { en: "Translation failed", zh: "翻译失败" },
+  chatBubbleSource: { en: "You said", zh: "你说的" },
+  chatStandaloneSession: { en: "Chat", zh: "聊天" },
+  chatMicUnavailable: {
+    en: "The microphone is not available right now",
+    zh: "麦克风当前不可用",
+  },
+  chatMicOpenSettings: {
+    en: "Open Settings",
+    zh: "打开设置",
+  },
   overlayToggleHistory: {
     en: "Toggle captions history on the overlay",
     zh: "在悬浮窗中切换字幕历史",
@@ -76,6 +138,15 @@ const UI_STRINGS = {
     zh: "编辑模式 · 拖动调整位置",
   },
   overlayDragLabel: { en: "Drag caption overlay", zh: "拖动字幕悬浮窗" },
+  overlayToggleViewLabel: {
+    en: "Switch between captions and history",
+    zh: "切换字幕与历史",
+  },
+  overlayPinLabel: {
+    en: "Pin above other apps",
+    zh: "置顶于其他应用之上",
+  },
+  overlayCloseLabel: { en: "Hide caption overlay", zh: "隐藏字幕悬浮窗" },
   overlayDoneEditing: { en: "Done", zh: "完成" },
   overlayHistoryEmpty: { en: "No captions yet", zh: "暂无字幕" },
   overlayCustomize: { en: "Customize overlay", zh: "自定义悬浮窗" },
@@ -357,6 +428,26 @@ const UI_STRINGS = {
   diagnosticsOldestQueued: { en: "Oldest queued", zh: "最旧排队" },
   diagnosticsAvgDelay: { en: "Avg delay", zh: "平均延迟" },
   diagnosticsMaxDelay: { en: "Max delay", zh: "最大延迟" },
+  diagnosticsScreenRecordingTitle: {
+    en: "Screen Recording permission",
+    zh: "屏幕录制权限",
+  },
+  diagnosticsScreenRecordingHint: {
+    en: "System Audio (all apps) stays silent until this app has Screen Recording permission. Open System Settings and enable yTSRL, then restart the app.",
+    zh: "在授予此应用屏幕录制权限之前，系统音频源将保持静默。请打开系统设置启用 yTSRL，然后重新启动应用。",
+  },
+  diagnosticsScreenRecordingOpen: {
+    en: "Open System Settings",
+    zh: "打开系统设置",
+  },
+  diagnosticsMicrophoneTitle: {
+    en: "Microphone permission",
+    zh: "麦克风权限",
+  },
+  diagnosticsMicrophoneHint: {
+    en: "A denied or missing microphone permission makes mic capture deliver silence with no error. Enable yTSRL under Microphone, then restart the app.",
+    zh: "如果麦克风权限被拒绝或缺失，麦克风采集将静默无声且不报错。请在麦克风设置中启用 yTSRL，然后重新启动应用。",
+  },
   diagnosticsIsolationOk: { en: "Clean", zh: "干净" },
   diagnosticsIsolationLeak: { en: "Leakage detected", zh: "检测到泄漏" },
 
@@ -585,6 +676,11 @@ const UI_STRINGS = {
   overlayEditPosition: { en: "Edit position", zh: "编辑位置" },
   settingsHideOverlay: { en: "Hide overlay", zh: "隐藏字幕层" },
   settingsShowOverlay: { en: "Show overlay", zh: "显示字幕层" },
+  overlayEnterWindowed: {
+    en: "Overlay mode — window shows captions only",
+    zh: "悬浮模式——窗口只显示字幕",
+  },
+  overlayExitWindowed: { en: "Exit overlay", zh: "退出悬浮模式" },
   settingsClear: { en: "Clear", zh: "清除" },
   clipLabTitle: { en: "Test a friends' comms clip", zh: "测试好友的通话片段" },
   clipDemoProviders: { en: "Demo providers", zh: "演示提供方" },

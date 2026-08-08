@@ -27,6 +27,8 @@ export const liveSnapshotSchema = z.object({
   error: z.string().nullable(),
   /** Non-fatal capture stall warning; null when audio is flowing. */
   warning: z.string().nullable().default(null),
+  /** The user's mic stream: true while the mic toggle is capturing. */
+  micEnabled: z.boolean().default(false),
 });
 
 export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>;
@@ -52,4 +54,5 @@ export const EMPTY_LIVE_SNAPSHOT: LiveSnapshot = {
   captions: [],
   error: null,
   warning: null,
+  micEnabled: false,
 };

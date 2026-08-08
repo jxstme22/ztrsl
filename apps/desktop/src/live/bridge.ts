@@ -76,6 +76,10 @@ export type LiveSourceRequest = {
     secondaryLanguages: string[];
     detectionMode: string;
   } | null;
+  /** Per-source translation direction (e.g. the user's mic reversed from
+   * the session default). Optional; absent = session default. */
+  targetLanguage?: string | null;
+  translationProvider?: string | null;
 };
 
 export async function startLiveTranslation(
@@ -90,6 +94,7 @@ export async function startLiveTranslation(
   vadSensitivity = 50,
   segmentation: "chunk" | "balanced" | "sentence" = "balanced",
   sources: LiveSourceRequest[] = [],
+  micSource: LiveSourceRequest | null = null,
 ): Promise<LiveSnapshot> {
   if (!isTauri()) {
     browserListening = true;
@@ -118,9 +123,20 @@ export async function startLiveTranslation(
         vadSensitivity,
         segmentation,
         sources,
+        micSource,
       },
     }),
   );
+}
+
+/** Flip the "you" mic stream on/off on the running live session. Returns the
+ * new state. Errors when no live session is running or the mic stream was
+ * not configured at live start. */
+export async function setLiveMicEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauri()) {
+    return enabled;
+  }
+  return await invoke("set_live_mic_enabled", { enabled });
 }
 
 export async function fetchLiveSnapshot(): Promise<LiveSnapshot> {

@@ -8,6 +8,7 @@ import {
   type HistoryEntry,
   loadHistoryState,
   visibleHistoryEntries,
+  YOU_ACCENT_COLOR,
 } from "./captions/history";
 import { CaptionStack } from "./components/CaptionStack";
 import { useT } from "./features/i18n/store";
@@ -250,21 +251,25 @@ export function OverlayApp() {
               {reversedHistory.map((entry) => (
                 <li
                   key={entry.id}
-                  className="overlay-history-entry"
+                  className={`overlay-history-entry ${entry.fromSelf ? "self" : ""}`}
                   data-uncertain={entry.uncertain || undefined}
                 >
                   {(entry.displayName !== "" || entry.sourceLabel !== "") && (
                     <span
                       className="overlay-history-source"
                       style={{
-                        ...badgeStyle(entry.color),
+                        ...badgeStyle(
+                          entry.fromSelf ? YOU_ACCENT_COLOR : entry.color,
+                        ),
                         fontSize:
                           String(Math.round(historyFontSize * 0.78)) + "px",
                       }}
                     >
-                      {entry.displayName !== ""
-                        ? entry.displayName
-                        : entry.sourceLabel}
+                      {entry.fromSelf
+                        ? t("historyYou")
+                        : entry.displayName !== ""
+                          ? entry.displayName
+                          : entry.sourceLabel}
                     </span>
                   )}
                   <span
