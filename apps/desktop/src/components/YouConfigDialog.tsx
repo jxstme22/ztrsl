@@ -57,31 +57,119 @@ function loadStored(key: string): string | null {
 }
 
 /** ASR backends shown in the Live section (mirrors the Live page). */
-const LIVE_ASR_OPTIONS: readonly { value: string; modelId: string | null }[] = [
-  { value: "whisper-turbo", modelId: "whisper-large-v3-turbo" },
-  { value: "whisper-full", modelId: "whisper-large-v3" },
-  { value: "mlx-whisper", modelId: "mlx-whisper-large-v3-turbo-q4" },
-  { value: "ncspeech", modelId: "ncspeech-tl-fastconformer-hybrid-large" },
-  { value: "ncspeech-zh", modelId: "ncspeech-zh-citrinet-1024-gamma" },
-  { value: "ncspeech-zh-parakeet", modelId: "ncspeech-zh-parakeet-ctc-0.6b" },
-  { value: "paraformer-zh-streaming", modelId: "paraformer-zh-streaming" },
-  { value: "sensevoice-small", modelId: "sensevoice-small" },
-  { value: "nvidia-parakeet-1.1b", modelId: null },
-  { value: "groq-whisper", modelId: null },
+const LIVE_ASR_OPTIONS: readonly {
+  value: string;
+  modelId: string | null;
+  label: string;
+}[] = [
+  {
+    value: "whisper-turbo",
+    modelId: "whisper-large-v3-turbo",
+    label: "Local Whisper large-v3-turbo (fast)",
+  },
+  {
+    value: "whisper-full",
+    modelId: "whisper-large-v3",
+    label: "Local Whisper large-v3 (full)",
+  },
+  {
+    value: "mlx-whisper",
+    modelId: "mlx-whisper-large-v3-turbo-q4",
+    label: "Local MLX Whisper large-v3-turbo (Apple Silicon)",
+  },
+  {
+    value: "ncspeech",
+    modelId: "ncspeech-tl-fastconformer-hybrid-large",
+    label: "NCSpeech FastConformer (Tagalog)",
+  },
+  {
+    value: "ncspeech-zh",
+    modelId: "ncspeech-zh-citrinet-1024-gamma",
+    label: "NCSpeech Citrinet-1024 (Mandarin)",
+  },
+  {
+    value: "ncspeech-zh-parakeet",
+    modelId: "ncspeech-zh-parakeet-ctc-0.6b",
+    label: "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
+  },
+  {
+    value: "paraformer-zh-streaming",
+    modelId: "paraformer-zh-streaming",
+    label: "FunASR Paraformer (streaming zh)",
+  },
+  {
+    value: "sensevoice-small",
+    modelId: "sensevoice-small",
+    label: "SenseVoice Small (zh/en/ja/ko/yue)",
+  },
+  {
+    value: "nvidia-parakeet-1.1b",
+    modelId: null,
+    label: "NVIDIA Parakeet CTC 1.1B (NIM) · Cloud",
+  },
+  {
+    value: "groq-whisper",
+    modelId: null,
+    label: "Groq Whisper (API) · Cloud",
+  },
 ];
 
 /** Translation backends shown in the Live section (mirrors the Live page). */
-const LIVE_TRANSLATION_OPTIONS: readonly { value: string; modelId: string | null }[] = [
-  { value: "nllb", modelId: "nllb-200-distilled-600M-ct2-int8" },
-  { value: "madlad", modelId: "madlad400-3b-mt" },
-  { value: "opus-mt-en-zh", modelId: "opus-mt-en-zh-ct2-int8" },
-  { value: "opus-mt-zh-en", modelId: "opus-mt-zh-en-ct2-int8" },
-  { value: "google-translate", modelId: null },
-  { value: "libretranslate", modelId: null },
-  { value: "mymemory", modelId: null },
-  { value: "baidu-translate", modelId: null },
-  { value: "nvidia-riva-4b", modelId: null },
-  { value: "custom-http", modelId: null },
+const LIVE_TRANSLATION_OPTIONS: readonly {
+  value: string;
+  modelId: string | null;
+  label: string;
+}[] = [
+  {
+    value: "nllb",
+    modelId: "nllb-200-distilled-600M-ct2-int8",
+    label: "Local NLLB (offline, near-real-time, GPU)",
+  },
+  {
+    value: "madlad",
+    modelId: "madlad400-3b-mt",
+    label: "Local MADLAD (offline, slower)",
+  },
+  {
+    value: "opus-mt-en-zh",
+    modelId: "opus-mt-en-zh-ct2-int8",
+    label: "Local opus-mt (en→zh)",
+  },
+  {
+    value: "opus-mt-zh-en",
+    modelId: "opus-mt-zh-en-ct2-int8",
+    label: "Local opus-mt (zh→en)",
+  },
+  {
+    value: "google-translate",
+    modelId: null,
+    label: "Google Translate (free, unofficial endpoint) · Cloud",
+  },
+  {
+    value: "libretranslate",
+    modelId: null,
+    label: "LibreTranslate (any instance URL) · Cloud",
+  },
+  {
+    value: "mymemory",
+    modelId: null,
+    label: "MyMemory (free, daily quota) · Cloud",
+  },
+  {
+    value: "baidu-translate",
+    modelId: null,
+    label: "Baidu Translate (free, mainland China) · Cloud",
+  },
+  {
+    value: "nvidia-riva-4b",
+    modelId: null,
+    label: "NVIDIA Riva Translate 4B (NIM) · Cloud",
+  },
+  {
+    value: "custom-http",
+    modelId: null,
+    label: "Custom HTTP endpoint · Cloud",
+  },
 ];
 
 export function YouConfigDialog({
@@ -348,17 +436,19 @@ export function YouConfigDialog({
               id="live-asr"
               label={t("chatConfigAsr")}
               value={liveAsrProvider}
-              onChange={(value) => { setLiveAsrProvider(value); }}
-              options={LIVE_ASR_OPTIONS.map((option) => {
-                const notInstalled =
-                  option.modelId !== null &&
-                  !installedModelIds.has(option.modelId);
-                return {
-                  value: option.value,
-                  label: option.value,
-                  ...(notInstalled ? { group: t("liveNotInstalled") } : {}),
-                };
-              })}
+              onChange={(value) => {
+                setLiveAsrProvider(value);
+              }}
+              options={LIVE_ASR_OPTIONS.filter((option) => {
+                // Only installed local models + always-visible cloud models.
+                const localModel = option.modelId;
+                return (
+                  localModel === null || installedModelIds.has(localModel)
+                );
+              }).map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
             />
           </label>
 
@@ -371,16 +461,15 @@ export function YouConfigDialog({
               onChange={(value) => {
                 setLiveTranslationProvider(value);
               }}
-              options={LIVE_TRANSLATION_OPTIONS.map((option) => {
-                const notInstalled =
-                  option.modelId !== null &&
-                  !installedModelIds.has(option.modelId);
-                return {
-                  value: option.value,
-                  label: option.value,
-                  ...(notInstalled ? { group: t("liveNotInstalled") } : {}),
-                };
-              })}
+              options={LIVE_TRANSLATION_OPTIONS.filter((option) => {
+                const localModel = option.modelId;
+                return (
+                  localModel === null || installedModelIds.has(localModel)
+                );
+              }).map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
             />
           </label>
 
