@@ -628,3 +628,16 @@ minus macOS-only pieces (window chrome, system-audio capture, MLX, mic TCC).
   history menus are solid; settings menu redesigned with checkmarks and a
   nested layout picker.
 - **Branding** — yTRSL on the Windows build.
+
+## v0.9.1 — yTRSL branding + titlebar & history polish (feat/general-purpose-v0.8)
+
+- **Branding** — the Windows build is now **yTRSL** (product name, window
+  titles, titlebar, welcome/i18n copy, bundle strings). The titlebar brand
+  card shows just the app icon and the BETA badge.
+- **Separated live button** — Start uses the CTA (btn-shine) recipe; Stop
+  turns red while the separated live is on.
+- **History input bar** — the mic button is now a pill sized like the send
+  button.
+- **Settings dropdown** — the History display-options menu is tall enough to
+  list every config row (toggles, bubble color, layout, clear) without
+  scrolling.
