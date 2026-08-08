@@ -106,7 +106,7 @@ export function useSeparatedLiveTranslation(
       vadSensitivity = 50,
       segmentation: "chunk" | "balanced" | "sentence" = "balanced",
       sources: LiveSourceRequest[] = [],
-    ) => {
+    ): Promise<string | null> => {
       setState("starting");
       setError(null);
       setSessionEndpointId(endpointId);
@@ -126,10 +126,13 @@ export function useSeparatedLiveTranslation(
             sources,
           ),
         );
+        return null;
       } catch (cause) {
         running.current = false;
+        const message = cause instanceof Error ? cause.message : String(cause);
         setState("error");
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(message);
+        return message;
       }
     },
     [applySnapshot],

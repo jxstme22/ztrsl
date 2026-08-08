@@ -735,7 +735,7 @@ export function LiveTranslationPanel({
             <span className="live-level-label">
               {live.snapshot.metrics.capturePeak > 0.01
                 ? "input level"
-                : "no audio — check routing"}
+                : "waiting for audio"}
             </span>
           </div>
         )}

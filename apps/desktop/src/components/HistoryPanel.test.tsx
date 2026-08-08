@@ -48,6 +48,9 @@ function renderPanel(
     onRenameSession?: (id: string, name: string) => void;
     onDeleteSession?: (id: string) => void;
     onClearSession?: (id: string) => void;
+    separatedState?: "idle" | "starting" | "listening" | "stopping" | "error";
+    onStartSeparated?: () => Promise<string | null>;
+    onStopSeparated?: () => Promise<void>;
   } = {},
 ) {
   return render(
@@ -64,6 +67,9 @@ function renderPanel(
       onToggleMic={vi.fn()}
       onSendChat={vi.fn()}
       onOpenYouConfig={vi.fn()}
+      separatedState={handlers.separatedState ?? "idle"}
+      onStartSeparated={handlers.onStartSeparated ?? vi.fn()}
+      onStopSeparated={handlers.onStopSeparated ?? vi.fn()}
     />,
   );
 }
@@ -528,5 +534,47 @@ describe("HistoryPanel first-of-speaker log line", () => {
     ]);
     expect(screen.queryByText("120 ms")).toBeNull();
     expect(screen.queryByText("Team")).toBeNull();
+  });
+});
+
+describe("HistoryPanel separated live controls", () => {
+  it("shows Start when idle and starts the separated session", async () => {
+    const onStartSeparated = vi.fn().mockResolvedValue(null);
+    renderPanel([session()], {
+      separatedState: "idle",
+      onStartSeparated,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
+    await waitFor(() => {
+      expect(onStartSeparated).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("shows Stop while listening and stops the separated session", async () => {
+    const onStopSeparated = vi.fn().mockResolvedValue(undefined);
+    renderPanel([session()], {
+      separatedState: "listening",
+      onStopSeparated,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^stop$/i }));
+    await waitFor(() => {
+      expect(onStopSeparated).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("surfaces the separated start error inline", async () => {
+    const onStartSeparated = vi
+      .fn()
+      .mockResolvedValue("Pick a microphone in the config dialog first.");
+    renderPanel([session()], {
+      separatedState: "idle",
+      onStartSeparated,
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("Pick a microphone in the config dialog first."),
+      ).toBeInTheDocument();
+    });
   });
 });

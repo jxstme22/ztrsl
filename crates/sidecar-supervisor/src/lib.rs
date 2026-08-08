@@ -26,6 +26,10 @@ const IO_TIMEOUT: Duration = Duration::from_secs(2);
 
 const CLIP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LIVE_START_TIMEOUT: Duration = Duration::from_secs(3 * 60);
+/// Bounded wait for one-shot typed-chat translation. Model loading happens
+/// in the sidecar's worker thread, so a cold NLLB load is the slow path; a
+/// wedged sidecar must never hold the chat lock for CLIP_TIMEOUT.
+const CHAT_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Default source id used by the single-source fake roundtrip (v2). The
 /// real app always sends the source's own immutable id.
@@ -412,7 +416,10 @@ impl SidecarSupervisor {
 
     /// Push the session's source registry (v2 sessions only, right after
     /// `live.start`). The sidecar resolves `source.presentation.update`
-    /// targets against it.
+    /// targets against it. The sidecar builds per-source translation
+    /// providers inside this handler (e.g. the you-mic's reversed direction),
+    /// so the first push can take as long as a cold model load — the read
+    /// must not use the 2s IO_TIMEOUT or the session dies with a WouldBlock.
     pub fn push_source_registry(
         &mut self,
         sources: Vec<SourceRegistryEntry>,
@@ -433,7 +440,15 @@ impl SidecarSupervisor {
         };
         self.next_sequence = self.next_sequence.saturating_add(1);
         write_json(&mut self.socket, &request)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(LIVE_START_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
         let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
+        self.socket
+            .get_ref()
+            .set_read_timeout(Some(IO_TIMEOUT))
+            .map_err(SupervisorError::Io)?;
         if response.message_type == "source.registry.error" {
             return Err(SupervisorError::Protocol(error_message(
                 &response.payload,
@@ -1109,7 +1124,7 @@ impl SidecarSupervisor {
         write_json(&mut self.socket, &request)?;
         self.socket
             .get_ref()
-            .set_read_timeout(Some(CLIP_TIMEOUT))
+            .set_read_timeout(Some(CHAT_TIMEOUT))
             .map_err(SupervisorError::Io)?;
         let response: Envelope<serde_json::Value> = read_json(&mut self.socket)?;
         self.socket
@@ -1959,5 +1974,140 @@ mod registry_wire_tests {
             ])
             .expect("app-shaped registry must be accepted");
         supervisor.stop();
+    }
+}
+
+#[cfg(test)]
+mod separated_live_repro_tests {
+    use super::*;
+
+    /// Mimics the separated-live (history page) session: the YOU mic source
+    /// declares its own target language + provider; audio for that source
+    /// must produce captions. Regression check for "separated live says
+    /// listening but mic shows nothing".
+    #[test]
+    fn you_source_with_per_source_direction_produces_captions() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        assert_eq!(supervisor.negotiated_version, PROTOCOL_V2);
+        supervisor
+            .push_source_registry(vec![SourceRegistryEntry {
+                source_id: "00000000000000000000000000000000".to_owned(),
+                display_name: "You".to_owned(),
+                caption_tag: "YOU".to_owned(),
+                capture_target: serde_json::json!({
+                    "kind": "endpoint",
+                    "endpoint_id": "you-mic",
+                    "loopback": false,
+                }),
+                language_profile: "chinese".to_owned(),
+                strictness: CaptionStrictness::Off,
+                label_style: CaptionLabelStyle::Brackets,
+                color: Some("#dc4d5e".to_owned()),
+                priority: 100,
+                source_origin: "physical_microphone".to_owned(),
+                language_config: None,
+                target_language: Some("en".to_owned()),
+                translation_provider: Some("nllb".to_owned()),
+            }])
+            .expect("you-source registry must be accepted");
+        supervisor
+            .start_live(
+                "chinese", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
+            .expect("live must start");
+        for i in 0..3u64 {
+            supervisor
+                .send_live_audio_for_source(
+                    1_000_000 + i * 300_000,
+                    "00000000000000000000000000000000",
+                    vec![0.25; 4_800],
+                )
+                .expect("you audio must be accepted");
+        }
+        supervisor.stop_live().expect("live must stop");
+        supervisor.stop();
+    }
+}
+
+#[cfg(test)]
+#[cfg(test)]
+mod full_flow_repro_tests {
+    use super::*;
+
+    /// Full user flow: main live (own process) -> separated live attaches
+    /// to the SAME process -> YOU mic source with its own target language
+    /// -> captions must flow -> chat must still work.
+    #[test]
+    fn full_flow_main_live_plus_separated_you_source_and_chat() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        // Chat (dedicated process like ChatRuntime).
+        let mut chat = SidecarSupervisor::start(&config).expect("chat sidecar");
+        chat.translate_text("hello", "english", "zh", "demo")
+            .expect("chat before");
+
+        // Main live on its own process (like LiveRuntime -> pool).
+        let mut main_live = SidecarSupervisor::start(&config).expect("main live sidecar");
+        main_live
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
+            .expect("main live must start");
+
+        // Separated live attaches to the SAME process as main live (pool).
+        let mut separated =
+            SidecarSupervisor::attach(main_live.shared_process()).expect("separated attach");
+        separated
+            .push_source_registry(vec![SourceRegistryEntry {
+                source_id: "00000000000000000000000000000000".to_owned(),
+                display_name: "You".to_owned(),
+                caption_tag: "YOU".to_owned(),
+                capture_target: serde_json::json!({
+                    "kind": "endpoint",
+                    "endpoint_id": "you-mic",
+                    "loopback": false,
+                }),
+                language_profile: "chinese".to_owned(),
+                strictness: CaptionStrictness::Off,
+                label_style: CaptionLabelStyle::Brackets,
+                color: Some("#dc4d5e".to_owned()),
+                priority: 100,
+                source_origin: "physical_microphone".to_owned(),
+                language_config: None,
+                target_language: Some("en".to_owned()),
+                translation_provider: Some("nllb".to_owned()),
+            }])
+            .expect("you registry");
+        separated
+            .start_live(
+                "chinese", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
+            .expect("separated live must start");
+        for i in 0..3u64 {
+            separated
+                .send_live_audio_for_source(
+                    1_000_000 + i * 300_000,
+                    "00000000000000000000000000000000",
+                    vec![0.25; 4_800],
+                )
+                .expect("you audio");
+        }
+        separated.stop_live().expect("separated stop");
+
+        // Chat must still work after the separated session ended.
+        let final_chat = chat
+            .translate_text("still here", "english", "zh", "demo")
+            .expect("chat after");
+        assert!(!final_chat.translated_text.is_empty());
+        main_live.stop_live().expect("main stop");
+        chat.stop();
     }
 }
