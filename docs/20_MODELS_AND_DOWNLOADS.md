@@ -10,8 +10,25 @@ with SHA-256 verification.
   Runs on CUDA when available, CPU fallback otherwise.
 
 Alternatives: **Whisper large-v3** (full, ~3.1 GB), **MADLAD-400 3B**
-(slower CPU translation, selectable), and **Omni CTC** / **NCSpeech** CTC
-exports for fixed-language recognition.
+(slower CPU translation, selectable), **FunASR Paraformer zh (streaming)**
+(Mandarin/English streaming ASR via sherpa-onnx, ~237 MB, int8),
+**SenseVoice Small** (multilingual zh/en/ja/ko/yue ASR via sherpa-onnx,
+~239 MB int8, auto language detection), **Helsinki opus-mt (en→zh)** and
+**Helsinki opus-mt (zh→en)** (English↔Chinese translation via CTranslate2
+int8, ~158 MB each, Apache-2.0 — commercially usable; NLLB is CC-BY-NC.
+On CUDA the int8 weights run dequantized float16 for best-quality
+inference), and **Omni CTC** / **NCSpeech** CTC exports for fixed-language
+recognition.
+
+The Paraformer, SenseVoice and opus-mt entries pin the original model weights
+(FunASR `paraformer-zh-streaming`, FunAudioLLM `SenseVoiceSmall`,
+Helsinki-NLP `opus-mt-en-zh`/`opus-mt-zh-en` — all Apache-2.0) in their
+runtime's expected format: the sherpa-onnx ONNX exports of the same weights
+for the two ASR models, and CTranslate2 conversions for opus-mt. Original
+repositories ship PyTorch/Marian weights only, which the local runtimes
+cannot load. The opus-mt conversions are int8-quantized (the only published
+CTranslate2 format); on CUDA the provider dequantizes them to float16 at
+load, giving near-full-precision quality.
 
 ## Capabilities and VRAM
 

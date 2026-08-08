@@ -299,16 +299,24 @@ mod tests {
     }
 
     #[test]
-    fn archive_entries_carry_full_url() {
+    fn github_archives_are_mirrored_on_hugging_face() {
+        // Both models were originally GitHub release archives, which are
+        // unreachable for mainland-China users (the hf-mirror chain only
+        // rewrites huggingface.co URLs). They now download file-by-file
+        // from the official sherpa-onnx Hugging Face mirrors, where every
+        // artifact was verified byte-identical to the GitHub archive.
         let catalog = ModelCatalog::embedded();
-        let entry = catalog.entry("omni-ctc-300m-int8").unwrap();
-        let archive = entry.archive.as_ref().expect("archive entry");
-        assert!(archive.url.ends_with(".tar.bz2"));
-        assert!(
-            archive
-                .extract_only
-                .contains(&"model.int8.onnx".to_string())
-        );
+        for id in ["omni-ctc-300m-int8", "paraformer-zh-streaming"] {
+            let entry = catalog.entry(id).expect("entry");
+            assert!(entry.archive.is_none(), "{id} must not use a GitHub archive");
+            assert!(!entry.files.is_empty(), "{id} must have files");
+            assert!(entry.source.starts_with("https://huggingface.co/"));
+            assert_eq!(
+                entry.files.iter().map(|f| f.size_bytes).sum::<u64>(),
+                entry.download_size_bytes,
+                "{id} download size must match its files"
+            );
+        }
     }
 
     #[test]

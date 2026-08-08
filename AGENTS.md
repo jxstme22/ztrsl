@@ -93,6 +93,11 @@ One-time, from the workspace root:
    (Parakeet-CTC 0.6B Mandarin from `nvidia/parakeet-ctc-0.6b-zh-cn`,
    gated repo — run `huggingface-cli login` first; 17k hours zh-CN,
    `ncspeech-zh-parakeet` provider, ~2.5 GB archive). All are CC-BY-4.0.
+   SenseVoice Small (zh/en/ja/ko/yue, `sensevoice-small` provider) is a normal
+   catalog model installed from the Models page — no export step needed; the
+   sidecar runs it via `sherpa_onnx.OfflineRecognizer.from_sense_voice`
+   against the pinned `csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`
+   export (Apache-2.0, FunASR MODEL_LICENSE).
 4. The `translation-runner` Rust binary is rebuilt automatically by the Tauri
    `beforeDev`/`beforeBuild` hooks via `scripts/ensure-translation-runner.mjs`.
    After a manual `cargo clean`, the first `pnpm tauri dev`/`pnpm tauri build`

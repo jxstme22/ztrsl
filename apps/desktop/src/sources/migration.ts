@@ -1,6 +1,48 @@
 import type { OverlaySettings } from "../overlay/model";
-import { defaultSourceConfig, type SourceConfigs } from "./model";
+import {
+  DEFAULT_SOURCE_ORIGIN,
+  defaultSourceConfig,
+  profileToLanguageConfig,
+  type AudioSourceConfig,
+  type SourceConfigs,
+} from "./model";
 import { createSourceId } from "./identity";
+
+/** v3 schema shape (pre-DS-200/201) used only for migration parsing. */
+type V3SourceConfig = Omit<
+  AudioSourceConfig,
+  "sourceOrigin" | "languageConfig"
+>;
+
+type V3Configs = {
+  schemaVersion: 3;
+  sources: V3SourceConfig[];
+};
+
+/**
+ * DS-204: v3 → v4 migration. Adds `sourceOrigin` (safe generic default —
+ * most sources route through a virtual cable) and `languageConfig`
+ * (deterministic adapter from the stored language profile; unknown
+ * profiles would have failed v3 validation, so full_auto is unreachable
+ * from real data but stays the safe fallback). Preserves every existing
+ * field; idempotent (v4 documents pass through untouched).
+ */
+export function migrateFromV03(configs: V3Configs | SourceConfigs): SourceConfigs {
+  if (configs.schemaVersion === 4) {
+    return configs;
+  }
+  return {
+    schemaVersion: 4,
+    sources: configs.sources.map((source) => {
+      const legacy = source;
+      return {
+        ...legacy,
+        sourceOrigin: DEFAULT_SOURCE_ORIGIN,
+        languageConfig: profileToLanguageConfig(legacy.languageProfile),
+      };
+    }),
+  };
+}
 
 /**
  * v0.2 → v3 migration (spec §1.4, Phase 1).
@@ -40,7 +82,7 @@ export function migrateFromV02(
   }
 
   return {
-    configs: { schemaVersion: 3, sources: [source] },
+    configs: { schemaVersion: 4, sources: [source] },
     migrated: true,
   };
 }

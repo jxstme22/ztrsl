@@ -1,6 +1,6 @@
-# xTRSNLTR
+# yTRSL
 
-**Real-time English subtitles for your VALORANT voice chat — 100% local.**
+**Real-time subtitles for your VALORANT voice chat — 100% local.**
 
 Hear Tagalog, Cebuano, Chinese, Indonesian, Vietnamese, Thai, or Malay
 callouts, *read* them in English (or your chosen language) as they happen,
@@ -18,7 +18,7 @@ and never send a second of audio to the cloud.
 ## What it does
 
 ```
-"Rush B!"            xTRSNLTR               "Rush B!" → "Rush B!"
+"Rush B!"            yTRSL               "Rush B!" → "Rush B!"
 (Tagalog voice)  ─────────────►  (English subtitle on screen)
 ```
 
@@ -31,16 +31,18 @@ and never send a second of audio to the cloud.
 - Shows a **transparent, click-through overlay** above your game: a live
   caption bar, or a **chat-history panel** (newest at the bottom, capped at
   your chosen 5/10/default rows).
-- Handles **multiple channels at once** — `[TEAM]` and `[DISCORD]` lanes, each
-  with its own language profile.
+- Runs **multiple sources at once** — capture your whole team's mix as one
+  stream or several streams at the same time: `[TEAM]`, `[DISCORD]`,
+  `[PARTY]` lanes, each with its own device, language profile, and caption
+  tag, all in a single live session.
 
 It never touches the game: no injection, no memory reads, no automation.
 [Why that matters ↓](#safety-first-by-design)
 
 > **Download:** get the Windows installer or macOS app from
 > [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
-> **Status:** beta. It works end-to-end; code signing + clean-machine tests
-> are the remaining 1.0 work.
+> **Status:** beta (v0.7). It works end-to-end; code signing + clean-machine
+> tests are the remaining 1.0 work.
 
 ---
 
@@ -106,7 +108,7 @@ flowchart TB
     V[VALORANT voice chat]
   end
 
-  subgraph xTRSNLTR desktop
+  subgraph yTRSL desktop
     C[Audio capture<br/>WASAPI / virtual cable]
     R[16 kHz mono ring buffer]
     O[Transparent overlay window]
@@ -116,7 +118,7 @@ flowchart TB
   subgraph Local inference sidecar
     VAD[VAD + utterance segmentation]
     ASR[Whisper ASR]
-    MT[NLLB / MADLAD translation]
+    MT[NLLB / MADLAD / opus-mt translation]
     SCHED[Shared priority scheduler]
   end
 
@@ -159,19 +161,19 @@ output for the session on the **Live** tab.
 
 ---
 
-## VB-CABLE: how voice chat reaches xTRSNLTR
+## VB-CABLE: how voice chat reaches yTRSL
 
 A **virtual audio cable** is a free, user-installed Windows driver that acts as
 a "software wire": whatever an app plays to its **Input** can be *captured*
-from its **Output**. That's how xTRSNLTR hears exactly the voice-chat mix —
-and nothing else.
+from its **Output**. That's how yTRSL hears exactly the voice-chat mix — and
+nothing else.
 
 ```mermaid
 flowchart TB
   subgraph Your PC
     VC[VALORANT voice chat] --> CI["CABLE Input<br/>(virtual cable)"]
     DC[Discord voice chat] --> CI
-    CO["CABLE Output"] --> APP["xTRSNLTR audio core"]
+    CO["CABLE Output"] --> APP["yTRSL audio core"]
     APP --> HP[("Headphones")]
   end
   GAME[VALORANT game audio] --> HP
@@ -189,24 +191,60 @@ Your teammates' voices now play *into the cable only*.
 
 **3. VALORANT game audio → headphones** — in VALORANT `Settings → Audio`,
 keep **Speaker / Output Device** on your **headphones**. Game effects must
-never go to the cable, or xTRSNLTR will hear explosions as speech.
+never go to the cable, or yTRSL will hear explosions as speech.
 
 **4. Discord voice → the same cable** (or a second one) — in Discord
 `Settings → Voice & Video`, set **Output Device** to **CABLE Input**. Route
 Discord and VALORANT into the same cable to treat them as one source, or use a
-second cable (paid VB-CABLE product) for a separate `[DISCORD]` lane.
+second cable for a separate `[DISCORD]` lane.
 
-**5. Headphones — keep hearing your team** — because voice now plays into the
-cable, xTRSNLTR **monitors** it back to you: in xTRSNLTR **Setup**, set the
-**monitoring output** to your **headphones** and turn monitoring on. Avoid
-echo by letting xTRSNLTR be the *only* path replaying voice to your headset.
+**5. Keep hearing your team** — because voice now plays into the cable, turn
+on **Monitor source** for the source on the **Sources** page and pick your
+**headphones** as the headphone output (blend 100%). Avoid echo by letting
+yTRSL be the *only* path replaying voice to your headset.
 
 **6. Sanity check** — in **Diagnostics**, run **Isolation check**. When only
 game sounds play and nobody speaks, the voice capture meter should stay
 near-silent. If it jumps, game audio is leaking into the cable.
 
-> VB-CABLE is a **separate install** — xTRSNLTR never bundles, installs, or
+> VB-CABLE is a **separate install** — yTRSL never bundles, installs, or
 > patches the driver; it only detects and routes to it when you choose to.
+
+> **Mainland China?** All catalog models download from pinned Hugging Face
+> mirrors with automatic `hf-mirror.com → modelscope.cn` failover (set
+> `LST_REGION=cn` or pick the mirror in the Models tab). No GitHub-hosted
+> artifacts are used.
+
+---
+
+## Multi-source live: one session, many lanes
+
+Configure every channel you care about on the **Sources** page — each with its
+own device (cable, mic, or loopback), **caption tag** (`TEAM`, `DISCORD`, …),
+**language profile**, and color. Then on the **Live** tab switch **Capture
+mode → All sources** and start listening: yTRSL captures every configured
+source simultaneously, VADs and translates each independently, and every
+caption lands with its own tag in the overlay and History.
+
+```mermaid
+flowchart LR
+  A[TEAM channel] --> P1[Tagalog profile] --> O[(Overlay lane 1)]
+  B[DISCORD channel] --> P2[Cebuano profile] --> O2[(Overlay lane 2)]
+  C[Party channel] --> P3[Mandarin profile] --> O3[(Overlay lane 3)]
+```
+
+Each source picks a **language profile** and a **strictness**:
+
+- **Profiles:** Tagalog · Taglish · Cebuano · Bislish · Mandarin ·
+  Chinese/English · Auto
+- **Strictness:** Off (accept everything) · Balanced (filter clear misses) ·
+  Strict (suppress anything off-profile)
+- **Tactical callouts** (`rush B`, `rotate A`, numbers) always pass, even under
+  Strict — the glossary treats them as data.
+
+> All sources share one ASR/translation model, so more sources mean more
+> inference load — fine on CUDA; use the `balanced` resource profile on
+> CPU-only machines.
 
 ---
 
@@ -229,26 +267,6 @@ sequenceDiagram
 
 Provisionals stream **while** someone talks; the final replaces them the moment
 the utterance closes. Multiple sources each get their own lane.
-
----
-
-## Multi-source, per language
-
-```mermaid
-flowchart LR
-  A[TEAM channel] --> P1[Tagalog profile] --> O[(Overlay lane 1)]
-  B[DISCORD channel] --> P2[Cebuano profile] --> O2[(Overlay lane 2)]
-  C[Party channel] --> P3[Mandarin profile] --> O3[(Overlay lane 3)]
-```
-
-Each source picks a **language profile** and a **strictness**:
-
-- **Profiles:** Tagalog · Taglish · Cebuano · Bislish · Mandarin ·
-  Chinese/English · Auto
-- **Strictness:** Off (accept everything) · Balanced (filter clear misses) ·
-  Strict (suppress anything off-profile)
-- **Tactical callouts** (`rush B`, `rotate A`, numbers) always pass, even under
-  Strict — the glossary treats them as data.
 
 ---
 
@@ -283,12 +301,12 @@ That keeps it outside Vanguard's scope and makes the privacy story simple:
 │   ├── audio-core/         WASAPI capture/playback, resampling, routing
 │   ├── model-manager/      verified staged model installs (multi-provider)
 │   ├── ipc-protocol/       loopback WebSocket IPC schema
-│   ├── sidecar-supervisor/ Python-sidecar lifecycle
+│   ├── sidecar-supervisor/ Python-sidecar lifecycle + crash recovery
 │   ├── translation-runner/ Rust (candle) MADLAD-400 runner
 │   ├── overlay-core/       caption state machine
 │   └── diagnostics/        content-free diagnostics
 ├── services/inference/    Python sidecar: VAD, ASR, MT
-├── scripts/               model installers, build helpers, validation harnesses
+├── scripts/               model installers, build helpers, CI smoke harness
 ├── models/catalog.json    pinned, checksummed download catalog (embedded)
 └── docs/                  PRD, architecture, ADRs, phase evidence
 ```
@@ -348,13 +366,16 @@ Can't reach Hugging Face? The Models tab can use `hf-mirror.com` (or
 
 Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
-| Model | Kind | License |
-|---|---|---|
-| faster-whisper large-v3 / turbo | ASR | MIT |
-| MLX Whisper large-v3-turbo q4 (macOS) | ASR | MIT |
-| OmniLingual CTC 300M | ASR | Apache-2.0 |
-| NLLB-200 distilled 600M | Translation | **CC-BY-NC-4.0** (non-commercial) |
-| MADLAD-400 3B | Translation | Apache-2.0 |
+| Model | Kind | Runtime | License |
+|---|---|---|---|
+| faster-whisper large-v3 / turbo | ASR | CTranslate2 | MIT |
+| MLX Whisper large-v3-turbo q4 (macOS) | ASR | MLX | MIT |
+| OmniLingual CTC 300M | ASR | sherpa-onnx | Apache-2.0 |
+| FunASR Paraformer zh (streaming) | ASR | sherpa-onnx | Apache-2.0 |
+| SenseVoice Small (zh/en/ja/ko/yue) | ASR | sherpa-onnx | Apache-2.0 |
+| Helsinki opus-mt (en→zh, zh→en) | Translation | CTranslate2 | Apache-2.0 |
+| NLLB-200 distilled 600M | Translation | CTranslate2 | **CC-BY-NC-4.0** (non-commercial) |
+| MADLAD-400 3B | Translation | candle | Apache-2.0 |
 
 ---
 
@@ -379,14 +400,16 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## Roadmap to 1.0
 
-Current release: **v0.6.4** (beta — Windows 11 + macOS, 7-language matrix,
-chat-history overlay, full i18n). Working toward 1.0:
+Current release: **v0.7.0** (beta — Windows 11 + macOS, 7-language matrix,
+chat-history overlay, full i18n, multi-source live). Working toward 1.0:
 
 - [x] macOS support (Apple Silicon, MLX Metal ASR)
 - [x] full English/Chinese i18n
 - [x] live caption + chat-history overlay with per-source colors
 - [x] 7-language source × output matrix
 - [x] move/customize overlay controls on the Live tab
+- [x] multi-source live sessions (per-source capture + tags)
+- [x] Windows sidecar crash auto-recovery
 - [ ] code signing (Windows SmartScreen, macOS notarization)
 - [ ] clean-machine installer walkthrough (the last hardware gate)
 - [ ] native-speaker accuracy benchmarks (Tagalog/Cebuano)
@@ -395,7 +418,7 @@ chat-history overlay, full i18n). Working toward 1.0:
 
 ## License
 
-Copyright (c) 2026 the xTRSNLTR contributors. Licensed under the
+Copyright (c) 2026 the yTRSL contributors. Licensed under the
 [Apache License 2.0](LICENSE).
 
 *VALORANT is a trademark of Riot Games, Inc. This project is not affiliated

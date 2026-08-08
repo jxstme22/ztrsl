@@ -149,10 +149,10 @@ export function AccuracyLabPanel() {
               setSourceMode(value);
             }}
             options={[
-              { value: "mixed", label: "Tagalog-first mixed / code-switched" },
-              { value: "filipino", label: "Filipino / Taglish" },
-              { value: "cebuano", label: "Cebuano / Bislish" },
-              { value: "chinese", label: "Chinese (Mandarin/Cantonese)" },
+              { value: "mixed", label: "Tagalog-first" },
+              { value: "filipino", label: "Filipino" },
+              { value: "cebuano", label: "Cebuano" },
+              { value: "chinese", label: "Chinese" },
             ]}
           />
         </div>
@@ -170,7 +170,7 @@ export function AccuracyLabPanel() {
                 value: ACCURACY_CONFIGS.slice(0, 2)
                   .map((config) => config.label)
                   .join(","),
-                label: "Recommended pair (Turbo + NLLB, Full + NLLB)",
+                label: "Recommended",
               },
               {
                 value: ACCURACY_CONFIGS.map((config) => config.label).join(","),
@@ -196,7 +196,7 @@ export function AccuracyLabPanel() {
 
       <div className="action-row">
         <button
-          className="button primary"
+          className="button primary btn-shine"
           type="button"
           disabled={path === null || chosen.length === 0 || state === "running"}
           aria-busy={state === "running"}

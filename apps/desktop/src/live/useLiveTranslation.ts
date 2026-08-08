@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CaptionPayload } from "../ipc/model";
 import type { Caption } from "../overlay/model";
+import type { LiveSourceRequest } from "./bridge";
 import { readingDurationMs } from "../overlay/reducer";
 import { loadSourceConfigs } from "../sources/storage";
 import {
@@ -27,6 +28,10 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
   const [sessionEndpointId, setSessionEndpointId] = useState<string | null>(
     null,
   );
+  // History session the live pipeline appends into. A hint from the caller
+  // (a kept-open session id) is reused as-is; otherwise a fresh id is born
+  // when the user starts live translation.
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const running = useRef(false);
   const polling = useRef(false);
   const onCaptionRef = useRef(onCaption);
@@ -68,6 +73,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
           (payload.status === "final"
             ? readingDurationMs(payload.english_text)
             : 4_000),
+        latencyMs: payload.capture_to_caption_ms,
         source:
           payload.source_id === undefined ||
           payload.source_snapshot === undefined
@@ -141,11 +147,17 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       asrProvider: AsrProvider,
       translationProvider: TranslationProvider,
       vadSensitivity = 50,
+      segmentation: "chunk" | "balanced" | "sentence" = "balanced",
+      sources: LiveSourceRequest[] = [],
+      sessionIdHint: string | null = null,
     ) => {
       setState("starting");
       setError(null);
       setLastCaption(null);
       setSessionEndpointId(endpointId);
+      // Reuse a kept-open session when the caller asks for one, otherwise
+      // start a fresh history session for this live run.
+      setSessionId(sessionIdHint ?? `sess-${String(Date.now())}`);
       try {
         applySnapshot(
           await startLiveTranslation(
@@ -158,12 +170,15 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
             asrProvider,
             translationProvider,
             vadSensitivity,
+            segmentation,
+            sources,
           ),
         );
       } catch (cause) {
         running.current = false;
         setState("error");
         setError(cause instanceof Error ? cause.message : String(cause));
+        setSessionId(null);
       }
     },
     [applySnapshot],
@@ -177,6 +192,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
       setState("idle");
       setError(null);
       setSessionEndpointId(null);
+      setSessionId(null);
     } catch (cause) {
       setState("error");
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -187,6 +203,7 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
     error,
     lastCaption,
     sessionEndpointId,
+    sessionId,
     snapshot,
     start,
     state,

@@ -113,10 +113,10 @@ export function ClipLabPanel() {
               setSourceMode(value as SourceMode);
             }}
             options={[
-              { value: "mixed", label: "Tagalog-first mixed / code-switched" },
-              { value: "filipino", label: "Filipino / Taglish" },
-              { value: "cebuano", label: "Cebuano / Bislish" },
-              { value: "chinese", label: "Chinese (Mandarin/Cantonese)" },
+              { value: "mixed", label: "Tagalog-first" },
+              { value: "filipino", label: "Filipino" },
+              { value: "cebuano", label: "Cebuano" },
+              { value: "chinese", label: "Chinese" },
             ]}
           />
         </div>

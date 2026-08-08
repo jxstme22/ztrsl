@@ -1,0 +1,26 @@
+name: Smoke new models (Windows)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-windows:
+    name: Smoke new models
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          # No cache: a stale/corrupt cached onnxruntime wheel has been seen
+          # serving a mismatched onnxruntime.dll (module 1.27.0, DLL 1.17.1)
+          # which crashes sherpa-onnx model loads.
+          enable-cache: false
+
+      - name: Install Python sidecar dependencies
+        run: uv sync --extra dev --extra models --no-cache
+
+      - name: Smoke sensevoice + opus-mt (real providers)
+        shell: pwsh
+        run: |
+          .venv\Scripts\python.exe scripts/ci_smoke_models.py all

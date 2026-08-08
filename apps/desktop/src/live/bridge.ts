@@ -11,6 +11,8 @@ let browserListening = false;
 export type TranslationProvider =
   | "nllb"
   | "madlad"
+  | "opus-mt-en-zh"
+  | "opus-mt-zh-en"
   | "nvidia-riva-4b"
   | "nvidia-riva-1.6b"
   | "libretranslate"
@@ -28,6 +30,8 @@ export type AsrProvider =
   | "ncspeech"
   | "ncspeech-zh"
   | "ncspeech-zh-parakeet"
+  | "paraformer-zh-streaming"
+  | "sensevoice-small"
   | "nvidia-whisper-large-v3"
   | "nvidia-nemotron-asr-streaming"
   | "nvidia-parakeet-1.1b"
@@ -54,8 +58,25 @@ export type SourceMode =
   | "thai"
   | "malay";
 
-export type TargetLanguage =
-  "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
+export type TargetLanguage = "en" | "zh" | "fil" | "ind" | "vie" | "tha" | "zsm";
+
+export type LiveSourceRequest = {
+  sourceId: string;
+  endpointId: string;
+  displayName: string;
+  captionTag: string;
+  languageProfile: string;
+  strictness?: string;
+  labelStyle?: string;
+  color?: string | null;
+  priority?: number;
+  sourceOrigin?: string;
+  languageConfig?: {
+    primaryLanguage: string | null;
+    secondaryLanguages: string[];
+    detectionMode: string;
+  } | null;
+};
 
 export async function startLiveTranslation(
   endpointId: string,
@@ -67,6 +88,8 @@ export async function startLiveTranslation(
   asrProvider: AsrProvider,
   translationProvider: TranslationProvider,
   vadSensitivity = 50,
+  segmentation: "chunk" | "balanced" | "sentence" = "balanced",
+  sources: LiveSourceRequest[] = [],
 ): Promise<LiveSnapshot> {
   if (!isTauri()) {
     browserListening = true;
@@ -93,6 +116,8 @@ export async function startLiveTranslation(
         resourceProfile: "quality",
         monitorEnabled,
         vadSensitivity,
+        segmentation,
+        sources,
       },
     }),
   );

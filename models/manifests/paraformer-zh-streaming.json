@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "paraformer-zh-streaming",
+  "kind": "asr",
+  "runtime": "sherpa-onnx",
+  "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2",
+  "revision": "2024-03-10",
+  "license": {
+    "spdx": "Apache-2.0"
+  },
+  "archive": {
+    "path": "sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2",
+    "size_bytes": 1047319737,
+    "sha256": "5462a1fce42693deae572af1e8c4687124b12aa85fe61ff4d3168bb5280e205f"
+  },
+  "artifacts": [
+    {
+      "role": "encoder",
+      "path": "encoder.int8.onnx",
+      "size_bytes": 165462184,
+      "sha256": "81a70226a8934e6ed92aa1d4fc486b428b5398e2f2619ed4897b7294cab90e9a"
+    },
+    {
+      "role": "decoder",
+      "path": "decoder.int8.onnx",
+      "size_bytes": 71664561,
+      "sha256": "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f"
+    },
+    {
+      "role": "tokens",
+      "path": "tokens.txt",
+      "size_bytes": 75756,
+      "sha256": "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6"
+    },
+    {
+      "role": "readme",
+      "path": "README.md",
+      "size_bytes": 415,
+      "sha256": "16b56210f03531d00f5580b060ff6843461e618e5642c070a58df6f0a5c98875"
+    }
+  ]
+}

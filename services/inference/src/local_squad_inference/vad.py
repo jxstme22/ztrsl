@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -69,6 +69,40 @@ def vad_config_from_sensitivity(sensitivity: int) -> VadConfig:
         pre_roll_ms=180,
         min_silence_ms=max(150, min_silence_ms),
         max_utterance_ms=12_000,
+    )
+
+
+# Caption segmentation styles: how long a pause must be before a spoken
+# chunk becomes a final caption, and how long one utterance may grow.
+#   - chunk:    short callouts land fast (gaming comms; 240 ms pause)
+#   - balanced: the sensitivity-slider silence (default)
+#   - sentence: complete sentences, long pauses (900 ms) and utterances up
+#               to 30 s so a slow speaker is never cut mid-sentence
+SEGMENTATION_OPTIONS: tuple[str, ...] = ("chunk", "balanced", "sentence")
+SEGMENTATION_MIN_SILENCE_MS: dict[str, int] = {"chunk": 240, "sentence": 900}
+SEGMENTATION_MAX_UTTERANCE_MS: dict[str, int] = {"sentence": 30_000}
+
+
+def apply_segmentation(config: VadConfig, segmentation: str) -> VadConfig:
+    """Override a VAD config's segmentation timing. Unknown or "balanced"
+    keeps the caller's (sensitivity-derived) values."""
+    if (
+        segmentation not in SEGMENTATION_MIN_SILENCE_MS
+        and segmentation not in SEGMENTATION_MAX_UTTERANCE_MS
+    ):
+        return config
+    return replace(
+        config,
+        **(
+            {
+                "min_silence_ms": SEGMENTATION_MIN_SILENCE_MS.get(
+                    segmentation, config.min_silence_ms
+                ),
+                "max_utterance_ms": SEGMENTATION_MAX_UTTERANCE_MS.get(
+                    segmentation, config.max_utterance_ms
+                ),
+            }
+        ),
     )
 
 
@@ -314,3 +348,69 @@ class EnergyUtteranceManager:
             forced_end=forced,
             source_id=self.namespace or None,
         )
+
+
+# --- DS-400: named VAD profiles ---------------------------------------------
+# A catalog that produces low-level VadConfig values; users pick a use case,
+# not raw timings (Advanced Mode keeps the sensitivity slider).
+
+
+@dataclass(frozen=True)
+class VadProfile:
+    id: str
+    display_name: str
+    config: VadConfig
+
+
+def _profile_config(
+    *,
+    pre_roll_ms: int,
+    min_silence_ms: int,
+    max_utterance_ms: int,
+) -> VadConfig:
+    return VadConfig(
+        pre_roll_ms=pre_roll_ms,
+        min_silence_ms=min_silence_ms,
+        max_utterance_ms=max_utterance_ms,
+    )
+
+
+VAD_PROFILES: dict[str, VadProfile] = {
+    "fast_callouts": VadProfile(
+        "fast_callouts",
+        "Fast callouts (games)",
+        _profile_config(
+            pre_roll_ms=320,
+            min_silence_ms=450,
+            max_utterance_ms=12_000,
+        ),
+    ),
+    "natural_conversation": VadProfile(
+        "natural_conversation",
+        "Natural conversation",
+        _profile_config(
+            pre_roll_ms=400,
+            min_silence_ms=750,
+            max_utterance_ms=25_000,
+        ),
+    ),
+    "meeting": VadProfile(
+        "meeting",
+        "Meeting",
+        _profile_config(
+            pre_roll_ms=450,
+            min_silence_ms=1_100,
+            max_utterance_ms=40_000,
+        ),
+    ),
+}
+
+
+def vad_config_for_profile(profile_id: str) -> VadConfig:
+    """Resolve a named profile; unknown ids raise ValueError so callers
+    surface a visible configuration error instead of silently using
+    defaults."""
+    profile = VAD_PROFILES.get(profile_id)
+    if profile is None:
+        raise ValueError(f"unknown VAD profile: {profile_id}")
+    return profile.config

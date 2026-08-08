@@ -42,6 +42,8 @@ export const captionSchema = z.object({
   englishText: z.string().max(500),
   createdAtMs: z.number().nonnegative(),
   expiresAtMs: z.number().nonnegative(),
+  /** End-to-end pipeline time the sidecar reported (capture → caption, ms). */
+  latencyMs: z.number().nonnegative().optional(),
   /** Source presentation snapshot when this caption came from a v2 source. */
   source: captionSourceSchema.optional(),
   certainty: captionCertaintySchema,

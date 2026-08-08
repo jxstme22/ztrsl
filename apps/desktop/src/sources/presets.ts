@@ -126,5 +126,11 @@ export function createSourceFromPreset(
     monitoring: { enabled: false, headphoneEndpointId: null, volume: 0.5 },
     languageProfile: preset.languageProfile,
     strictness: preset.strictness,
+    sourceOrigin: "virtual_voice_channel",
+    languageConfig: {
+      primaryLanguage: null,
+      secondaryLanguages: [],
+      detectionMode: "full_auto",
+    },
   };
 }

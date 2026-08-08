@@ -20,6 +20,8 @@ export type UIString = {
 const UI_STRINGS = {
   // Nav
   navLive: { en: "Live", zh: "实时" },
+  navSetup: { en: "Profile", zh: "配置文件" },
+  navAbout: { en: "About", zh: "关于" },
   navModels: { en: "Models", zh: "模型" },
   navHistory: { en: "History", zh: "历史" },
   navSources: { en: "Sources", zh: "音频源" },
@@ -29,6 +31,36 @@ const UI_STRINGS = {
   // Captions history
   historyTitle: { en: "Captions history", zh: "字幕历史" },
   historyClear: { en: "Clear", zh: "清空" },
+  historyShowTranscribed: {
+    en: "Transcribed input",
+    zh: "转写原文",
+  },
+  historySessions: { en: "Sessions", zh: "会话" },
+  historySessionPrefix: { en: "Session", zh: "会话" },
+  historyLiveSession: { en: "Live session", zh: "当前实时会话" },
+  historyRename: { en: "Rename session", zh: "重命名会话" },
+  historyRenameSave: { en: "Save name", zh: "保存名称" },
+  historyDelete: { en: "Delete session", zh: "删除会话" },
+  historyDeleteConfirm: { en: "Confirm delete?", zh: "确认删除？" },
+  historySettings: { en: "Display options", zh: "显示选项" },
+  historyShowSpeaker: { en: "Speaker names", zh: "说话人名称" },
+  historyShowTimestamp: { en: "Timestamps", zh: "时间戳" },
+  historyShowLatency: { en: "Latency", zh: "延迟" },
+  historyShowModels: { en: "Model badges", zh: "模型标签" },
+  historyCopy: { en: "Copy translation", zh: "复制译文" },
+  historySearch: { en: "Search captions", zh: "搜索字幕" },
+  historySearchEmpty: { en: "No captions match the search.", zh: "没有匹配搜索的字幕。" },
+  historyClearSession: { en: "Clear session messages", zh: "清空会话消息" },
+  historySessionEmpty: {
+    en: "This session has no finished captions yet.",
+    zh: "此会话还没有已完成的字幕。",
+  },
+  profilesTitle: { en: "Saved profiles", zh: "已保存的配置" },
+  profilesStart: { en: "Start", zh: "开始" },
+  profilesNeedAttention: {
+    en: "Needs attention",
+    zh: "需要处理",
+  },
   historyEmpty: {
     en: "No finished captions yet. Start a live session — only finalized captions are saved here.",
     zh: "暂无已完成字幕。启动实时会话后，只有最终确定的字幕会被保存到这里。",
@@ -44,15 +76,6 @@ const UI_STRINGS = {
     zh: "编辑模式 · 拖动调整位置",
   },
   overlayDragLabel: { en: "Drag caption overlay", zh: "拖动字幕悬浮窗" },
-  overlayToggleViewLabel: {
-    en: "Switch between captions and history",
-    zh: "切换字幕与历史",
-  },
-  overlayPinLabel: {
-    en: "Pin above other apps",
-    zh: "置顶于其他应用之上",
-  },
-  overlayCloseLabel: { en: "Hide caption overlay", zh: "隐藏字幕悬浮窗" },
   overlayDoneEditing: { en: "Done", zh: "完成" },
   overlayHistoryEmpty: { en: "No captions yet", zh: "暂无字幕" },
   overlayCustomize: { en: "Customize overlay", zh: "自定义悬浮窗" },
@@ -75,7 +98,7 @@ const UI_STRINGS = {
   exportBundle: { en: "Export support bundle", zh: "导出支持包" },
 
   // Welcome
-  welcomeTitle: { en: "Welcome to yTSRL", zh: "欢迎使用 yTSRL" },
+  welcomeTitle: { en: "Welcome to yTRSL", zh: "欢迎使用 yTRSL" },
   welcomeSub: {
     en: "VALORANT voice chat, captioned in English — on this PC.",
     zh: "在本机为 VALORANT 语音聊天生成英文字幕。",
@@ -334,26 +357,6 @@ const UI_STRINGS = {
   diagnosticsOldestQueued: { en: "Oldest queued", zh: "最旧排队" },
   diagnosticsAvgDelay: { en: "Avg delay", zh: "平均延迟" },
   diagnosticsMaxDelay: { en: "Max delay", zh: "最大延迟" },
-  diagnosticsScreenRecordingTitle: {
-    en: "Screen Recording permission",
-    zh: "屏幕录制权限",
-  },
-  diagnosticsScreenRecordingHint: {
-    en: "System Audio (all apps) stays silent until this app has Screen Recording permission. Open System Settings and enable yTSRL, then restart the app.",
-    zh: "在授予此应用屏幕录制权限之前，系统音频源将保持静默。请打开系统设置启用 yTSRL，然后重新启动应用。",
-  },
-  diagnosticsScreenRecordingOpen: {
-    en: "Open System Settings",
-    zh: "打开系统设置",
-  },
-  diagnosticsMicrophoneTitle: {
-    en: "Microphone permission",
-    zh: "麦克风权限",
-  },
-  diagnosticsMicrophoneHint: {
-    en: "A denied or missing microphone permission makes mic capture deliver silence with no error. Enable yTSRL under Microphone, then restart the app.",
-    zh: "如果麦克风权限被拒绝或缺失，麦克风采集将静默无声且不报错。请在麦克风设置中启用 yTSRL，然后重新启动应用。",
-  },
   diagnosticsIsolationOk: { en: "Clean", zh: "干净" },
   diagnosticsIsolationLeak: { en: "Leakage detected", zh: "检测到泄漏" },
 
@@ -407,7 +410,34 @@ const UI_STRINGS = {
     en: "Streaming shows a live preview that improves as the speaker continues; final-only waits until the utterance ends and translates the whole chunk once.",
     zh: "流式模式在说话过程中实时预览并逐步修正；仅最终模式等语句说完后一次性翻译整段。",
   },
+  liveSegmentation: { en: "Caption style", zh: "字幕分段" },
+  liveSegmentationchunk: { en: "Short chunks (fast callouts)", zh: "短句块（快速报点）" },
+  liveSegmentationbalanced: { en: "Balanced (auto)", zh: "均衡（自动）" },
+  liveSegmentationsentence: { en: "Full sentences", zh: "完整句子" },
+  liveSegmentationNotechunk: {
+    en: "Finalizes after a short pause (~0.24 s) — best for quick gaming callouts.",
+    zh: "短暂停顿（约 0.24 秒）后落定——适合快速报点。",
+  },
+  liveSegmentationNotebalanced: {
+    en: "Pause length follows the sensitivity slider.",
+    zh: "停顿长度跟随灵敏度滑块。",
+  },
+  liveSegmentationNotesentence: {
+    en: "Waits for a real pause (~0.9 s) and allows utterances up to 30 s — complete sentences, no mid-phrase cuts.",
+    zh: "等待真正停顿（约 0.9 秒），最长语句 30 秒——完整句子，不会中途截断。",
+  },
   liveStopListening: { en: "Stop listening", zh: "停止聆听" },
+  liveStopConfirmTitle: { en: "End the session?", zh: "结束此会话？" },
+  liveStopConfirmBody: {
+    en: "Stop live and end session \"{name}\"? The transcript stays in Captions history.",
+    zh: "停止实时翻译并结束会话 \"{name}\"？记录会保留在字幕历史中。",
+  },
+  liveStopConfirmBodyShort: {
+    en: "Stop live translation? The transcript stays in Captions history.",
+    zh: "停止实时翻译？记录会保留在字幕历史中。",
+  },
+  liveStopEnd: { en: "End session", zh: "结束会话" },
+  liveStopKeep: { en: "Keep open", zh: "保持开启" },
   liveLoadingModels: { en: "Loading models…", zh: "正在加载模型…" },
   liveStopping: { en: "Stopping", zh: "正在停止" },
   liveNeedsAttention: { en: "Needs attention", zh: "需要注意" },
@@ -452,6 +482,12 @@ const UI_STRINGS = {
 
   // Live API config
   liveGroqApiKey: { en: "Groq API key", zh: "Groq API 密钥" },
+  liveQuality: { en: "Quality", zh: "质量" },
+  liveQualityfast: { en: "Fast", zh: "快速" },
+  liveQualitybalanced: { en: "Balanced", zh: "均衡" },
+  liveQualitybest_quality: { en: "Best quality", zh: "最佳质量" },
+  liveQualitylow_memory: { en: "Low memory", zh: "低内存" },
+  liveAdvanced: { en: "Advanced", zh: "高级" },
   liveNvidiaApiKey: {
     en: "NVIDIA API key (build.nvidia.com, free tier)",
     zh: "NVIDIA API 密钥（build.nvidia.com，免费档）",
@@ -488,6 +524,34 @@ const UI_STRINGS = {
     en: "Monitor captured audio",
     zh: "监听捕获的音频",
   },
+  liveChannelMode: {
+    en: "Capture mode",
+    zh: "捕获模式",
+  },
+  liveOneChannel: {
+    en: "One channel",
+    zh: "单通道",
+  },
+  liveAllSources: {
+    en: "All sources ({count})",
+    zh: "全部来源（{count}）",
+  },
+  liveOneChannelNote: {
+    en: "Pick one device to caption.",
+    zh: "选择一个设备进行字幕翻译。",
+  },
+  liveAllSourcesNote: {
+    en: "Every configured source is captured and captioned with its own tag.",
+    zh: "将捕获所有已配置的来源，并分别用各自的标签进行字幕翻译。",
+  },
+  liveAllSourcesDisabledNote: {
+    en: "All sources needs 2+ sources with an audio input — add them on the Sources page.",
+    zh: "全部来源需要至少 2 个已配置音频输入的来源——请在“音频源”页面添加。",
+  },
+  liveSourcesBeingCaptured: {
+    en: "Sources being captured",
+    zh: "正在捕获的来源",
+  },
   liveApiKeyOptional: { en: "API key (optional)", zh: "API 密钥（可选）" },
   liveModelsDownloading: { en: "Downloading", zh: "下载中" },
   liveModelsExtracting: { en: "Extracting", zh: "解压中" },
@@ -521,11 +585,6 @@ const UI_STRINGS = {
   overlayEditPosition: { en: "Edit position", zh: "编辑位置" },
   settingsHideOverlay: { en: "Hide overlay", zh: "隐藏字幕层" },
   settingsShowOverlay: { en: "Show overlay", zh: "显示字幕层" },
-  overlayEnterWindowed: {
-    en: "Overlay mode — window shows captions only",
-    zh: "悬浮模式——窗口只显示字幕",
-  },
-  overlayExitWindowed: { en: "Exit overlay", zh: "退出悬浮模式" },
   settingsClear: { en: "Clear", zh: "清除" },
   clipLabTitle: { en: "Test a friends' comms clip", zh: "测试好友的通话片段" },
   clipDemoProviders: { en: "Demo providers", zh: "演示提供方" },
@@ -741,8 +800,8 @@ const UI_STRINGS = {
   settingsHistoryRows10: { en: "10 rows", zh: "10 行" },
   settingsHistoryRows5: { en: "5 rows", zh: "5 行" },
   settingsHistoryRowsNote: {
-    en: "Cap the overlay chat to a fixed number of lines; Default keeps the whole session (scrollable).",
-    zh: "将悬浮窗聊天限制为固定行数；默认保留整个会话（可滚动）。",
+    en: "Cap the overlay chat to a fixed number of lines. Default sizes the panel to its window.",
+    zh: "将悬浮窗聊天限制为固定行数。默认随窗口自适应。",
   },
   strictnessOff: { en: "Off — process any language", zh: "关闭——处理任何语言" },
   strictnessBalanced: {
@@ -770,6 +829,276 @@ const UI_STRINGS = {
   labelStyleBullet: { en: "Bullet — • TEAM", zh: "项目符号 — • TEAM" },
   labelStyleStacked: { en: "Stacked — label above", zh: "堆叠——标签在上方" },
   labelStyleHidden: { en: "Hidden — no label", zh: "隐藏——无标签" },
+
+  // Profile page
+  profileIntro: {
+    en: "Saved profiles remember which audio channel to capture, how it is monitored, and how it should be translated. Start one from the list below, or create a new one with the guided setup.",
+    zh: "已保存的配置会记住要捕获哪个音频通道、如何监听以及如何翻译。可以从下方列表直接开始，也可以使用引导式设置创建新配置。",
+  },
+
+  // Setup wizard
+  wizardTitle: { en: "Create a profile", zh: "创建配置" },
+  wizardStepCount: { en: "Step {n}/8", zh: "第 {n}/8 步" },
+  wizardStepChooseUseCase: {
+    en: "What will you use yTRSL with?",
+    zh: "你打算用 yTRSL 做什么？",
+  },
+  wizardStepDetectCable: { en: "Virtual cable check", zh: "虚拟音频线检测" },
+  wizardStepShowRouting: {
+    en: "How this setup routes audio",
+    zh: "该配置的音频路由方式",
+  },
+  wizardStepSelectCapture: {
+    en: "Choose the input to capture",
+    zh: "选择要捕获的输入",
+  },
+  wizardStepSelectMonitor: {
+    en: "Monitor the captured audio?",
+    zh: "监听捕获的音频？",
+  },
+  wizardStepTestSignal: { en: "Voice signal test", zh: "语音信号测试" },
+  wizardStepTestIsolation: { en: "Isolation check", zh: "隔离检测" },
+  wizardStepReview: { en: "Review and save", zh: "检查并保存" },
+  wizardStepSaved: { en: "Setup saved", zh: "配置已保存" },
+  wizardNext: { en: "Next", zh: "下一步" },
+  wizardBack: { en: "Back", zh: "上一步" },
+  wizardCancel: { en: "Cancel", zh: "取消" },
+  wizardRefreshDevices: { en: "Refresh devices", zh: "刷新设备" },
+  wizardMeasure: { en: "Measure", zh: "测量" },
+  wizardSaveSetup: { en: "Save setup", zh: "保存配置" },
+  wizardHintDetecting: {
+    en: "Detecting virtual cable devices…",
+    zh: "正在检测虚拟音频线设备……",
+  },
+  wizardCableFound: {
+    en: "Found a virtual cable ({ids}). The application you listen to outputs here; yTRSL captures it.",
+    zh: "检测到虚拟音频线（{ids}）。你收听的应用程序输出到这里，yTRSL 会捕获它。",
+  },
+  wizardCableMissing: {
+    en: "No virtual cable detected. Install VB-CABLE (Windows) or BlackHole (macOS), then refresh. You can still continue and pick a different input.",
+    zh: "未检测到虚拟音频线。请安装 VB-CABLE（Windows）或 BlackHole（macOS）后刷新。你仍可以继续并选择其他输入。",
+  },
+  wizardRouteSourceName: {
+    en: "Source name suggestion: {value}",
+    zh: "来源名称建议：{value}",
+  },
+  wizardRouteOrigin: { en: "Audio origin: {value}", zh: "音频来源：{value}" },
+  wizardRoutePreset: { en: "Domain preset: {value}", zh: "领域预设：{value}" },
+  wizardRouteVad: { en: "VAD profile: {value}", zh: "语音检测档案：{value}" },
+  wizardRouteMonitor: {
+    en: "Monitor captured audio by default: {value}",
+    zh: "默认监听捕获的音频：{value}",
+  },
+  wizardYes: { en: "yes", zh: "是" },
+  wizardNo: { en: "no", zh: "否" },
+  wizardChooseInput: { en: "Choose an input…", zh: "选择输入……" },
+  wizardNoCapture: {
+    en: "No capture endpoints found. Refresh the device list.",
+    zh: "未找到捕获端点。请刷新设备列表。",
+  },
+  wizardPlayCapturedBack: {
+    en: "Play the captured audio back so I can hear it",
+    zh: "回放捕获的音频，以便我能听到",
+  },
+  wizardChooseOutput: { en: "Choose an output…", zh: "选择输出……" },
+  wizardSignalIntro: {
+    en: "Speak into the captured channel. yTRSL measures your voice level for 2 seconds.",
+    zh: "请对着被捕获的通道说话。yTRSL 会测量你的音量 2 秒钟。",
+  },
+  wizardMeasuringSignal: {
+    en: "Measuring… speak now",
+    zh: "测量中……请说话",
+  },
+  wizardSignalHealthy: {
+    en: "Voice detected — signal looks healthy.",
+    zh: "检测到语音——信号正常。",
+  },
+  wizardSignalSilent: {
+    en: "No signal. Check the app outputs to the cable input.",
+    zh: "无信号。请检查应用程序是否输出到音频线输入端。",
+  },
+  wizardSignalVeryQuiet: {
+    en: "Signal is very quiet — raise the source volume.",
+    zh: "信号太弱——请调高音源音量。",
+  },
+  wizardSignalClipping: {
+    en: "Signal is clipping — lower the source volume.",
+    zh: "信号削波——请调低音源音量。",
+  },
+  wizardIsolationIntro: {
+    en: "Two checks: stay quiet for 2 seconds, then speak for 2 seconds.",
+    zh: "两项检测：先保持安静 2 秒，再说话 2 秒。",
+  },
+  wizardMeasureSilence: { en: "1) Measure silence", zh: "1) 测量静音" },
+  wizardStayQuiet: { en: "Stay quiet…", zh: "请保持安静……" },
+  wizardSilenceMeasured: {
+    en: "Silence measured. Now speak normally.",
+    zh: "静音已测量。现在请正常说话。",
+  },
+  wizardMeasureVoice: { en: "2) Measure voice", zh: "2) 测量语音" },
+  wizardListeningSpeak: {
+    en: "Listening… speak",
+    zh: "正在监听……请说话",
+  },
+  wizardIsolationPassed: {
+    en: "Isolation looks correct: silence stays silent, voice comes through.",
+    zh: "隔离正常：安静时无声音，说话时能听到语音。",
+  },
+  wizardIsolationNoVoice: {
+    en: "No voice detected during the speech check — verify the source.",
+    zh: "语音检测阶段未检测到声音——请检查音源。",
+  },
+  wizardIsolationLeak: {
+    en: "Non-voice audio leaks through — check what else outputs to this channel.",
+    zh: "非语音音频漏入了通道——请检查还有什么输出到了这个通道。",
+  },
+  wizardReviewUseCase: { en: "Use case: {value}", zh: "使用场景：{value}" },
+  wizardReviewInput: { en: "Capture input: {value}", zh: "捕获输入：{value}" },
+  wizardReviewMonitor: { en: "Monitor: {value}", zh: "监听：{value}" },
+  wizardReviewSignal: { en: "Signal: {value}", zh: "信号：{value}" },
+  wizardReviewIsolation: { en: "Isolation: {value}", zh: "隔离：{value}" },
+  wizardProfileName: { en: "Profile name", zh: "配置名称" },
+  wizardSavedHint: {
+    en: "Setup saved ({id}). The Live page is configured with this input, and the routing profile is stored for recovery.",
+    zh: "配置已保存（{id}）。实时页面已使用此输入配置，路由配置也已保存以便恢复。",
+  },
+
+  // Use-case names
+  useCaseValorant: { en: "VALORANT", zh: "无畏契约" },
+  useCaseDiscord: { en: "Discord", zh: "Discord 语音" },
+  useCaseMeeting: { en: "Meeting application", zh: "会议应用" },
+  useCaseBrowserCall: { en: "Browser call", zh: "浏览器通话" },
+  useCaseOther: { en: "Other application", zh: "其他应用" },
+
+  // About page
+  aboutIntro: {
+    en: "yTRSL is a privacy-first accessibility companion: it listens to voice chat on your computer and shows near-live English captions for what your teammates say. Everything runs on your own machine — nothing you say is uploaded unless you choose a cloud provider.",
+    zh: "yTRSL 是一个以隐私为先的辅助工具：它监听电脑上的语音聊天，并为队友说的话显示近乎实时的英文字幕。一切都在你自己的机器上运行——除非你选择云端服务商，否则你的声音不会被上传。",
+  },
+  aboutPagesTitle: {
+    en: "The pages, simply explained",
+    zh: "页面说明",
+  },
+  aboutPageLiveTitle: { en: "Live", zh: "实时" },
+  aboutPageLiveText: {
+    en: "The main screen. Pick an audio channel, a speech-to-text model, and a translation provider, then press Start. Captions appear on the overlay above your game.",
+    zh: "主界面。选择音频通道、语音转文字模型和翻译服务商，然后点击“开始”。字幕会显示在游戏上方的悬浮层上。",
+  },
+  aboutPageProfileTitle: { en: "Profile", zh: "配置文件" },
+  aboutPageProfileText: {
+    en: "Saved setups. Run the guided setup once (or edit settings manually) and every profile is one click to start later. Use this page if you play on different machines or with different friends.",
+    zh: "已保存的设置。只需运行一次引导式设置（或手动调整），之后每个配置都可以一键启动。如果你在多台设备上使用或与不同朋友组队，请使用此页面。",
+  },
+  aboutPageHistoryTitle: { en: "History", zh: "历史" },
+  aboutPageHistoryText: {
+    en: "A transcript of everything that has been translated this session, with export buttons for saving it.",
+    zh: "本次会话所有已翻译内容的文字记录，并带有导出按钮。",
+  },
+  aboutPageModelsTitle: { en: "Models", zh: "模型" },
+  aboutPageModelsText: {
+    en: "Download and manage the local AI models used for speech recognition and translation, with license and checksum details.",
+    zh: "下载并管理用于语音识别和翻译的本地 AI 模型，包含许可证和校验和详情。",
+  },
+  aboutPageSourcesTitle: { en: "Sources", zh: "音频源" },
+  aboutPageSourcesText: {
+    en: "Advanced multi-channel setup: give each voice channel (team chat, Discord, a meeting) its own color, tag, and language profile.",
+    zh: "高级多通道设置：为每个语音通道（队伍语音、Discord、会议）设置独立的颜色、标签和语言档案。",
+  },
+  aboutPageSettingsTitle: { en: "Settings", zh: "设置" },
+  aboutPageSettingsText: {
+    en: "Appearance (dark/light), overlay behavior, hotkeys, and language.",
+    zh: "外观（深色/浅色）、悬浮层行为、快捷键和语言。",
+  },
+  aboutPageDiagnosticsTitle: { en: "Diagnostics", zh: "诊断" },
+  aboutPageDiagnosticsText: {
+    en: "Latency and health graphs for the audio, speech, and translation pipeline when something feels slow.",
+    zh: "当感觉卡顿时，查看音频、语音和翻译管道的延迟与健康度图表。",
+  },
+  aboutModelsTitle: {
+    en: "Local models vs cloud models",
+    zh: "本地模型与云端模型对比",
+  },
+  aboutModelsLocal: { en: "Local (on your PC)", zh: "本地（在你电脑上）" },
+  aboutModelsCloud: { en: "Cloud (API)", zh: "云端（API）" },
+  aboutRowPrivacy: { en: "Privacy", zh: "隐私" },
+  aboutPrivacyLocal: {
+    en: "Audio never leaves your machine",
+    zh: "音频不会离开你的设备",
+  },
+  aboutPrivacyCloud: {
+    en: "Speech is sent to the provider",
+    zh: "语音会发送给服务商",
+  },
+  aboutRowCost: { en: "Cost", zh: "费用" },
+  aboutCostLocal: {
+    en: "Free, after the one-time model download",
+    zh: "免费（一次性下载模型后）",
+  },
+  aboutCostCloud: {
+    en: "Usually free tiers, then pay-per-use",
+    zh: "通常有免费额度，之后按量付费",
+  },
+  aboutRowSpeed: { en: "Speed", zh: "速度" },
+  aboutSpeedLocal: {
+    en: "Great on a good GPU; slower on CPU",
+    zh: "好显卡上很快；CPU 上较慢",
+  },
+  aboutSpeedCloud: {
+    en: "Fast, needs a stable internet connection",
+    zh: "很快，但需要稳定的网络连接",
+  },
+  aboutRowOffline: { en: "Offline", zh: "离线" },
+  aboutOfflineLocal: { en: "Works with no internet", zh: "无网络也能用" },
+  aboutOfflineCloud: { en: "Does not work offline", zh: "离线不可用" },
+  aboutRowQuality: { en: "Quality", zh: "质量" },
+  aboutQualityLocal: {
+    en: "Very good (Whisper family)",
+    zh: "非常好（Whisper 系列）",
+  },
+  aboutQualityCloud: {
+    en: "State-of-the-art (NVIDIA Parakeet, Groq Whisper)",
+    zh: "业界领先（NVIDIA Parakeet、Groq Whisper）",
+  },
+  aboutRowSetup: { en: "Setup", zh: "设置" },
+  aboutSetupLocal: {
+    en: "Download models once, then just click Start",
+    zh: "下载一次模型，之后点击“开始”即可",
+  },
+  aboutSetupCloud: {
+    en: "Create an API key and paste it in Live",
+    zh: "创建 API 密钥并粘贴到“实时”页面",
+  },
+  aboutBestBoth: {
+    en: "Best of both: use local Whisper + NLLB for privacy, and switch to cloud (NVIDIA Parakeet + Riva, or Groq) when you want maximum accuracy or when your machine cannot keep up.",
+    zh: "两全其美：平时用本地 Whisper + NLLB 保证隐私；需要最高准确率或本地机器跟不上时，切换到云端（NVIDIA Parakeet + Riva 或 Groq）。",
+  },
+  aboutSpecsTitle: {
+    en: "Recommended specs for local models",
+    zh: "本地模型推荐配置",
+  },
+  aboutSpecsMinTitle: { en: "Minimum", zh: "最低配置" },
+  aboutSpecsMinText: {
+    en: "Everything works, slower. 4-core CPU, 16 GB RAM. Whisper runs on CPU with a bit of delay; NLLB translation still feels responsive.",
+    zh: "一切功能可用，速度较慢。4 核 CPU、16 GB 内存。Whisper 在 CPU 上有少许延迟；NLLB 翻译仍然流畅。",
+  },
+  aboutSpecsRecommendedTitle: { en: "Recommended", zh: "推荐配置" },
+  aboutSpecsRecommendedText: {
+    en: "Best latency. NVIDIA GPU with 8 GB VRAM or more (GTX 2060 / RTX 3060 class and up). Speech is recognized within about a second of a sentence ending.",
+    zh: "最佳延迟。NVIDIA 显卡 8 GB 以上显存（GTX 2060 / RTX 3060 级别及以上）。一句话说完后约一秒钟内即可完成识别。",
+  },
+  aboutSpecsAppleTitle: {
+    en: "macOS / Apple Silicon",
+    zh: "macOS / Apple 芯片",
+  },
+  aboutSpecsAppleText: {
+    en: "M1 with 16 GB RAM works well; M-series GPU is used automatically by the MLX Whisper model.",
+    zh: "M1 + 16 GB 内存即可流畅运行；MLX Whisper 模型会自动使用 M 系列 GPU。",
+  },
+  aboutSpecsDiskTitle: { en: "Disk space", zh: "磁盘空间" },
+  aboutSpecsDiskText: {
+    en: "About 3 GB for the standard Whisper + NLLB pair (larger Whisper model: ~6 GB total). Downloads happen once in the Models page.",
+    zh: "标准 Whisper + NLLB 组合约需 3 GB（更大 Whisper 模型共约 6 GB）。只需在“模型”页面下载一次。",
+  },
 } satisfies Record<string, UIString>;
 
 export type UIKey = keyof typeof UI_STRINGS;

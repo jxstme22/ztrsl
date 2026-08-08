@@ -1,79 +1,204 @@
 # 23 — Release Notes
 
-## v0.6.0 — macOS: system-audio source, windowed overlay, sandboxed build
+## v0.8.1 — history sessions, CTA-styled UI (feat/general-purpose-v0.8)
 
-- **New "System Audio (all apps)" source on macOS** — the fix for "I can't
-  find the audio source": the app now taps the whole system output mix
-  (voice chat included) through ScreenCaptureKit. No BlackHole driver to
-  install, no routing to configure — pick the source in the Loopback group
-  and go. The OS shows a screen-recording permission prompt on first use.
-  BlackHole capture still works for per-app separation.
-- **Windowed overlay mode** — the titlebar's picture-in-picture button
-  morphs the app window itself into a compact always-on-top caption strip;
-  hover the strip and press the ✕ to return to the full app. The separate
-  always-on-top overlay window is disabled on macOS, where a transparent
-  webview without a native backdrop renders as a black rectangle.
-- **Glassmorphism now works on macOS** — the control window gets a real
-  native vibrancy layer (`NSVisualEffectView`), so the frosted panels and
-  blur finally render instead of flat black. The status pill on Settings →
-  Diagnostics now reads "vibrancy" on Mac.
-- **Sandboxed macOS build** — the app bundle runs under App Sandbox with
-  network-client, audio-input, and user-selected-file-read capabilities, and
-  declares its microphone and screen-recording usage strings. Built for
-  private use: all processing stays local.
-- **Sandboxed storage fix (EPERM)** — the model store, sidecar logs, and
-  inference caches are written inside the sandbox container
-  (`~/Library/Containers/app.localsquadtranslator.desktop/Data`) instead of
-  the real home directory; the sidecar process receives a container `HOME`
-  plus `HF_HOME`/`XDG_CACHE_HOME`/`TORCH_HOME`/`MPLCONFIGDIR`/
-  `PYTHONPYCACHEPREFIX`. Fixes "I/O error: Operation not permitted" when
-  listing/installing models and "sidecar I/O failed" at live-translation
-  startup on the packaged build.
-- **Loopback IPC entitlement** — the app bundle now also carries
-  `com.apple.security.network.server`: the supervisor binds an ephemeral
-  localhost port to start the sidecar, and the sandbox denied that bind with
-  EPERM. Without this, live translation failed instantly with "sidecar I/O
-  failed: Operation not permitted" regardless of provider.
-- **System Audio silence diagnostics** — if macOS silently blocks screen
-  capture (Screen Recording permission missing), "System Audio (all apps)"
-  starts but delivers no audio and no error. The app now fails after 4
-  seconds with a clear message, and Settings → Diagnostics gained an "Open
-  System Settings" button that jumps straight to the Screen Recording pane.
-- **Personal build runs unsandboxed** — the author's local build ships with
-  an empty entitlements plist (no App Sandbox) so audio, models, and IPC all
-  work like a normal app; the sandbox profile remains documented for an
-  official release build.
-- **Microphones now enumerate on macOS 26** — the CoreAudio device list is
-  queried through `AudioObjectGetPropertyDataSize`; the legacy size-query
-  pattern (property fetch with NULL outData) returns
-  `kAudioHardwareUnsupportedOperationError` on recent macOS, which emptied
-  the endpoint catalog to just "System Audio". Mic/BlackHole/speakers now
-  appear in Sources again.
-- **Stable macOS endpoint ids** — wire ids are now the device friendly name
-  (render endpoints get an "(output)" suffix) instead of raw CoreAudio
-  numeric ids, which shift when virtual devices churn between sessions and
-  made saved sources fail with "audio endpoint was not found". The backend
-  also falls back to matching by name for legacy persisted ids.
-- **API keys now persist** — the Groq key, LingvaTranslate key, custom
-  translation endpoint and key are written to localStorage as you type, so
-  navigating to another page no longer wipes them.
-- **Microphone permission prompt** — on macOS the app now requests mic
-  access once at launch (wry's webview delegate auto-grants the getUserMedia
-  request, which surfaces the real macOS permission prompt; the app declares
-  NSMicrophoneUsageDescription). A denied mic permission otherwise makes
-  cpal capture silently deliver silence. Settings → Diagnostics gained a
-  "Microphone permission" block with a one-click jump to the System
-  Settings pane.
-- **Native microphone permission request** — mic access is now requested
-  through AVFoundation (`AVCaptureDevice requestAccessForMediaType`) at
-  launch, the same TCC gate the capture hits; the status is returned to the
-  UI instead of relying on the webview getUserMedia path.
-- **Install models from a URL** — Models → "Install model from URL" takes an
-  http(s) link to a zip archive (or a single model.onnx), downloads it,
-  verifies it, and installs it into the model store under the known NCSpeech
-  ids. Zip imports must contain `model.onnx` and `tokens.txt`; the manifest
-  gets model/tokens roles so the sherpa-onnx Nemo CTC provider can load the
-  model directly. Supports any of the three NCSpeech family ids.
+Follow-up to v0.8.0 with the history rework and the UI polish pass:
+
+- **Session-scoped transcripts** — History is now grouped into sessions
+  instead of a fixed ring: a session opens when Live starts, stays open
+  when you choose "Keep open" on stop (the next Start appends to it), and
+  ends when you confirm "End session". The stop button now asks first.
+  Sessions can be picked, renamed, deleted, and cleared; the whole list
+  persists. The overlay history shows the current session's transcript.
+- **History display options** — one Settings menu on the History page
+  toggles transcribed input, speaker, timestamps, latency, and model
+  badges; per-entry copy button; search box. Latency is the sidecar's real
+  capture→caption time.
+- **Caption segmentation styles** — chunk, balanced, sentence.
+- **CTA button recipe** — primary actions (live start, end session, wizard
+  next, install, accuracy run) and the sidebar active icon wear a gradient
+  button with a soft glow, ring outline, 1px press, and a 550ms diagonal
+  shine sweep (blue in light theme, orange shading in dark). The titlebar
+  brand card uses the same recipe.
+- **Cramped selects fixed** — Clip Lab and Accuracy Lab source-speech /
+  configuration options use short labels (Tagalog-first, Filipino, Cebuano,
+  Chinese; Recommended) so the cards stop over-widening.
+- **Setup wizard page, Profile page, About page, sidebar reorder** — the
+  wizard is now a Profile page with inline live layout and a sticky history
+  toolbar; app renamed yTSRL→yTRSL.
+
+## v0.8.0 — general-purpose release (feat/general-purpose-v0.8)
+
+First release of the generalization train — the build plan
+(`yTRSL_DEEPSEEK_BUILD_PLAN.md`) shipped in full. Key highlights:
+
+- **Language routing** — source-language routing matrix with per-source
+  modes; unknown languages are gated honestly (DEC-001: never a silent
+  fallback to an unrelated language).
+- **Setup wizard** — capture-mode selection, VB-CABLE pairing, signal
+  test, per-use-case profiles (gaming/streaming/meetings), recovery
+  guidance.
+- **Presets & quality** — catalog presets, quality profiles
+  (Fast/Balanced/Best quality/Low memory), Advanced provider config.
+- **Audio health & VAD** — energy/silero diagnostics, VAD profiles
+  (fast callouts / natural conversation / meeting), audio normalization
+  policies.
+- **Recognition router** — hardware capability detection, per-provider
+  routing, Paraformer/SenseVoice honesty (no silent wrong-language
+  output), graceful fallbacks.
+- **Vocabulary & context** — context manager, vocabulary packs, hotwords,
+  preservation lists.
+- **History & exports** — stronger history, TXT/JSON/SRT/VTT/MD exporters.
+- **Reliability** — caption SSE stream (`LST_CAPTION_STREAM_PORT`),
+  performance budgets, release gate (`scripts/check_release_gate.py`).
+- Cloud endpoints: NVIDIA Parakeet CTC 1.1B ASR + Riva 4B + Baidu
+  Translate (working free endpoints), plus the live-pipeline provisional
+  fixes from v0.7.4.
+
+## v0.7.2 — NVIDIA NIM cloud providers (feat/side)
+
+- **NVIDIA ASR endpoints (build.nvidia.com)** — Whisper large-v3, Nemotron
+  ASR streaming, Parakeet CTC 1.1B, and Canary 1B are selectable ASR
+  providers. One free `nvapi-…` key unlocks all of them; audio is sent to
+  NVIDIA only while an NVIDIA option is selected. Parakeet/Canary reject
+  unsupported source languages with a visible error (never a silent
+  fallback).
+- **NVIDIA Riva translation** — Riva Translate 4B Instruct and Riva
+  Translate 1.6B via the OpenAI-compatible chat gateway, prompted with the
+  chosen target language.
+- **UX: only installed models + free endpoints** — the Live panel now
+  hides local models that are not downloaded and always shows the
+  cloud/free endpoints (Groq, NVIDIA NIM, translation APIs), so the list
+  reflects what can actually run.
+
+## v0.7.1 — History page shows the transcribed input
+
+- **Transcribed input toggle on the History page** — a checklist button next
+  to Clear lets you show the recognized (source-language) text under each
+  translation, so you can compare what was said with what was translated.
+  Off by default; your choice persists. The overlay is unchanged — the
+  caption lane keeps showing only the translation.
+
+## v0.7.0 — Multi-source live, mainland-China downloads, rebranded title bar
+
+- **Multi-source live sessions** — the Live page gains a Capture mode
+  toggle: **One channel** (single device) or **All sources**. All-sources
+  starts one live session that captures every source configured on the
+  Sources page simultaneously, each with its own device, VAD timing and
+  caption tag — captions come out tagged per source (e.g. "TEAM", "MIX")
+  and History groups them per source. Per-source language profiles and
+  priorities are respected; monitoring is unavailable in all-sources mode.
+- **Mainland-China downloads fixed** — FunASR Paraformer zh (streaming) and
+  OmniLingual CTC 300M were hosted only on GitHub releases (unreachable in
+  mainland China → "transport error: error decoding response body"). Both
+  now download file-by-file from the official sherpa-onnx Hugging Face
+  mirrors (byte-identical, checksum-verified), so the hf-mirror → modelscope
+  failover chain works.
+- **Rebranded title bar** — app renamed to **yTRSL**; the title bar now
+  shows one rounded brand card — `yTRSL (BETA) v0.7` — white text on dark
+  mode, black text on light mode. Title bar height and sidebar icons
+  tightened.
+- **Models page can no longer be blanked by a stale capability value** — a
+  URL-imported (custom) model carrying an out-of-contract capability
+  previously failed schema validation and took down the whole models list.
+  The frontend now falls back to the conservative defaults (`post-filter` /
+  `low`) instead of failing; regression test covers the legacy payload.
+- **New app icons** — the full icon set is regenerated from the new artwork.
+
+## v0.6.12 — Fix: 10054 crash on SenseVoice/Paraformer/opus-mt (Windows)
+
+- **Root cause found and fixed.** The new models crashed the sidecar
+  ("connection forcibly closed" / error 10054) because Windows resolved
+  `onnxruntime.dll` from a stale 1.17.1 copy in `C:\Windows\SYSTEM32`
+  (installed by other software) ahead of the app's 1.27.0 copy; sherpa-onnx's
+  binding (built for onnxruntime API 27) then died with an access violation
+  on the first model load. The sidecar now preloads its own onnxruntime DLL
+  by full path before any model import, so the correct 1.27.0 build is always
+  used; the bundled 1.17.1 copy shipped inside sherpa-onnx-core is also
+  replaced at package time.
+- **Verified on Windows CI** — a new smoke workflow downloads the real
+  models and runs the actual providers on a Windows runner: SenseVoice
+  decodes, Paraformer loads and decodes, opus-mt en→zh translates.
+- **Windows smoke harness** — `.github/workflows/smoke-models.yml` +
+  `scripts/ci_smoke_models.py` reproduce model loads on Windows runners for
+  every future model change.
+
+## v0.6.11 — opus-mt zh→en, CUDA float16 inference, overlay self-hiding, crash traces
+
+- **Helsinki opus-mt (zh→en)** — new installable model for Chinese→English
+  translation (~158 MB, Apache-2.0, CTranslate2 int8 conversion of
+  Helsinki-NLP/opus-mt-zh-en). Live panel entry with an English-output
+  constraint, sidecar + protocol + desktop wiring end to end.
+- **opus-mt best-quality inference** — on CUDA the opus-mt models now run
+  dequantized **float16** inference (near-full-precision quality); CPU keeps
+  int8. Both directions (en→zh, zh→en). The int8-quantized weights are the
+  only published CTranslate2 format of the Helsinki models, so quality is
+  delivered at inference time rather than through unverifiable "float16"
+  repos (checked: the hosted "float16" conversions are byte-identical int8).
+- **Overlay never shows at startup and always hides on command** — the
+  overlay window now controls its own visibility: it hides on mount and on
+  every snapshot, so hiding works even if the control window's handle to it
+  misbehaves, and it can no longer appear on app open.
+- **Installed model cards** — the loud green border/tint is replaced by a
+  softly shaded surface (top-lit gradient, inner highlight, soft shadow).
+- **Sidecar crash traces** — the sidecar enables `faulthandler` and the
+  supervisor captures its stderr; when the inference process dies
+  mid-session (error 10054), the auto-restart warning now includes the crash
+  trace so failures self-report.
+
+## v0.6.10 — Live session auto-recovery, overlay transparency + dismiss fixes
+
+- **Live sessions survive sidecar crashes** — when the local inference
+  sidecar dies mid-session (the Windows "connection forcibly closed by the
+  remote host" / error 10054), the desktop worker now restarts the sidecar
+  in place, renegotiates the session and keeps captions flowing, with a
+  warning instead of ending the session. Sidecar hiccups it flags as
+  recoverable (`live.error` with `recoverable: true`) surface as warnings
+  while the session keeps listening.
+- **Fix: overlay black block gone** — removed the CSS rule that painted the
+  whole overlay window solid dark; the caption lane renders as the
+  transparent bar again.
+- **Fix: hiding the overlay sticks** — after hiding (button or hotkey), new
+  captions no longer force the overlay back open; use the show button or
+  hotkey to bring it back.
+
+## v0.6.9 — Fix: live start with new ASR/MT providers, overlay window restored
+
+- **Fix: "unknown ASR provider" on live start** — the desktop's live-start
+  validation was not updated for the new providers, so starting a live
+  session with SenseVoice, Paraformer, or opus-mt was rejected before it
+  reached the sidecar. The allowlist now accepts `sensevoice-small`,
+  `sense-voice`, `paraformer-zh-streaming`, `mlx`, `mlx-whisper` (ASR) and
+  `opus-mt-en-zh` (translation).
+- **Fix: overlay window was an opaque black block** — v0.6.8 accidentally
+  dropped the overlay window's `transparent` flag, so the caption lane
+  rendered as a solid black rectangle over the game. Transparency is
+  restored; the overlay looks and behaves like v0.6.7 again.
+- **Fix: overlay visibility after dismiss** — reverted to the v0.6.7
+  behavior where a caption re-shows the overlay after it was hidden.
+
+## v0.6.8 — Three new downloadable models, two-column Models page
+
+- **FunASR Paraformer zh (streaming)** — a new downloadable STT model on the
+  Models page: streaming Paraformer (Mandarin/English) via sherpa-onnx
+  (`paraformer-zh-streaming`, Apache-2.0, ~1 GB archive, int8). Pins the
+  sherpa-onnx ONNX export of the FunASR weights.
+- **SenseVoice Small** — multilingual ASR (zh/en/ja/ko/yue) with auto
+  language detection and inverse text normalization via sherpa-onnx
+  (`sensevoice-small`, Apache-2.0, ~239 MB int8). ONNX export of the
+  FunAudioLLM/SenseVoiceSmall weights, revision-pinned and SHA-256 verified.
+- **Helsinki opus-mt (en→zh)** — a new local English→Chinese translation
+  model (`opus-mt-en-zh-ct2-int8`, Apache-2.0, ~158 MB, commercially usable;
+  NLLB is CC-BY-NC). Official CTranslate2 int8 conversion of the Helsinki
+  model. English source + Chinese output only, enforced in the UI and the
+  sidecar.
+- **Models page now uses a two-column grid** for installed, available,
+  custom, and local-export sections (single column on narrow windows).
+- New provider entries in the Live panel for the three models; the sidecar
+  accepts them end-to-end.
+- Sidecar packaging includes the `sentencepiece` dependency; the overlay
+  window keeps its transparent caption lane; overlay hotkey dismiss behavior
+  fixed (hiding the overlay with the hotkey stops captions from re-showing it).
 
 ## v0.6.7 — Setup wizard removed, audio sources on the Sources page
 

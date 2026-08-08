@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import threading
 import time
@@ -7,6 +8,13 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from local_squad_inference.audio_health import (
+    AudioHealthMetrics,
+    SourceProcessingPolicy,
+    calibration_recommendations,
+    classify_source_health,
+    normalize_audio,
+)
 from local_squad_inference.glossary import Glossary
 from local_squad_inference.phrase_filters import PhraseFilterResult, PhraseFilterSet
 from local_squad_inference.protocol import AudioPacket, AudioPacketV2, CaptionPayload, SourceMode
@@ -56,6 +64,9 @@ class _SourceVadState:
     utterances_dropped: int = 0
     phrase_filtered: int = 0
     provisional_revisions: dict[str, int] = field(default_factory=dict)
+    # DS-300/301: per-source audio health + processing policy (DS-303).
+    health: AudioHealthMetrics = field(default_factory=AudioHealthMetrics)
+    processing: SourceProcessingPolicy = field(default_factory=SourceProcessingPolicy)
 
 
 def source_key_of(packet: Any) -> str | None:
@@ -69,6 +80,33 @@ def source_key_of(packet: Any) -> str | None:
 
         return encode_source_id_hex(raw)
     return str(raw)
+
+
+def _frame_speech(samples: tuple[float, ...], speech_rms: float) -> bool:
+    """Cheap speech estimate for health metrics: frame RMS at or above the
+    VAD gate's energy threshold."""
+    if not samples:
+        return False
+    total = 0.0
+    for sample in samples:
+        total += sample * sample
+    return math.sqrt(total / len(samples)) >= speech_rms
+
+
+def _observe_utterance(health: AudioHealthMetrics, utterance: Any) -> None:
+    """DS-401 segmentation diagnostics: forced splits, short fragments,
+    rapid consecutive segments, trailing silence. No raw audio is kept."""
+    duration_ms = (utterance.ended_ns - utterance.started_ns) // 1_000_000
+    health.last_utterance_ms = duration_ms
+    if getattr(utterance, "forced_end", False):
+        health.forced_split_count += 1
+    if duration_ms > 0 and duration_ms < 400:
+        health.short_fragment_count += 1
+    if health.last_speech_frame_ms > 0:
+        gap_ms = utterance.started_ns // 1_000_000 - health.last_speech_frame_ms
+        if 0 < gap_ms < 500:
+            health.rapid_segment_count += 1
+    health.last_speech_frame_ms = utterance.ended_ns // 1_000_000
 
 
 class LivePipeline:
@@ -170,6 +208,7 @@ class LivePipeline:
         *,
         source_mode: SourceMode | None = None,
         use_silero: bool | None = None,
+        processing: SourceProcessingPolicy | None = None,
     ) -> bool:
         """Create VAD state for a v2 source. Idempotent: an existing state
         is returned untouched, so registry re-pushes and presentation
@@ -192,6 +231,7 @@ class LivePipeline:
                     ),
                     namespace=source_id,
                 ),
+                processing=processing or SourceProcessingPolicy(),
             )
             self._sources[source_id] = state
             return True
@@ -253,6 +293,14 @@ class LivePipeline:
             "utterances_dropped": state.utterances_dropped,
             "phrase_filtered": state.phrase_filtered,
             "provisional_revisions": len(state.provisional_revisions),
+            # DS-300/301/402: audio health, deterministic state, and
+            # rule-based calibration recommendations.
+            "health": state.health.snapshot(),
+            "health_state": classify_source_health(state.health).to_dict(),
+            "recommendations": calibration_recommendations(
+                state.health,
+                high_speech_empty=state.health.empty_high_speech_count >= 2,
+            ),
         }
 
     @property
@@ -306,7 +354,29 @@ class LivePipeline:
             state.clock_origin_ns = time.monotonic_ns()
         with self._metrics_lock:
             state.packets_received += 1
-        return state.manager.feed(packet.samples)
+            state.health.packets_received += 1
+        samples = packet.samples
+        if state.processing.normalize:
+            # DS-302: conservative light gain for quiet sources; the manager
+            # still gates on its own speech_rms.
+            samples, _applied = normalize_audio(samples, enabled=True)
+        # Cheap per-frame signal stats (DS-300). Speech estimate uses the
+        # same energy threshold as the VAD gate so the ratio is meaningful.
+        speech_rms = state.manager.config.speech_rms
+        state.health.observe_frame(
+            samples,
+            speech=_frame_speech(samples, speech_rms),
+        )
+        with self._metrics_lock:
+            provisional = state.manager.provisional_utterance()
+        if provisional is not None:
+            state.health.open_utterance_ms = (
+                provisional.ended_ns - provisional.started_ns
+            ) // 1_000_000
+        utterances = state.manager.feed(samples)
+        for utterance in utterances:
+            _observe_utterance(state.health, utterance)
+        return utterances
 
     def infer_utterances(self, utterances: list[AudioUtterance]) -> tuple[CaptionPayload, ...]:
         """ASR + translation for completed utterances. Safe to call from
@@ -376,6 +446,11 @@ class LivePipeline:
         if not source_text:
             if transcript.error and not provisional:
                 return self._failure_caption(utterance, transcript.error, state)
+            # DS-401: a final utterance with strong VAD evidence but an empty
+            # transcript points at an ASR language/model problem, not VAD.
+            if not provisional:
+                with self._metrics_lock:
+                    state.health.empty_high_speech_count += 1
             return None
 
         # v0.4 Phase 3: per-source phrase filters run BEFORE the language gate

@@ -1,106 +1,79 @@
 import { describe, expect, it } from "vitest";
 
 import type { AudioEndpoint, EndpointCatalog } from "../audio/model";
-import { detectVbCable } from "./vbCable";
+import { detectVbCable, detectVirtualCables } from "./vbCable";
 
-function endpoint(overrides: Partial<AudioEndpoint>): AudioEndpoint {
-  return {
-    id: `dev://${overrides.kind ?? "capture"}-${String(Math.random())}`,
-    friendlyName: "Unrelated device",
-    kind: "capture",
-    state: "active",
-    defaultRoles: {
-      console: false,
-      multimedia: false,
-      communications: false,
-    },
-    nativeFormat: null,
-    isSynthetic: false,
-    ...overrides,
-  };
+function endpoint(
+  id: string,
+  name: string,
+  kind: "render" | "capture",
+  state: "active" | "inactive" = "active",
+): AudioEndpoint {
+  return { id, friendlyName: name, kind, state } as AudioEndpoint;
 }
-
-const CABLE_INPUT = endpoint({
-  id: "dev://cable-input",
-  friendlyName: "CABLE Input (VB-Audio Virtual Cable)",
-  // "CABLE Input" is a render (playback) endpoint: apps play voice into it.
-  kind: "render",
-});
-const CABLE_OUTPUT = endpoint({
-  id: "dev://cable-output",
-  friendlyName: "CABLE Output (VB-Audio Virtual Cable)",
-  // "CABLE Output" is a capture (recording) endpoint: the app records from it.
-  kind: "capture",
-});
 
 function catalog(endpoints: AudioEndpoint[]): EndpointCatalog {
-  return {
-    platform: "windows",
-    deviceChangeDetected: false,
-    processCaptureSupported: false,
-    endpoints,
-  };
+  return { platform: "windows", endpoints } as EndpointCatalog;
 }
 
-describe("detectVbCable", () => {
-  it("reports installed when both CABLE endpoints are active", () => {
-    const detection = detectVbCable(catalog([CABLE_INPUT, CABLE_OUTPUT]));
-    expect(detection.installed).toBe(true);
-    expect(detection.input?.id).toBe("dev://cable-input");
-    expect(detection.output?.id).toBe("dev://cable-output");
-    expect(detection.degraded).toBe(false);
-    expect(detection.issues).toEqual([]);
+const CABLE_INPUT = endpoint("c-in", "CABLE Input", "render");
+const CABLE_OUTPUT = endpoint("c-out", "CABLE Output", "capture");
+
+describe("detectVirtualCables (DS-500)", () => {
+  it("detects a normal cable pair with high confidence", () => {
+    const detection = detectVirtualCables(catalog([CABLE_INPUT, CABLE_OUTPUT]));
+    expect(detection.confidence).toBe("high");
+    expect(detection.playbackCandidates).toHaveLength(1);
+    expect(detection.recordingCandidates).toHaveLength(1);
+    expect(detection.warnings).toEqual([]);
   });
 
-  it("matches names case-insensitively and without the VB-Audio suffix", () => {
-    const detection = detectVbCable(
+  it("handles renamed cables", () => {
+    const detection = detectVirtualCables(
       catalog([
-        endpoint({ id: "a", friendlyName: "cable input", kind: "render" }),
-        endpoint({ id: "b", friendlyName: "Cable Output", kind: "capture" }),
+        endpoint("r1", "CABLE Input (renamed)", "render"),
+        endpoint("r2", "CABLE Output (renamed)", "capture"),
       ]),
     );
-    expect(detection.installed).toBe(true);
+    expect(detection.confidence).toBe("high");
+    expect(detection.playbackCandidates).toHaveLength(1);
+    expect(detection.recordingCandidates).toHaveLength(1);
   });
 
-  it("requires both endpoints — a half-installed driver is not installed", () => {
-    const onlyInput = detectVbCable(catalog([CABLE_INPUT]));
-    expect(onlyInput.installed).toBe(false);
-    expect(onlyInput.input).not.toBeNull();
-    expect(onlyInput.output).toBeNull();
-    expect(onlyInput.issues.join(" ")).toContain("VB-CABLE was not found");
-
-    const onlyOutput = detectVbCable(catalog([CABLE_OUTPUT]));
-    expect(onlyOutput.installed).toBe(false);
-    expect(onlyOutput.output).not.toBeNull();
-    expect(onlyOutput.input).toBeNull();
+  it("reports missing cables with low confidence and a warning", () => {
+    const detection = detectVirtualCables(catalog([endpoint("m1", "Microphone", "capture")]));
+    expect(detection.confidence).toBe("low");
+    expect(detection.warnings.length).toBeGreaterThan(0);
   });
 
-  it("flags a disabled CABLE endpoint as degraded instead of installed", () => {
-    const detection = detectVbCable(
-      catalog([endpoint({ ...CABLE_INPUT, state: "disabled" }), CABLE_OUTPUT]),
-    );
-    expect(detection.installed).toBe(false);
-    expect(detection.degraded).toBe(true);
-    expect(detection.issues.join(" ")).toContain("not active");
-  });
-
-  it("ignores unrelated render devices that merely share a name fragment", () => {
-    const detection = detectVbCable(
+  it("lists every candidate when multiple cables exist", () => {
+    const detection = detectVirtualCables(
       catalog([
-        endpoint({
-          id: "dev://usb",
-          friendlyName: "USB Headset Cable",
-          kind: "render",
-        }),
-        endpoint({
-          id: "dev://mixer",
-          friendlyName: "Mixer Capture",
-          kind: "capture",
-        }),
+        CABLE_INPUT,
+        CABLE_OUTPUT,
+        endpoint("c2-in", "CABLE Input (2)", "render"),
+        endpoint("c2-out", "CABLE Output (2)", "capture"),
       ]),
     );
-    expect(detection.installed).toBe(false);
-    expect(detection.input).toBeNull();
-    expect(detection.output).toBeNull();
+    expect(detection.playbackCandidates).toHaveLength(2);
+    expect(detection.recordingCandidates).toHaveLength(2);
+  });
+
+  it("flags inactive devices instead of silently proceeding", () => {
+    const detection = detectVirtualCables(
+      catalog([
+        endpoint("c-in", "CABLE Input", "render", "inactive"),
+        CABLE_OUTPUT,
+      ]),
+    );
+    expect(detection.confidence).toBe("medium");
+    expect(
+      detection.warnings.some((w) => w.includes("not active")),
+    ).toBe(true);
+  });
+
+  it("keeps the strict single-cable view for the Sources card", () => {
+    expect(detectVbCable(catalog([CABLE_INPUT, CABLE_OUTPUT])).installed).toBe(true);
+    expect(detectVbCable(catalog([CABLE_INPUT])).installed).toBe(false);
   });
 });

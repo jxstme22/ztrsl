@@ -13,8 +13,15 @@ import type {
   TranslationProvider,
 } from "../live/bridge";
 import type { ModelUiState } from "../models/useModels";
+import {
+  QUALITY_PROFILE_IDS,
+  loadQualityProfileId,
+  saveQualityProfileId,
+  type QualityProfileId,
+} from "../presets/quality";
 import { useT } from "../features/i18n/store";
 import type { UIKey } from "../features/i18n/strings";
+import { loadSourceConfigs } from "../sources/storage";
 import { Select } from "./Select";
 import type { SelectOption } from "./Select";
 
@@ -26,6 +33,10 @@ type LiveTranslationPanelProps = {
   live: LiveController;
   /** Installed model ids, so provider options can show what's on disk. */
   models?: ModelUiState;
+  /** Kept-open history session id to append into (null = fresh session). */
+  sessionIdHint?: string | null;
+  /** When provided, Stop asks the caller (confirmation modal) first. */
+  onRequestStop?: () => void;
 };
 
 const INPUT_ENDPOINT_KEY = "lst.live.input-endpoint";
@@ -45,13 +56,26 @@ const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
 const BAIDU_APPID_KEY = "lst.live.baidu-appid";
 const BAIDU_SECRET_KEY = "lst.live.baidu-secret";
 const CAPTION_MODE_KEY = "lst.live.caption-mode";
+const SEGMENTATION_KEY = "lst.live.segmentation";
 
 /** How the pipeline produces captions: streaming preview vs per-utterance. */
 export type CaptionMode = "streaming" | "final-only";
 
+/** Caption segmentation style: short chunks, balanced, or full sentences. */
+export type Segmentation = "chunk" | "balanced" | "sentence";
+
+const SEGMENTATIONS: readonly Segmentation[] = ["chunk", "balanced", "sentence"];
+
 function loadCaptionMode(): CaptionMode {
   const stored = window.localStorage.getItem(CAPTION_MODE_KEY);
   return stored === "final-only" ? "final-only" : "streaming";
+}
+
+function loadSegmentation(): Segmentation {
+  const stored = window.localStorage.getItem(SEGMENTATION_KEY);
+  return SEGMENTATIONS.includes(stored as Segmentation)
+    ? (stored as Segmentation)
+    : "balanced";
 }
 
 function loadStored(key: string): string | null {
@@ -104,6 +128,8 @@ function loadAsrProvider(): AsrProvider {
     stored === "ncspeech" ||
     stored === "ncspeech-zh" ||
     stored === "ncspeech-zh-parakeet" ||
+    stored === "paraformer-zh-streaming" ||
+    stored === "sensevoice-small" ||
     stored === "mlx" ||
     stored === "mlx-whisper" ||
     stored === "groq-whisper"
@@ -130,6 +156,8 @@ function loadTranslationProvider(): TranslationProvider {
   if (
     stored === "nllb" ||
     stored === "madlad" ||
+    stored === "opus-mt-en-zh" ||
+    stored === "opus-mt-zh-en" ||
     stored === "libretranslate" ||
     stored === "google-translate" ||
     stored === "mymemory" ||
@@ -196,6 +224,8 @@ export function LiveTranslationPanel({
   audio,
   live,
   models,
+  sessionIdHint = null,
+  onRequestStop,
 }: LiveTranslationPanelProps) {
   const [inputEndpointId, setInputEndpointId] = useState<string | null>(() =>
     loadStored(INPUT_ENDPOINT_KEY),
@@ -211,8 +241,14 @@ export function LiveTranslationPanel({
   const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
   const [vadSensitivity, setVadSensitivity] =
     useState<number>(loadVadSensitivity);
+  const [qualityProfileId, setQualityProfileId] = useState<QualityProfileId>(
+    loadQualityProfileId,
+  );
   const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [segmentation, setSegmentation] = useState<Segmentation>(
+    loadSegmentation,
+  );
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
@@ -221,6 +257,18 @@ export function LiveTranslationPanel({
   );
   const [translationProvider, setTranslationProvider] =
     useState<TranslationProvider>(loadTranslationProvider);
+  // Single-channel vs all-sources: all-sources starts one live session that
+  // captures every configured source with its own tag.
+  const [channelMode, setChannelMode] = useState<"channel" | "all">("channel");
+  const configurableSources = useMemo(
+    () =>
+      loadSourceConfigs().sources.filter(
+        (source) =>
+          source.captureTarget.kind === "endpoint" &&
+          source.captureTarget.endpointId !== null,
+      ),
+    [],
+  );
 
   // Only show LOCAL models that are downloaded; cloud/free endpoints
   // (Groq, NVIDIA NIM, translation APIs) are always visible.
@@ -232,10 +280,14 @@ export function LiveTranslationPanel({
     ncspeech: "ncspeech-tl-fastconformer-hybrid-large",
     "ncspeech-zh": "ncspeech-zh-citrinet-1024-gamma",
     "ncspeech-zh-parakeet": "ncspeech-zh-parakeet-ctc-0.6b",
+    "paraformer-zh-streaming": "paraformer-zh-streaming",
+    "sensevoice-small": "sensevoice-small",
   };
   const LOCAL_TRANSLATION_MODELS: Partial<Record<string, string>> = {
     nllb: "nllb-200-distilled-600M-ct2-int8",
     madlad: "madlad400-3b-mt",
+    "opus-mt-en-zh": "opus-mt-en-zh-ct2-int8",
+    "opus-mt-zh-en": "opus-mt-zh-en-ct2-int8",
   };
   const [ltEndpoint, setLtEndpoint] = useState<string>(
     () => window.localStorage.getItem(LT_ENDPOINT_KEY) ?? "",
@@ -432,6 +484,10 @@ export function LiveTranslationPanel({
       ltEndpoint.trim().length > 0) &&
     (translationProvider !== "custom-http" ||
       customTxEndpoint.trim().length > 0) &&
+    (translationProvider !== "opus-mt-en-zh" ||
+      (sourceMode === "english" && targetLanguage === "zh")) &&
+    (translationProvider !== "opus-mt-zh-en" ||
+      (sourceMode === "chinese" && targetLanguage === "en")) &&
     (translationProvider !== "baidu-translate" ||
       (baiduAppId.trim().length > 0 && baiduSecret.trim().length > 0));
 
@@ -441,10 +497,12 @@ export function LiveTranslationPanel({
     playbackEndpointId !== null &&
     inputEndpointId === playbackEndpointId;
 
+  const allSources = channelMode === "all" ? configurableSources : [];
   const canStart =
-    inputReady &&
-    (!monitorEnabled || playbackReady) &&
-    !sameEndpoint &&
+    (channelMode === "all"
+      ? allSources.length > 0
+      : inputReady && !sameEndpoint) &&
+    (!monitorEnabled || playbackReady || channelMode === "all") &&
     !busy &&
     !listening &&
     configComplete;
@@ -501,6 +559,11 @@ export function LiveTranslationPanel({
     window.localStorage.setItem(CAPTION_MODE_KEY, value);
   };
 
+  const changeSegmentation = (value: Segmentation) => {
+    setSegmentation(value);
+    window.localStorage.setItem(SEGMENTATION_KEY, value);
+  };
+
   const changeTranslationProvider = (value: TranslationProvider) => {
     setTranslationProvider(value);
     window.localStorage.setItem(TRANSLATION_PROVIDER_KEY, value);
@@ -544,7 +607,13 @@ export function LiveTranslationPanel({
             type="button"
             disabled={busy}
             aria-busy={busy}
-            onClick={() => void live.stop()}
+            onClick={() => {
+              if (onRequestStop === undefined) {
+                void live.stop();
+              } else {
+                onRequestStop();
+              }
+            }}
           >
             {busy ? (
               <LoaderCircle className="spin" aria-hidden="true" size={16} />
@@ -555,12 +624,18 @@ export function LiveTranslationPanel({
           </button>
         ) : (
           <button
-            className="button primary live-start"
+            className="button primary live-start btn-shine"
             type="button"
             disabled={!canStart}
             aria-busy={busy}
             onClick={() => {
-              if (inputEndpointId !== null) {
+              const activeSources =
+                channelMode === "all" ? allSources : [];
+              if (
+                channelMode === "all"
+                  ? activeSources.length > 0
+                  : inputEndpointId !== null
+              ) {
                 void (async () => {
                   // Never start a capture without the microphone grant:
                   // macOS delivers silent zeros (or hangs) on input without
@@ -592,24 +667,53 @@ export function LiveTranslationPanel({
                     baiduSecret,
                     captionMode,
                   });
+                  const firstEndpoint =
+                    activeSources[0]?.captureTarget.kind === "endpoint"
+                      ? activeSources[0].captureTarget.endpointId
+                      : null;
                   await live.start(
-                    inputEndpointId,
-                    monitorEnabled ? playbackEndpointId : null,
+                    channelMode === "all"
+                      ? firstEndpoint ?? ""
+                      : (inputEndpointId ?? ""),
+                    channelMode === "all"
+                      ? null
+                      : monitorEnabled
+                        ? playbackEndpointId
+                        : null,
                     asrProvider !== "groq-whisper" &&
                       (translationProvider === "madlad" ||
-                        translationProvider === "nllb")
+                        translationProvider === "nllb" ||
+                        translationProvider === "opus-mt-en-zh" ||
+                        translationProvider === "opus-mt-zh-en")
                       ? isSimulator
                         ? "demo"
                         : "local"
                       : "http",
-                    monitorEnabled,
+                    channelMode === "all" ? false : monitorEnabled,
                     sourceMode,
                     targetLanguage,
                     asrProvider,
                     translationProvider,
                     vadSensitivity,
-                  );
-                })();
+                    segmentation,
+                    activeSources.map((source) => ({
+                      sourceId: source.sourceId,
+                      endpointId:
+                        source.captureTarget.kind === "endpoint"
+                          ? (source.captureTarget.endpointId ?? "")
+                          : "",
+                      displayName: source.displayName,
+                      captionTag: source.captionTag,
+                      languageProfile: source.languageProfile,
+                      strictness: source.strictness,
+                      labelStyle: source.labelStyle,
+                      color: source.color,
+                      sourceOrigin: source.sourceOrigin,
+                      languageConfig: source.languageConfig,
+                    })),
+                  sessionIdHint,
+                );
+              })();
               }
             }}
           >
@@ -687,19 +791,70 @@ export function LiveTranslationPanel({
 
       <div className="live-grid">
         <div className="field span-2">
-          <label htmlFor="live-input">{t("liveVoiceChatChannel")}</label>
-          <Select
-            id="live-input"
-            label={t("liveVoiceChatChannel")}
-            value={inputEndpointId ?? ""}
-            options={channelOptions}
-            disabled={listening || busy}
-            placeholder={t("liveChooseInput")}
-            onChange={(value) => {
-              setInput(value || null);
-            }}
-          />
+          <label htmlFor="live-channel-mode">{t("liveChannelMode")}</label>
+          <div className="segmented" id="live-channel-mode">
+            <button
+              type="button"
+              className={channelMode === "channel" ? "on" : ""}
+              disabled={listening || busy}
+              onClick={() => {
+                setChannelMode("channel");
+              }}
+            >
+              {t("liveOneChannel")}
+            </button>
+            <button
+              type="button"
+              className={channelMode === "all" ? "on" : ""}
+              disabled={listening || busy || configurableSources.length < 2}
+              onClick={() => {
+                setChannelMode("all");
+              }}
+            >
+              {t("liveAllSources").replace(
+                "{count}",
+                String(configurableSources.length),
+              )}
+            </button>
+          </div>
+          <small className="field-note">
+            {channelMode === "all"
+              ? t("liveAllSourcesNote")
+              : configurableSources.length < 2
+                ? t("liveAllSourcesDisabledNote")
+                : t("liveOneChannelNote")}
+          </small>
         </div>
+        {channelMode === "all" ? (
+          <div className="field span-2">
+            <label>{t("liveSourcesBeingCaptured")}</label>
+            <ul className="live-source-list">
+              {allSources.map((source) => (
+                <li key={source.sourceId}>
+                  <span className="live-source-tag">{source.captionTag}</span>
+                  <span className="live-source-name">
+                    {source.displayName}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="field span-2">
+            <label htmlFor="live-input">{t("liveVoiceChatChannel")}</label>
+            <Select
+              id="live-input"
+              label={t("liveVoiceChatChannel")}
+              value={inputEndpointId ?? ""}
+              options={channelOptions}
+              disabled={listening || busy}
+              placeholder={t("liveChooseInput")}
+              onChange={(value) => {
+                setInput(value || null);
+              }}
+            />
+          </div>
+        )}
 
         <div className="field">
           <label htmlFor="live-language">{t("liveSourceLanguage")}</label>
@@ -733,6 +888,25 @@ export function LiveTranslationPanel({
             options={TARGET_LANGUAGES.map((language) => ({
               value: language,
               label: t(("lang" + language) as UIKey),
+            }))}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-quality">{t("liveQuality")}</label>
+          <Select
+            id="live-quality"
+            label={t("liveQuality")}
+            value={qualityProfileId}
+            disabled={listening || busy}
+            onChange={(value) => {
+              const id = value as QualityProfileId;
+              setQualityProfileId(id);
+              saveQualityProfileId(id);
+            }}
+            options={QUALITY_PROFILE_IDS.map((id) => ({
+              value: id,
+              label: t(("liveQuality" + id) as UIKey),
             }))}
           />
         </div>
@@ -797,6 +971,20 @@ export function LiveTranslationPanel({
                 ),
               },
               {
+                value: "paraformer-zh-streaming",
+                label: tag(
+                  "FunASR Paraformer (streaming zh)",
+                  installedModelIds.has("paraformer-zh-streaming"),
+                ),
+              },
+              {
+                value: "sensevoice-small",
+                label: tag(
+                  "SenseVoice Small (zh/en/ja/ko/yue)",
+                  installedModelIds.has("sensevoice-small"),
+                ),
+              },
+              {
                 value: "nvidia-parakeet-1.1b",
                 label: cloud("NVIDIA Parakeet CTC 1.1B (NIM)"),
               },
@@ -836,6 +1024,20 @@ export function LiveTranslationPanel({
                 ),
               },
               {
+                value: "opus-mt-en-zh",
+                label: tag(
+                  "Local opus-mt (en→zh, Apache-2.0)",
+                  installedModelIds.has("opus-mt-en-zh-ct2-int8"),
+                ),
+              },
+              {
+                value: "opus-mt-zh-en",
+                label: tag(
+                  "Local opus-mt (zh→en, Apache-2.0)",
+                  installedModelIds.has("opus-mt-zh-en-ct2-int8"),
+                ),
+              },
+              {
                 value: "google-translate",
                 label: cloud("Google Translate (free, unofficial endpoint)"),
               },
@@ -863,6 +1065,20 @@ export function LiveTranslationPanel({
               );
             })}
           />
+          {translationProvider === "opus-mt-en-zh" &&
+            (sourceMode !== "english" || targetLanguage !== "zh") && (
+              <p className="diag-hint warn">
+                opus-mt (en→zh) needs the source set to English and the
+                output language set to Chinese.
+              </p>
+            )}
+          {translationProvider === "opus-mt-zh-en" &&
+            (sourceMode !== "chinese" || targetLanguage !== "en") && (
+              <p className="diag-hint warn">
+                opus-mt (zh→en) needs the source set to Chinese and the
+                output language set to English.
+              </p>
+            )}
         </div>
 
         <div className="field">
@@ -907,6 +1123,28 @@ export function LiveTranslationPanel({
             }}
           />
           <small className="field-note">{t("liveCaptionModeNote")}</small>
+        </div>
+
+        <div className="field">
+          <label htmlFor="live-segmentation">{t("liveSegmentation")}</label>
+          <Select
+            id="live-segmentation"
+            label={t("liveSegmentation")}
+            value={segmentation}
+            disabled={listening || busy}
+            options={SEGMENTATIONS.map((id) => ({
+              value: id,
+              label: t(("liveSegmentation" + id) as UIKey),
+            }))}
+            onChange={(value) => {
+              changeSegmentation(value as Segmentation);
+            }}
+          />
+          <small className="field-note">
+            {t(
+              ("liveSegmentationNote" + segmentation) as UIKey,
+            )}
+          </small>
         </div>
       </div>
 
@@ -1072,18 +1310,20 @@ export function LiveTranslationPanel({
         </div>
       )}
 
-      <label className="live-monitor-toggle">
-        <input
-          type="checkbox"
-          aria-label={t("liveMonitorCapturedAudio")}
-          checked={monitorEnabled}
-          disabled={listening || busy}
-          onChange={toggleMonitor}
-        />
-        <span>
-          <strong>{t("liveMonitorCapturedAudio")}</strong>
-        </span>
-      </label>
+      {channelMode !== "all" && (
+        <label className="live-monitor-toggle">
+          <input
+            type="checkbox"
+            aria-label={t("liveMonitorCapturedAudio")}
+            checked={monitorEnabled}
+            disabled={listening || busy}
+            onChange={toggleMonitor}
+          />
+          <span>
+            <strong>{t("liveMonitorCapturedAudio")}</strong>
+          </span>
+        </label>
+      )}
 
       {monitorEnabled && sameEndpoint && (
         <div className="inline-alert error" role="alert">

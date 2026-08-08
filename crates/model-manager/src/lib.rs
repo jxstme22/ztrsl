@@ -38,7 +38,7 @@ pub use runtime::{
     cuda_pack_download_bytes, system_cuda_available,
 };
 pub use signed_catalog::{public_key_for, sign_payload, verify_catalog_signature};
-pub use store::{InstalledModel, ModelStore};
+pub use store::{InstalledManifest, InstalledModel, ModelStore};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

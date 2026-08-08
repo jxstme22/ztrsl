@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OverlaySettings } from "../overlay/model";
-import { migrateFromV02 } from "./migration";
+import { migrateFromV02, migrateFromV03 } from "./migration";
 import { sourceConfigsSchema } from "./model";
 import { isValidSourceId } from "./identity";
 
@@ -92,5 +92,63 @@ describe("migrateFromV02", () => {
   it("ignores garbage v0.2 overlay state (null is passed by the loader)", () => {
     const { configs } = migrateFromV02(null, null, SEQUENTIAL_RANDOM);
     expect(configs.sources).toHaveLength(1);
+  });
+});
+
+describe("migrateFromV03 (DS-204)", () => {
+  const v3Source = {
+    sourceId: "0123456789abcdef0123456789abcdef",
+    displayName: "Team",
+    captionTag: "TEAM",
+    labelStyle: "brackets" as const,
+    captionAlignment: "center" as const,
+    color: "#7dd3fc",
+    captureTarget: { kind: "endpoint" as const, endpointId: "cable-output" },
+    monitoring: { enabled: true, headphoneEndpointId: "hp", volume: 1 },
+    languageProfile: "mandarin" as const,
+    strictness: "balanced" as const,
+  };
+
+  it("migrates v3 sources to v4 preserving every field", () => {
+    const migrated = migrateFromV03({
+      schemaVersion: 3 as const,
+      sources: [v3Source],
+    });
+    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.sources[0]).toMatchObject({
+      sourceId: v3Source.sourceId,
+      displayName: "Team",
+      captionTag: "TEAM",
+      labelStyle: "brackets",
+      color: "#7dd3fc",
+      captureTarget: { kind: "endpoint", endpointId: "cable-output" },
+      monitoring: { enabled: true, headphoneEndpointId: "hp", volume: 1 },
+      languageProfile: "mandarin",
+      strictness: "balanced",
+    });
+    expect(migrated.sources[0]?.sourceOrigin).toBe("virtual_voice_channel");
+    expect(migrated.sources[0]?.languageConfig).toEqual({
+      primaryLanguage: "zh",
+      secondaryLanguages: [],
+      detectionMode: "fixed",
+    });
+  });
+
+  it("derives full_auto for unknown profiles (never Filipino)", () => {
+    const migrated = migrateFromV03({
+      schemaVersion: 3 as const,
+      sources: [{ ...v3Source, languageProfile: "auto" as const }],
+    });
+    expect(migrated.sources[0]?.languageConfig.detectionMode).toBe("full_auto");
+    expect(migrated.sources[0]?.languageConfig.primaryLanguage).toBeNull();
+  });
+
+  it("is idempotent: v4 documents pass through untouched", () => {
+    const v4 = migrateFromV03({
+      schemaVersion: 3 as const,
+      sources: [v3Source],
+    });
+    const again = migrateFromV03(v4);
+    expect(again).toEqual(v4);
   });
 });

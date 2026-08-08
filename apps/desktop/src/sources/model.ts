@@ -35,6 +35,91 @@ export const languageProfileSchema = z.enum([
 ]);
 export type LanguageProfile = z.infer<typeof languageProfileSchema>;
 
+/**
+ * DS-200: where a source's audio originates. Describes the origin for
+ * policy purposes (e.g. normalization, suppression) — it never replaces
+ * the capture endpoint. Users can always edit it.
+ */
+export const sourceOriginSchema = z.enum([
+  "virtual_voice_channel",
+  "physical_microphone",
+  "application_audio",
+  "system_mix",
+  "recorded_file",
+]);
+export type SourceOrigin = z.infer<typeof sourceOriginSchema>;
+
+export const DEFAULT_SOURCE_ORIGIN: SourceOrigin = "virtual_voice_channel";
+
+/**
+ * DS-201: explicit language configuration replacing a single profile
+ * string as the sole representation of recognition language behavior.
+ * The profile string remains for display/compatibility; `languageConfig`
+ * carries the actual intent.
+ */
+export const detectionModeSchema = z.enum([
+  "fixed",
+  "primary_preferred",
+  "limited_auto",
+  "full_auto",
+]);
+export type DetectionMode = z.infer<typeof detectionModeSchema>;
+
+export const languageConfigSchema = z
+  .object({
+    /** ISO-639-1/2 primary language, or null when nothing is fixed. */
+    primaryLanguage: z.string().regex(/^[a-z]{2,3}$/).nullable(),
+    secondaryLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)),
+    detectionMode: detectionModeSchema,
+  })
+  .refine(
+    (config) =>
+      config.detectionMode !== "fixed" &&
+      config.detectionMode !== "primary_preferred"
+        ? true
+        : config.primaryLanguage !== null,
+    {
+      message: "fixed and primary_preferred require a primary language",
+    },
+  )
+  .refine(
+    (config) =>
+      config.detectionMode !== "limited_auto" ||
+      config.secondaryLanguages.length >= 1,
+    {
+      message: "limited_auto requires at least one allowed language",
+    },
+  )
+  .refine(
+    (config) =>
+      config.primaryLanguage === null ||
+      !config.secondaryLanguages.includes(config.primaryLanguage),
+    {
+      message: "primary language cannot be duplicated in secondary languages",
+    },
+  );
+export type LanguageConfig = z.infer<typeof languageConfigSchema>;
+
+/** Deterministic profile → LanguageConfig adapter (DS-201 compatibility). */
+export function profileToLanguageConfig(profile: LanguageProfile): LanguageConfig {
+  switch (profile) {
+    case "mandarin":
+      return { primaryLanguage: "zh", secondaryLanguages: [], detectionMode: "fixed" };
+    case "chinese_english":
+      return { primaryLanguage: "zh", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+    case "tagalog":
+      return { primaryLanguage: "tl", secondaryLanguages: [], detectionMode: "fixed" };
+    case "taglish":
+      return { primaryLanguage: "tl", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+    case "cebuano":
+      return { primaryLanguage: "ceb", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+    case "bislish":
+      return { primaryLanguage: "ceb", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+    case "auto":
+      return { primaryLanguage: null, secondaryLanguages: [], detectionMode: "full_auto" };
+  }
+}
+
 export const languageStrictnessSchema = z.enum(["off", "balanced", "strict"]);
 export type LanguageStrictness = z.infer<typeof languageStrictnessSchema>;
 
@@ -90,6 +175,10 @@ export const audioSourceConfigSchema = z.object({
   monitoring: monitoringConfigSchema,
   languageProfile: languageProfileSchema,
   strictness: languageStrictnessSchema,
+  /** DS-200: audio origin for policy selection (never replaces the endpoint). */
+  sourceOrigin: sourceOriginSchema.default(DEFAULT_SOURCE_ORIGIN),
+  /** DS-201: explicit language configuration (profile stays for display). */
+  languageConfig: languageConfigSchema.default({ primaryLanguage: null, secondaryLanguages: [], detectionMode: "full_auto" }),
 });
 export type AudioSourceConfig = z.infer<typeof audioSourceConfigSchema>;
 
@@ -97,7 +186,7 @@ export const MAX_SOURCES = 8;
 export const SUGGESTED_TAG_MAX = 16;
 
 export const sourceConfigsSchema = z.object({
-  schemaVersion: z.literal(3),
+  schemaVersion: z.literal(4),
   sources: z.array(audioSourceConfigSchema).min(1).max(MAX_SOURCES),
 });
 export type SourceConfigs = z.infer<typeof sourceConfigsSchema>;
@@ -120,5 +209,7 @@ export function defaultSourceConfig(): AudioSourceConfig {
     },
     languageProfile: "tagalog",
     strictness: "balanced",
+    sourceOrigin: DEFAULT_SOURCE_ORIGIN,
+    languageConfig: profileToLanguageConfig("tagalog"),
   };
 }

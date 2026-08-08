@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { GripHorizontal, History, X } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import {
+  currentSessionEntries,
   type HistoryEntry,
   loadHistoryState,
   visibleHistoryEntries,
@@ -23,7 +26,7 @@ import { DEFAULT_OVERLAY_SNAPSHOT } from "./overlay/model";
 export function OverlayApp() {
   const [snapshot, setSnapshot] = useState(DEFAULT_OVERLAY_SNAPSHOT);
   const [history, setHistory] = useState<HistoryEntry[]>(
-    () => loadHistoryState().entries,
+    () => currentSessionEntries(loadHistoryState()),
   );
   const t = useT();
 
@@ -42,6 +45,29 @@ export function OverlayApp() {
       body.classList.remove("overlay-body");
     };
   }, []);
+
+  // The overlay window owns its own visibility: it never shows at startup
+  // and hides whenever the snapshot says so, even if the control window's
+  // handle to this window misbehaves on some platforms. The control window
+  // only drives mode/content via the snapshot.
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+    void getCurrentWindow().hide();
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+    const overlay = getCurrentWindow();
+    if (snapshot.visible) {
+      void overlay.show();
+    } else {
+      void overlay.hide();
+    }
+  }, [snapshot.visible]);
 
   useEffect(() => {
     let disposed = false;
@@ -78,12 +104,29 @@ export function OverlayApp() {
   // re-apply the stored placement — that would fight the drag, especially
   // when captions are arriving mid-move.
   const draggingRef = useRef(false);
+  // Snapshot events arrive constantly while live translation runs; every
+  // event carries a freshly-created settings object. Only re-apply the
+  // placement when the placement fields actually changed, so an unchanged
+  // settings object can never yank the window back mid-move.
+  const lastPlacementKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (draggingRef.current) {
       return;
     }
-    void restoreOverlayPlacement(snapshot.settings);
+    const settings = snapshot.settings;
+    const key = JSON.stringify([
+      settings.monitorId,
+      settings.xNormalized,
+      settings.yNormalized,
+      settings.widthNormalized,
+      settings.heightNormalized,
+    ]);
+    if (key === lastPlacementKeyRef.current) {
+      return;
+    }
+    lastPlacementKeyRef.current = key;
+    void restoreOverlayPlacement(settings);
   }, [snapshot.settings]);
 
   // Chat order: entries are stored oldest-first, newest last. The list uses

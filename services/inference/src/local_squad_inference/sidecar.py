@@ -52,6 +52,7 @@ from local_squad_inference.protocol import (
     HelloPayload,
     LiveStartPayload,
     SourceControlPayload,
+    SourceMode,
     SourcePresentationUpdatePayload,
     SourceRegistryEntry,
     SourceRegistryPayload,
@@ -74,6 +75,10 @@ from local_squad_inference.providers import (
     MlxWhisperProvider,
     NemoCtcProvider,
     NllbCTranslate2Provider,
+    OpusMtEnZhProvider,
+    OpusMtZhEnProvider,
+    SenseVoiceProvider,
+    StreamingParaformerProvider,
     TranslationProvider,
     provider_readiness,
 )
@@ -83,7 +88,11 @@ from local_squad_inference.scheduler import (
     SchedulerMetrics,
     make_job,
 )
-from local_squad_inference.vad import AudioUtterance, vad_config_from_sensitivity
+from local_squad_inference.vad import (
+    AudioUtterance,
+    apply_segmentation,
+    vad_config_from_sensitivity,
+)
 
 SendJson = Callable[[dict[str, object]], Awaitable[None]]
 
@@ -92,14 +101,34 @@ logger = logging.getLogger("local_squad_inference.sidecar")
 
 def profile_source_mode(
     language_profile: str,
-) -> Literal["filipino", "chinese", "english", "indonesian", "vietnamese", "thai", "malay"]:
-    """Map a registry language profile to the ASR source mode. Only Chinese
-    diverges today; Filipino-family profiles (filipino/tagalog/cebuano) all
-    use the Filipino ASR mode. Per-source strictness and filters land in a
-    later phase."""
-    if language_profile == "chinese":
-        return "chinese"
-    return "filipino"
+) -> SourceMode | None:
+    """Map a registry language profile to the ASR source mode.
+
+    One explicit table (DEC-001): a profile either maps to its own source
+    mode or stays unconstrained (``None``) — it never silently falls back
+    to an unrelated language. ``auto`` and unknown profiles return ``None``
+    so the session's source mode (or the provider's own detection) applies.
+    ``chinese_english`` maps to ``mixed`` (primary-preferred, never
+    Filipino). Filipino-family profiles share the Filipino ASR mode until a
+    dedicated decoder mode exists.
+    """
+    return PROFILE_SOURCE_MODES.get(language_profile)
+
+
+PROFILE_SOURCE_MODES: dict[str, SourceMode] = {
+    "mandarin": "chinese",
+    "chinese": "chinese",
+    "chinese_english": "mixed",
+    "tagalog": "filipino",
+    "taglish": "filipino",
+    "cebuano": "filipino",
+    "bislish": "filipino",
+    "english": "english",
+    "indonesian": "indonesian",
+    "vietnamese": "vietnamese",
+    "thai": "thai",
+    "malay": "malay",
+}
 
 
 def _priority_of_source(
@@ -427,6 +456,26 @@ def local_ncspeech_provider(name: str) -> NemoCtcProvider:
     return NemoCtcProvider(_model_artifact_dir(NCSpeech_MODEL_DIRS[name]))
 
 
+@lru_cache(maxsize=1)
+def local_paraformer_provider() -> StreamingParaformerProvider:
+    return StreamingParaformerProvider(_model_artifact_dir("paraformer-zh-streaming"))
+
+
+@lru_cache(maxsize=1)
+def sensevoice_provider() -> SenseVoiceProvider:
+    return SenseVoiceProvider(_model_artifact_dir("sensevoice-small"))
+
+
+@lru_cache(maxsize=1)
+def opus_mt_en_zh_provider() -> OpusMtEnZhProvider:
+    return OpusMtEnZhProvider(_model_artifact_dir("opus-mt-en-zh-ct2-int8"))
+
+
+@lru_cache(maxsize=1)
+def opus_mt_zh_en_provider() -> OpusMtZhEnProvider:
+    return OpusMtZhEnProvider(_model_artifact_dir("opus-mt-zh-en-ct2-int8"))
+
+
 def build_translation_provider(name: str, target_language: str = "en") -> TranslationProvider:
     """Return the configured translation provider. Defaults to local NLLB.
 
@@ -442,6 +491,18 @@ def build_translation_provider(name: str, target_language: str = "en") -> Transl
         return local_translation_provider(target_language)
     if name in {"madlad"}:
         return madlad_translation_provider()
+    if name in {"opus-mt-en-zh"}:
+        if target_language != "zh":
+            raise HttpTranslationError(
+                "opus-mt-en-zh outputs Chinese; set the live output language to Chinese"
+            )
+        return opus_mt_en_zh_provider()
+    if name in {"opus-mt-zh-en"}:
+        if target_language != "en":
+            raise HttpTranslationError(
+                "opus-mt-zh-en outputs English; set the live output language to English"
+            )
+        return opus_mt_zh_en_provider()
     if name in {"demo"}:
         return DemoTranslationProvider()
     if name in {"nvidia-riva-4b", "nvidia-riva-1.6b"}:
@@ -476,6 +537,10 @@ def build_asr_provider(name: str) -> AsrProvider:
         return local_whisper_provider("whisper-large-v3")
     if name in {"ncspeech", "ncspeech-zh", "ncspeech-zh-parakeet"}:
         return local_ncspeech_provider(name)
+    if name in {"paraformer-zh-streaming"}:
+        return local_paraformer_provider()
+    if name in {"sensevoice-small", "sense-voice"}:
+        return sensevoice_provider()
     if name == "groq-whisper":
         return GroqWhisperProvider()
     if name.startswith("nvidia-"):
@@ -621,6 +686,26 @@ def fake_captions_v2(
     )
 
 
+@dataclass(frozen=True)
+class WorkerQueueMetrics:
+    """Session-wide raw-audio + inference-job accounting (DS-104).
+
+    ``packets_dropped`` counts raw audio evicted from the bounded input
+    queue (latest-wins under overload); supported load reports zero.
+    ``provisionals_suppressed`` counts provisional jobs skipped by the
+    DS-105A overload shed before any raw audio is evicted.
+    """
+
+    packets_submitted: int
+    packets_consumed: int
+    packets_dropped: int
+    max_queue_depth: int
+    provisionals_suppressed: int
+    provisionals_dropped: int
+    finals_dropped: int
+    overload_events: int
+
+
 class LivePipelineWorker:
     """Runs the pipeline so the websocket handler never blocks on inference.
 
@@ -690,6 +775,14 @@ class LivePipelineWorker:
         )
         self._results: queue.Queue[tuple[CaptionPayload, ...] | Exception] = queue.Queue()
         self._dropped_packets = 0
+        self._packets_submitted = 0
+        self._packets_consumed = 0
+        self._max_queue_depth = 0
+        # DS-105A: when the raw packet queue is near-full (the VAD thread is
+        # falling behind), new provisional jobs are suppressed before raw
+        # audio is ever evicted. Finals are never suppressed.
+        self._provisional_high_water = max(2, max_pending - 2)
+        self._provisionals_suppressed = 0
         self._stopped = False
         self._thread = threading.Thread(
             target=self._run_vad,
@@ -711,6 +804,10 @@ class LivePipelineWorker:
     def submit(self, packet: AudioPacket | AudioPacketV2) -> None:
         # Latest-wins: when the VAD is behind, keep the most recent audio
         # (the speech that is happening right now) instead of the oldest.
+        # Raw drops are counted and only happen after provisional jobs are
+        # suppressed (DS-105A) — supported load never evicts raw audio.
+        self._packets_submitted += 1
+        self._max_queue_depth = max(self._max_queue_depth, self._input.qsize())
         while True:
             try:
                 self._input.put_nowait(packet)
@@ -721,6 +818,22 @@ class LivePipelineWorker:
                 except queue.Empty:
                     return
                 self._dropped_packets += 1
+
+    def worker_queue_metrics(self) -> WorkerQueueMetrics:
+        """Session-wide raw-audio queue + inference-job accounting. Every
+        dropped packet is measurable here; supported load reports zero
+        raw drops (DS-104/DS-105)."""
+        scheduler = self._scheduler.metrics()
+        return WorkerQueueMetrics(
+            packets_submitted=self._packets_submitted,
+            packets_consumed=self._packets_consumed,
+            packets_dropped=self._dropped_packets,
+            max_queue_depth=self._max_queue_depth,
+            provisionals_suppressed=self._provisionals_suppressed,
+            provisionals_dropped=scheduler.provisionals_dropped,
+            finals_dropped=scheduler.finals_dropped,
+            overload_events=scheduler.overload_events,
+        )
 
     def poll(self) -> tuple[CaptionPayload, ...] | Exception | None:
         try:
@@ -871,6 +984,7 @@ class LivePipelineWorker:
             self._drain_controls()
             if packet is None:
                 break
+            self._packets_consumed += 1
             try:
                 utterances = self._pipeline.feed_utterances(packet)
             except Exception as error:  # surfaced to the client as live.error
@@ -898,8 +1012,14 @@ class LivePipelineWorker:
                 due_ns = next_provisional_at_ns.get(source_key)
                 due = due_ns is None or now_ns >= due_ns
                 if speech_elapsed_ns >= PROVISIONAL_MIN_SPEECH_NS and due:
-                    self._enqueue_provisional(snapshot)
-                    next_provisional_at_ns[source_key] = now_ns + PROVISIONAL_CADENCE_NS
+                    if self._input.qsize() >= self._provisional_high_water:
+                        # DS-105A overload shed: the VAD thread is falling
+                        # behind; skip the provisional job (counted) so raw
+                        # audio is not evicted. Finals still schedule.
+                        self._provisionals_suppressed += 1
+                    else:
+                        self._enqueue_provisional(snapshot)
+                        next_provisional_at_ns[source_key] = now_ns + PROVISIONAL_CADENCE_NS
             else:
                 next_provisional_at_ns[source_key] = None
         self._drain_controls()
@@ -1170,7 +1290,20 @@ async def handle_connection(
                         )
                         if live_pipeline is None or live_worker is None:
                             continue
-                        live_pipeline.start_source(source_hex, source_mode=source_mode)
+                        # DS-303: per-source processing policy from the
+                        # registry's audio origin (user overrides later).
+                        from local_squad_inference.audio_health import (
+                            policy_for_origin,
+                        )
+
+                        processing = (
+                            policy_for_origin(entry.source_origin) if entry is not None else None
+                        )
+                        live_pipeline.start_source(
+                            source_hex,
+                            source_mode=source_mode,
+                            processing=processing,
+                        )
                         live_worker.submit(packet_v2)
                         continue
                     snapshot, strictness = snapshot_for(packet_v2.source_id)
@@ -1483,13 +1616,17 @@ async def handle_connection(
                     )
                     continue
                 scheduler_metrics = await asyncio.to_thread(live_worker.scheduler_metrics)
+                queue_metrics = await asyncio.to_thread(live_worker.worker_queue_metrics)
                 await connection.send(
                     json.dumps(
                         envelope(
                             "scheduler.metrics",
                             control.message_id,
                             control.session_id,
-                            asdict(scheduler_metrics),
+                            {
+                                "scheduler": asdict(scheduler_metrics),
+                                "queue": asdict(queue_metrics),
+                            },
                             version=negotiated_version,
                         )
                     )
@@ -1516,7 +1653,10 @@ async def handle_connection(
                         asr_provider,
                         translation_provider,
                         source_mode=live_request.source_mode,
-                        vad_config=vad_config_from_sensitivity(live_request.vad_sensitivity),
+                        vad_config=apply_segmentation(
+                            vad_config_from_sensitivity(live_request.vad_sensitivity),
+                            live_request.segmentation,
+                        ),
                         use_silero=live_request.provider != "demo",
                     )
                     live_worker = LivePipelineWorker(
@@ -1814,6 +1954,17 @@ async def run_server(port: int, token: str) -> None:
 
 
 def main() -> None:
+    # Native crashes (segfaults in onnxruntime/sherpa-onnx/ctranslate2) would
+    # otherwise kill the process silently; the supervisor captures this stderr
+    # trace and surfaces it in transport-failure messages.
+    import faulthandler
+
+    faulthandler.enable()
+    # Windows: align the onnxruntime copies before any sherpa-onnx model load
+    # (sherpa-onnx-core bundles a 1.17.1 DLL its own binding cannot use).
+    from local_squad_inference.windows_runtime import align_onnxruntime
+
+    align_onnxruntime()
     port = int(os.environ["LST_IPC_PORT"])
     token = os.environ["LST_IPC_TOKEN"]
     if not token:

@@ -77,10 +77,14 @@ HALLUCINATION_PHRASES: frozenset[str] = frozenset(
     }
 )
 
-# Faster-whisper reports per-segment no_speech_prob; segments above this are
-# overwhelmingly not speech (silence, clicks, fan noise) and only feed the
-# hallucination patterns above.
+# Faster-whisper reports per-segment no_speech_prob; a high value alone is
+# NOT enough to drop a segment — confident speech (strong avg_logprob) can
+# legitimately score high on noisy but speechy audio. The joint decision
+# drops only when BOTH no_speech_prob is high AND the logprob is poor.
+# Segments without a logprob (absent field) default to "poor" so the
+# conservative drop still applies.
 NO_SPEECH_PROB_LIMIT = 0.6
+STRONG_LOGPROB_LIMIT = -0.5
 
 
 def is_hallucination(text: str) -> bool:
@@ -91,15 +95,25 @@ def is_hallucination(text: str) -> bool:
 def keep_asr_segment(segment: object) -> bool:
     """Drop empty, non-speech, and pure-hallucination ASR segments.
 
-    ``segment`` is any object exposing ``text`` (whisper-style) and an
-    optional ``no_speech_prob``; kept separate so it can be unit-tested
-    without loading whisper.
+    ``segment`` is any object exposing ``text`` (whisper-style) plus
+    optional ``no_speech_prob``/``avg_logprob``; kept separate so it can be
+    unit-tested without loading whisper. A segment is dropped when:
+
+    - the text is empty;
+    - ``no_speech_prob`` is high AND ``avg_logprob`` is poor (joint noise
+      decision, DS-103) — confident speech survives;
+    - the text is an exact known hallucination phrase;
+    - either metric is non-finite (never trusted).
     """
     text = str(getattr(segment, "text", "") or "").strip()
     if not text:
         return False
     no_speech_prob = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
-    if no_speech_prob >= NO_SPEECH_PROB_LIMIT:
+    raw_logprob = getattr(segment, "avg_logprob", None)
+    avg_logprob = -1.0 if raw_logprob is None else float(raw_logprob or -1.0)
+    if not math.isfinite(no_speech_prob) or not math.isfinite(avg_logprob):
+        return False
+    if no_speech_prob >= NO_SPEECH_PROB_LIMIT and avg_logprob < STRONG_LOGPROB_LIMIT:
         return False
     return not is_hallucination(text)
 
@@ -338,6 +352,104 @@ class SherpaOmnilingualProvider:
         )
 
 
+def resolve_artifact(
+    manifest: dict[str, object],
+    model_dir: Path,
+    role: str,
+    *candidate_names: str,
+) -> Path:
+    """Resolve a verified manifest artifact by role or filename.
+
+    Catalog/URL installs may or may not record roles, so lookups fall back
+    to well-known filenames before giving up.
+    """
+    artifacts = cast(list[dict[str, object]], manifest["artifacts"])
+    for artifact in artifacts:
+        if artifact.get("role") == role:
+            return model_dir / cast(str, artifact["path"])
+    for name in candidate_names:
+        candidate = model_dir / name
+        if candidate.is_file():
+            return candidate
+    raise ModelUnavailableError(
+        f"model artifact for role '{role}' is missing from the installed manifest"
+    )
+
+
+class StreamingParaformerProvider:
+    """FunASR streaming Paraformer (Mandarin/English) via sherpa-onnx.
+
+    The runtime consumes the ONNX export published by sherpa-onnx for the
+    FunASR ``paraformer-zh-streaming`` architecture
+    (``sherpa-onnx-streaming-paraformer-bilingual-zh-en``, Apache-2.0).
+    Utterances are VAD-segmented by the live pipeline, so the streaming
+    decoder is fed a whole segment plus tail padding and decoded to a final
+    result — no chunked state is kept across utterances.
+    """
+
+    MODEL_ID = "paraformer-zh-streaming"
+
+    def __init__(self, model_dir: Path, num_threads: int = 4) -> None:
+        if not (model_dir / "manifest.json").is_file():
+            raise ModelUnavailableError(
+                f"FunASR Paraformer model not installed ({model_dir}). "
+                "Install 'FunASR Paraformer zh (streaming)' from the Models page."
+            )
+        manifest = verify_manifest(model_dir, model_dir / "manifest.json")
+        encoder = resolve_artifact(
+            manifest, model_dir, "encoder", "encoder.int8.onnx", "encoder.onnx"
+        )
+        decoder = resolve_artifact(
+            manifest, model_dir, "decoder", "decoder.int8.onnx", "decoder.onnx"
+        )
+        tokens = resolve_artifact(manifest, model_dir, "tokens", "tokens.txt")
+        try:
+            sherpa = importlib.import_module("sherpa_onnx")
+            numpy = importlib.import_module("numpy")
+        except ImportError as error:
+            raise ModelUnavailableError(
+                "sherpa-onnx and numpy are required for local ASR"
+            ) from error
+        self._numpy: Any = numpy
+        try:
+            self._recognizer: Any = sherpa.OnlineRecognizer.from_paraformer(
+                tokens=str(tokens),
+                encoder=str(encoder),
+                decoder=str(decoder),
+                num_threads=num_threads,
+                provider="cpu",
+                sample_rate=16000,
+                feature_dim=80,
+                decoding_method="greedy_search",
+            )
+        except (KeyError, RuntimeError, TypeError) as error:
+            raise ModelUnavailableError("Streaming Paraformer model could not load") from error
+
+    def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
+        started = time.perf_counter()
+        stream = self._recognizer.create_stream()
+        samples = self._numpy.asarray(utterance.pcm_f32, dtype=self._numpy.float32)
+        stream.accept_waveform(utterance.sample_rate, samples)
+        tail_paddings = self._numpy.zeros(
+            int(0.66 * utterance.sample_rate), dtype=self._numpy.float32
+        )
+        stream.accept_waveform(utterance.sample_rate, tail_paddings)
+        stream.input_finished()
+        while self._recognizer.is_ready(stream):
+            self._recognizer.decode_stream(stream)
+        text = str(self._recognizer.get_result(stream)).strip()
+        elapsed_ms = (time.perf_counter() - started) * 1_000
+        return AsrResult(
+            utterance_id=utterance.utterance_id,
+            text=text,
+            source_mode=source_mode,
+            is_final=True,
+            inference_ms=elapsed_ms,
+            model_id=self.MODEL_ID,
+            confidence=None,
+        )
+
+
 class NemoCtcProvider:
     """NVIDIA NeMo CTC ASR (NCSpeech Tagalog, Citrinet-1024 Mandarin) via sherpa-onnx.
 
@@ -402,6 +514,106 @@ class NemoCtcProvider:
             inference_ms=elapsed_ms,
             model_id=self._model_id,
             confidence=None,
+        )
+
+
+class SenseVoiceProvider:
+    """FunAudioLLM SenseVoiceSmall (zh/en/ja/ko/yue, auto-detect) via sherpa-onnx.
+
+    The runtime consumes the ONNX export published by sherpa-onnx for the
+    FunAudioLLM SenseVoice architecture
+    (``csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17``,
+    Apache-2.0, converted from ``FunAudioLLM/SenseVoiceSmall``). The model
+    emits the recognized text with optional language/emotion/event tags;
+    inverse text normalization is enabled so ITN-friendly transcripts
+    (numbers, dates, punctuation) come back readable. The artifact id is
+    read from the verified manifest.
+    """
+
+    MODEL_ID = "sensevoice-small"
+
+    def __init__(self, model_dir: Path, num_threads: int = 4) -> None:
+        if not (model_dir / "manifest.json").is_file():
+            raise ModelUnavailableError(
+                f"SenseVoice model not installed ({model_dir}). "
+                "Install 'SenseVoice Small' from the Models page."
+            )
+        manifest = verify_manifest(model_dir, model_dir / "manifest.json")
+        self._model_id = cast(str, manifest["id"])
+        model = resolve_artifact(manifest, model_dir, "model", "model.int8.onnx", "model.onnx")
+        tokens = resolve_artifact(manifest, model_dir, "tokens", "tokens.txt")
+        try:
+            sherpa = importlib.import_module("sherpa_onnx")
+            numpy = importlib.import_module("numpy")
+        except ImportError as error:
+            raise ModelUnavailableError(
+                "sherpa-onnx and numpy are required for local ASR"
+            ) from error
+        self._numpy: Any = numpy
+        self._model_path = str(model)
+        self._tokens_path = str(tokens)
+        self._num_threads = num_threads
+        # DS-705: recognizers are language-specific, so cache one per
+        # language. "auto" covers unknown/full-auto profiles; explicit
+        # source languages force the matching recognizer.
+        self._recognizers: dict[str, Any] = {}
+        try:
+            self._recognizers["auto"] = sherpa.OfflineRecognizer.from_sense_voice(
+                model=str(model),
+                tokens=str(tokens),
+                num_threads=num_threads,
+                language="auto",
+                use_itn=True,
+                decoding_method="greedy_search",
+                provider="cpu",
+                debug=False,
+            )
+        except (KeyError, RuntimeError, TypeError) as error:
+            raise ModelUnavailableError(
+                "SenseVoice model could not load (ONNX export required)"
+            ) from error
+
+    def _recognizer_for(self, source_mode: str) -> Any:
+        """SenseVoice language for a source mode: explicit zh/en when the
+        intent is known, otherwise auto (never an unrelated language)."""
+        language = {"chinese": "zh", "english": "en"}.get(source_mode, "auto")
+        recognizer = self._recognizers.get(language)
+        if recognizer is None:
+            importlib.import_module("sherpa_onnx")
+            recognizer = importlib.import_module("sherpa_onnx").OfflineRecognizer.from_sense_voice(
+                model=self._model_path,
+                tokens=self._tokens_path,
+                num_threads=self._num_threads,
+                language=language,
+                use_itn=True,
+                decoding_method="greedy_search",
+                provider="cpu",
+                debug=False,
+            )
+            self._recognizers[language] = recognizer
+        return recognizer
+
+    def transcribe(self, utterance: AudioUtterance, source_mode: str) -> AsrResult:
+        started = time.perf_counter()
+        recognizer = self._recognizer_for(source_mode)
+        stream = recognizer.create_stream()
+        samples = self._numpy.asarray(utterance.pcm_f32, dtype=self._numpy.float32)
+        stream.accept_waveform(utterance.sample_rate, samples)
+        recognizer.decode_stream(stream)
+        text = str(stream.result.text).strip()
+        elapsed_ms = (time.perf_counter() - started) * 1_000
+        # SenseVoice results expose the detected language ("zh", "en", "ja",
+        # "ko", "yue"); surface it when present, otherwise stay unknown.
+        language: str | None = getattr(stream.result, "lang", None) or None
+        return AsrResult(
+            utterance_id=utterance.utterance_id,
+            text=text,
+            source_mode=source_mode,
+            is_final=True,
+            inference_ms=elapsed_ms,
+            model_id=self._model_id,
+            confidence=None,
+            language=language,
         )
 
 
@@ -924,6 +1136,136 @@ class NllbCTranslate2Provider:
             inference_ms=elapsed_ms,
             model_id=self.MODEL_ID,
         )
+
+
+class OpusMtProvider:
+    """Local Helsinki opus-mt translation via CTranslate2.
+
+    Int8-quantized Marian conversions of ``Helsinki-NLP/opus-mt-*``
+    (Apache-2.0, commercially usable — unlike NLLB's CC-BY-NC). Tokenization
+    uses the model's SentencePiece models (``source.spm``/``target.spm``);
+    CTranslate2 appends ``</s>`` to the source for Marian models. On CUDA the
+    int8 weights are dequantized to float16 at load for best-quality
+    inference; CPU uses int8.
+    """
+
+    MODEL_ID = "opus-mt-en-zh-ct2-int8"
+    REQUIRED_SOURCE_MODE = "english"
+    DIRECTION_HINT = "select 'English' source and 'Chinese' output"
+    MAX_SOURCE_CHARS = 2000
+
+    def __init__(self, model_dir: Path) -> None:
+        verify_manifest(model_dir, model_dir / "manifest.json")
+        try:
+            ctranslate2 = importlib.import_module("ctranslate2")
+            sentencepiece = importlib.import_module("sentencepiece")
+        except ImportError as error:
+            raise ModelUnavailableError(
+                "ctranslate2 and sentencepiece are required for opus-mt translation"
+            ) from error
+        device, compute_type = resolve_inference_device(
+            "LST_TRANSLATION_DEVICE",
+            "LST_TRANSLATION_COMPUTE_TYPE",
+            cuda_compute="float16",
+            cpu_compute="int8",
+        )
+        forced = _device_was_forced("LST_TRANSLATION_DEVICE")
+        try:
+            self._translator: Any = ctranslate2.Translator(
+                str(model_dir.resolve()),
+                device=device,
+                compute_type=compute_type,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            if device == "cuda" and not forced:
+                device, compute_type = "cpu", "int8"
+                self._translator = ctranslate2.Translator(
+                    str(model_dir.resolve()),
+                    device=device,
+                    compute_type=compute_type,
+                )
+            else:
+                raise ModelUnavailableError("opus-mt translation model could not load") from error
+        try:
+            self._source_spm: Any = sentencepiece.SentencePieceProcessor(
+                str((model_dir / "source.spm").resolve())
+            )
+            self._target_spm: Any = sentencepiece.SentencePieceProcessor(
+                str((model_dir / "target.spm").resolve())
+            )
+        except (OSError, ValueError) as error:
+            raise ModelUnavailableError("opus-mt sentencepiece model could not load") from error
+        self._device = device
+        self._compute_type = compute_type
+
+    @property
+    def runtime_detail(self) -> str:
+        return f"{self._device}/{self._compute_type}"
+
+    def translate(self, result: AsrResult) -> TranslationResult:
+        if result.source_mode != self.REQUIRED_SOURCE_MODE:
+            raise ModelUnavailableError(f"{self.MODEL_ID} translates {self.DIRECTION_HINT}")
+        if not result.text:
+            return TranslationResult(
+                utterance_id=result.utterance_id,
+                source_text=result.text,
+                english_text="",
+                is_final=True,
+                inference_ms=0.0,
+                model_id=self.MODEL_ID,
+            )
+        if len(result.text) > self.MAX_SOURCE_CHARS:
+            return TranslationResult(
+                utterance_id=result.utterance_id,
+                source_text=result.text,
+                english_text=f"[Translation skipped, source too long: {len(result.text)} chars]",
+                is_final=True,
+                inference_ms=0.0,
+                model_id=self.MODEL_ID,
+            )
+        source = [
+            self._source_spm.id_to_piece(token_id)
+            for token_id in self._source_spm.encode(result.text, out_type=int)
+        ]
+        started = time.perf_counter()
+        try:
+            outputs = self._translator.translate_batch(
+                [source],
+                max_batch_size=1,
+                beam_size=4,
+                length_penalty=0.8,
+                repetition_penalty=1.3,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            raise ModelUnavailableError("opus-mt translation failed") from error
+        elapsed_ms = (time.perf_counter() - started) * 1_000
+        hypothesis = outputs[0].hypotheses[0]
+        ids = [self._target_spm.piece_to_id(token) for token in hypothesis]
+        target_text = self._target_spm.decode(ids).strip()
+        return TranslationResult(
+            utterance_id=result.utterance_id,
+            source_text=result.text,
+            english_text=target_text,
+            is_final=True,
+            inference_ms=elapsed_ms,
+            model_id=self.MODEL_ID,
+        )
+
+
+class OpusMtEnZhProvider(OpusMtProvider):
+    """English->Chinese Helsinki opus-mt (``opus-mt-en-zh-ct2-int8``)."""
+
+    MODEL_ID = "opus-mt-en-zh-ct2-int8"
+    REQUIRED_SOURCE_MODE = "english"
+    DIRECTION_HINT = "English audio to Chinese only; select 'English' source and 'Chinese' output"
+
+
+class OpusMtZhEnProvider(OpusMtProvider):
+    """Chinese->English Helsinki opus-mt (``opus-mt-zh-en-ct2-int8``)."""
+
+    MODEL_ID = "opus-mt-zh-en-ct2-int8"
+    REQUIRED_SOURCE_MODE = "chinese"
+    DIRECTION_HINT = "Chinese audio to English only; select 'Chinese' source and 'English' output"
 
 
 def provider_readiness(model_root: Path) -> dict[str, dict[str, str | bool]]:

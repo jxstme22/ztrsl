@@ -23,6 +23,8 @@ __pycache__/
 # Local application data and sensitive diagnostics (repo root only; the
 # crates/diagnostics workspace crate must stay tracked)
 models/artifacts/
+models/*/
+!models/manifests/
 models/staging/
 /diagnostics/
 *.wav
@@ -42,3 +44,4 @@ local-squad-sidecar.spec
 /xTRSNLTR_*_x64-setup.exe
 /xTRSNLTR_*_x64_en-US.msi
 models/mlx-whisper-large-v3-turbo-q4/
+services/inference/evaluation/fixtures/private/

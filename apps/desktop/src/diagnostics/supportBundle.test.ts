@@ -6,7 +6,7 @@ import type { SourceConfigs } from "../sources/model";
 import { DEFAULT_OVERLAY_SETTINGS } from "../overlay/model";
 
 const SOURCE_CONFIGS: SourceConfigs = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   sources: [
     {
       sourceId: "11111111111111111111111111111111",
@@ -18,6 +18,8 @@ const SOURCE_CONFIGS: SourceConfigs = {
       captureTarget: { kind: "endpoint", endpointId: null },
       monitoring: { enabled: false, headphoneEndpointId: null, volume: 0.5 },
       languageProfile: "tagalog",
+      sourceOrigin: "virtual_voice_channel",
+      languageConfig: { primaryLanguage: "tl", secondaryLanguages: [], detectionMode: "fixed" },
       strictness: "balanced",
     },
   ],

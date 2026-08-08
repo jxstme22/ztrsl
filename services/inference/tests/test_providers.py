@@ -17,9 +17,15 @@ from local_squad_inference.providers import (
 
 
 class FakeSegment:
-    def __init__(self, text: str, no_speech_prob: float = 0.0) -> None:
+    def __init__(
+        self,
+        text: str,
+        no_speech_prob: float = 0.0,
+        avg_logprob: float | None = None,
+    ) -> None:
         self.text = text
         self.no_speech_prob = no_speech_prob
+        self.avg_logprob = avg_logprob
 
 
 def test_is_hallucination_matches_known_phrases() -> None:
@@ -42,6 +48,45 @@ def test_keep_asr_segment_drops_non_speech_and_hallucinations() -> None:
     assert keep_asr_segment(FakeSegment("", no_speech_prob=0.0)) is False
     assert keep_asr_segment(FakeSegment("let's go", no_speech_prob=0.95)) is False
     assert keep_asr_segment(FakeSegment("push now", no_speech_prob=0.1)) is True
+
+
+def test_keep_asr_segment_joint_no_speech_decision() -> None:
+    # High no_speech_prob with STRONG logprob is confident speech: keep.
+    assert (
+        keep_asr_segment(
+            FakeSegment("rotate B, they are on A", no_speech_prob=0.95, avg_logprob=-0.2)
+        )
+        is True
+    )
+    # High no_speech_prob with POOR logprob is noise: drop.
+    assert keep_asr_segment(FakeSegment("let's go", no_speech_prob=0.95, avg_logprob=-1.5)) is False
+    # Short high-confidence Chinese text survives.
+    assert keep_asr_segment(FakeSegment("上A点", no_speech_prob=0.3, avg_logprob=-0.1)) is True
+    # One-word tactical speech survives.
+    assert keep_asr_segment(FakeSegment("rush", no_speech_prob=0.2, avg_logprob=-0.4)) is True
+    # Normal speech with punctuation survives.
+    assert (
+        keep_asr_segment(
+            FakeSegment("Rotate A, they're on B.", no_speech_prob=0.4, avg_logprob=-0.3)
+        )
+        is True
+    )
+    # Exact hallucination phrases are dropped even with a strong logprob.
+    assert (
+        keep_asr_segment(
+            FakeSegment("Thank you for watching", no_speech_prob=0.1, avg_logprob=-0.2)
+        )
+        is False
+    )
+    # Non-finite metrics are never trusted.
+    assert (
+        keep_asr_segment(FakeSegment("hello", no_speech_prob=float("nan"), avg_logprob=-0.2))
+        is False
+    )
+    assert (
+        keep_asr_segment(FakeSegment("hello", no_speech_prob=0.2, avg_logprob=float("inf")))
+        is False
+    )
 
 
 class FakeTranslator:
@@ -438,3 +483,187 @@ def _raise_on_mlx(name: str) -> Any:
     if name == "mlx_whisper":
         raise ImportError("no mlx-whisper installed")
     return __import__(name)
+
+
+class FakeSherpaSenseVoiceModule:
+    """Fake `sherpa_onnx` for SenseVoice: `from_sense_voice` returns a
+    recognizer wired to the module instance, recording decode calls."""
+
+    _current: "FakeSherpaSenseVoiceModule | None" = None
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self._state = {"text": "", "lang": None}
+        FakeSherpaSenseVoiceModule._current = self
+
+    def set_result(self, text: str, lang: str | None = None) -> None:
+        self._state["text"] = text
+        self._state["lang"] = lang
+
+    class OfflineRecognizer:
+        @classmethod
+        def from_sense_voice(cls, **kwargs: Any) -> Any:
+            assert FakeSherpaSenseVoiceModule._current is not None
+            FakeSherpaSenseVoiceModule._current.calls.append(kwargs)
+            return cls()
+
+        def create_stream(self) -> Any:
+            return SimpleNamespace(
+                result=SimpleNamespace(text="", lang=None),
+                accept_waveform=lambda sample_rate, samples: None,
+            )
+
+        def decode_stream(self, stream: Any) -> None:
+            assert FakeSherpaSenseVoiceModule._current is not None
+            FakeSherpaSenseVoiceModule._current.calls.append({"decoded": True})
+            stream.result = SimpleNamespace(
+                text=FakeSherpaSenseVoiceModule._current._state["text"],
+                lang=FakeSherpaSenseVoiceModule._current._state["lang"],
+            )
+
+
+@pytest.fixture
+def sensevoice_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
+    pytest.importorskip("numpy")
+    model_dir = tmp_path / "sensevoice-small"
+    model_dir.mkdir()
+    (model_dir / "model.int8.onnx").write_bytes(b"\x00\x01\x02\x03")
+    (model_dir / "tokens.txt").write_text("a\nb\n", encoding="utf-8")
+
+    def digest(data: bytes) -> str:
+        import hashlib
+
+        return hashlib.sha256(data).hexdigest()
+
+    (model_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": "sensevoice-small",
+                "artifacts": [
+                    {
+                        "role": "model",
+                        "path": "model.int8.onnx",
+                        "size_bytes": 4,
+                        "sha256": digest(b"\x00\x01\x02\x03"),
+                    },
+                    {
+                        "role": "tokens",
+                        "path": "tokens.txt",
+                        "size_bytes": 4,
+                        "sha256": digest(b"a\nb\n"),
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sherpa = FakeSherpaSenseVoiceModule()
+    monkeypatch.setitem(sys.modules, "sherpa_onnx", sherpa)
+    return {"sherpa": sherpa}, model_dir
+
+
+def test_sensevoice_provider_transcribes_utterance(
+    sensevoice_env: tuple[dict[str, Any], Path],
+) -> None:
+    from local_squad_inference.providers import SenseVoiceProvider
+    from local_squad_inference.vad import AudioUtterance
+
+    modules, model_dir = sensevoice_env
+    modules["sherpa"].set_result("翻A点", lang="zh")
+    provider = SenseVoiceProvider(model_dir)
+    result = provider.transcribe(
+        AudioUtterance(
+            utterance_id="u1",
+            pcm_f32=(0.0, 0.1, 0.0),
+            sample_rate=16_000,
+            started_ns=0,
+            ended_ns=1_000_000_000,
+            is_final=True,
+            forced_end=True,
+        ),
+        source_mode="chinese",
+    )
+    assert result.text == "翻A点"
+    assert result.language == "zh"
+    assert result.model_id == "sensevoice-small"
+    assert result.is_final is True
+    calls = modules["sherpa"].calls
+    # DS-705: an explicit Chinese source requests the "zh" recognizer.
+    zh_config = next(call for call in calls if call.get("language") == "zh")
+    assert zh_config["use_itn"] is True
+    assert zh_config["num_threads"] == 4
+    assert zh_config["provider"] == "cpu"
+    assert zh_config["model"].endswith("model.int8.onnx")
+    assert zh_config["tokens"].endswith("tokens.txt")
+    assert calls[-1] == {"decoded": True}
+
+
+def test_sensevoice_uses_auto_recognizer_for_unknown_languages(
+    sensevoice_env: tuple[dict[str, Any], Path],
+) -> None:
+    from local_squad_inference.providers import SenseVoiceProvider
+    from local_squad_inference.vad import AudioUtterance
+
+    modules, model_dir = sensevoice_env
+    modules["sherpa"].set_result("hello", lang=None)
+    provider = SenseVoiceProvider(model_dir)
+    result = provider.transcribe(
+        AudioUtterance(
+            utterance_id="u1",
+            pcm_f32=(0.0, 0.1, 0.0),
+            sample_rate=16_000,
+            started_ns=0,
+            ended_ns=1_000_000_000,
+            is_final=True,
+            forced_end=True,
+        ),
+        source_mode="filipino",
+    )
+    assert result.text == "hello"
+    assert result.language is None
+    auto_config = next(call for call in modules["sherpa"].calls if call.get("language") == "auto")
+    assert auto_config is not None
+
+
+def test_sensevoice_provider_missing_manifest_is_visible(tmp_path: Path) -> None:
+    from local_squad_inference.providers import SenseVoiceProvider
+
+    empty = tmp_path / "sensevoice-empty"
+    empty.mkdir()
+    with pytest.raises(ModelUnavailableError, match="not installed"):
+        SenseVoiceProvider(empty)
+
+
+def test_sensevoice_provider_missing_library_is_visible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from local_squad_inference.providers import SenseVoiceProvider
+
+    model_dir = tmp_path / "sensevoice-missing-lib"
+    model_dir.mkdir()
+    (model_dir / "model.int8.onnx").write_bytes(b"\x00")
+    (model_dir / "tokens.txt").write_text("a\n", encoding="utf-8")
+    (model_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": "sensevoice-small",
+                "artifacts": [
+                    {"path": "model.int8.onnx", "size_bytes": 1, "sha256": "0" * 64},
+                    {"path": "tokens.txt", "size_bytes": 2, "sha256": "1" * 64},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delitem(sys.modules, "sherpa_onnx", raising=False)
+
+    def _raise_on_sherpa(name: str) -> Any:
+        if name == "sherpa_onnx":
+            raise ImportError("no sherpa-onnx installed")
+        return __import__(name)
+
+    monkeypatch.setattr("importlib.import_module", _raise_on_sherpa)
+    with pytest.raises(ModelUnavailableError):
+        SenseVoiceProvider(model_dir)

@@ -83,18 +83,11 @@ export async function syncOverlayWindow(
     throw new Error("Overlay window is unavailable");
   }
 
-  // The overlay is always interactive: it owns an always-visible control
-  // strip (drag handle, view toggle, close), so click-through and
-  // non-focusable windows would make those controls dead on arrival.
-  await overlay.setIgnoreCursorEvents(false);
-  await overlay.setFocusable(true);
+  await overlay.setIgnoreCursorEvents(snapshot.mode === "play");
+  await overlay.setFocusable(snapshot.mode === "edit");
+  // Visibility is driven by the overlay window itself (it hides on mount and
+  // on every snapshot) so show/hide works even if this window handle misbehaves.
   await emitTo("overlay", SNAPSHOT_EVENT, snapshot);
-
-  if (snapshot.visible) {
-    await overlay.show();
-  } else {
-    await overlay.hide();
-  }
 }
 
 export async function listenForOverlaySnapshots(
