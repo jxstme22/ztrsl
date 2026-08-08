@@ -395,7 +395,7 @@ export function HistoryPanel({
             {separatedState === "listening" ? (
               <button
                 type="button"
-                className="button quiet history-separated-stop"
+                className="button history-separated-stop"
                 disabled={separatedBusy}
                 onClick={() => {
                   setSeparatedBusy(true);
@@ -409,7 +409,7 @@ export function HistoryPanel({
             ) : (
               <button
                 type="button"
-                className="button quiet history-separated-start"
+                className="button btn-shine history-separated-start"
                 disabled={separatedBusy || separatedState === "starting"}
                 onClick={() => {
                   setSeparatedBusy(true);

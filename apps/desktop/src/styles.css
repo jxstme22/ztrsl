@@ -2879,21 +2879,22 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .history-mic-button {
-  display: grid;
+  display: inline-flex;
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  place-items: center;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
   border: 1px solid var(--stroke);
-  border-radius: 50%;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
 }
 
 .history-mic-button svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 
 .history-mic-button:hover:not(:disabled) {
@@ -3037,6 +3038,18 @@ input[type="range"]::-moz-range-thumb {
   font-size: 11px;
 }
 
+/* Stop button (separated live ON): red, matching the mic-live accent. */
+.history-separated-stop {
+  background: rgba(220, 77, 94, 0.16);
+  border: 1px solid rgba(220, 77, 94, 0.45);
+  color: #f8728a;
+}
+
+.history-separated-stop:hover:not(:disabled) {
+  background: rgba(220, 77, 94, 0.26);
+  color: #fca5b5;
+}
+
 .history-separated-error {
   color: var(--danger);
   font-size: 11px;
@@ -3084,9 +3097,11 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* The settings menu hosts a nested submenu beside it, so it must not clip
-   overflow (its own content is short and fits without scrolling). */
+   overflow, and it needs to be tall enough to list every config row (toggles,
+   bubble color, layout, clear) without scrolling. */
 .history-menu.history-menu-noclip {
   overflow: visible;
+  max-height: none;
 }
 
 .history-menu[aria-expanded] {
