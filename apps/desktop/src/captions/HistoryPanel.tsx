@@ -5,13 +5,16 @@ import {
   Check,
   ChevronDown,
   Copy,
+  LoaderCircle,
   Mic,
   Pencil,
+  Play,
   Plus,
   Search,
   Send,
   Settings,
   SlidersHorizontal,
+  Square,
   Trash2,
   User,
 } from "lucide-react";
@@ -105,6 +108,9 @@ export function HistoryPanel({
   onToggleMic,
   onSendChat,
   onOpenYouConfig,
+  separatedState,
+  onStartSeparated,
+  onStopSeparated,
 }: {
   sessions: HistorySession[];
   currentSessionId: string | null;
@@ -126,6 +132,10 @@ export function HistoryPanel({
    * or null when nothing was recorded (translation failed / no session). */
   onSendChat: (text: string) => Promise<string | null>;
   onOpenYouConfig: () => void;
+  /** Separated (history) live session status, started from the toolbar. */
+  separatedState?: "idle" | "starting" | "listening" | "stopping" | "error";
+  onStartSeparated?: () => Promise<string | null>;
+  onStopSeparated?: () => Promise<void>;
 }) {
   const t = useT();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -143,6 +153,8 @@ export function HistoryPanel({
   const [sending, setSending] = useState(false);
   const [micBusy, setMicBusy] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  const [separatedBusy, setSeparatedBusy] = useState(false);
+  const [separatedError, setSeparatedError] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -328,6 +340,40 @@ export function HistoryPanel({
     void toggleMic();
   };
 
+  // Simple Start/Stop for the separated (history) live session, wired to
+  // the same modal handlers so both entry points stay in sync.
+  const startSeparated = async () => {
+    if (separatedBusy || onStartSeparated === undefined) {
+      return;
+    }
+    setSeparatedBusy(true);
+    setSeparatedError(null);
+    try {
+      const error = await onStartSeparated();
+      if (error !== null) {
+        setSeparatedError(error);
+      }
+    } catch (cause) {
+      setSeparatedError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSeparatedBusy(false);
+    }
+  };
+
+  const stopSeparated = async () => {
+    if (separatedBusy || onStopSeparated === undefined) {
+      return;
+    }
+    setSeparatedBusy(true);
+    try {
+      await onStopSeparated();
+    } catch (cause) {
+      setSeparatedError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSeparatedBusy(false);
+    }
+  };
+
   const submitChat = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
     const text = draft.trim();
@@ -352,11 +398,11 @@ export function HistoryPanel({
     }
   };
 
-  // Requires a running live session; the mic endpoint is resolved at toggle
-  // time (from the config dialog) so clicking with no mic configured shows
-  // the error instead of doing nothing.
-  const micDisabled = !liveRunning || micBusy;
-  const micHint = !liveRunning
+  // The History page's live is the SEPARATED session: it captures the mic as
+  // a source automatically, so the mic toggle only applies to the main live
+  // (mirror) session. Keep it usable when either session is running.
+  const micDisabled = (!liveRunning && separatedState !== "listening") || micBusy;
+  const micHint = !liveRunning && separatedState !== "listening"
     ? t("chatMicRequiresLive")
     : !micConfigured
       ? t("chatMicNeedsConfig")
@@ -462,6 +508,57 @@ export function HistoryPanel({
         </div>
 
         <div className="history-toolbar-group history-toolbar-right">
+          <div className="history-separated-controls">
+            {(separatedState === "listening" || separatedState === "stopping") && (
+              <button
+                className="button quiet history-toolbar-button history-separated-stop"
+                type="button"
+                aria-label={t("historySeparatedStop")}
+                title={t("historySeparatedStop")}
+                disabled={separatedBusy}
+                onClick={() => {
+                  void stopSeparated();
+                }}
+              >
+                <Square aria-hidden="true" size={12} />
+                <span className="history-toolbar-label">
+                  {t("historySeparatedStop")}
+                </span>
+              </button>
+            )}
+            {separatedState !== "listening" && separatedState !== "stopping" && (
+              <button
+                className="button primary btn-shine history-toolbar-button history-separated-start"
+                type="button"
+                aria-label={t("historySeparatedStart")}
+                title={t("historySeparatedLive")}
+                disabled={
+                  separatedBusy ||
+                  separatedState === "starting" ||
+                  onStartSeparated === undefined
+                }
+                onClick={() => {
+                  void startSeparated();
+                }}
+              >
+                {separatedState === "starting" ? (
+                  <LoaderCircle className="spin" aria-hidden="true" size={13} />
+                ) : (
+                  <Play aria-hidden="true" size={13} />
+                )}
+                <span className="history-toolbar-label">
+                  {separatedState === "starting"
+                    ? t("historySeparatedStarting")
+                    : t("historySeparatedStart")}
+                </span>
+              </button>
+            )}
+            {separatedError !== null && (
+              <span className="history-separated-error" role="alert">
+                {separatedError}
+              </span>
+            )}
+          </div>
           <div className="history-search">
             <Search aria-hidden="true" size={13} />
             <input
