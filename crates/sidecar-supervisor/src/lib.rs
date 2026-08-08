@@ -1864,3 +1864,30 @@ mod shared_process_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod chat_translate_tests {
+    use super::*;
+
+    /// Two rapid one-shot chats on the same supervisor connection must both
+    /// succeed (the sidecar processes control messages sequentially, so the
+    /// second request waits for the first response, then runs).
+    #[test]
+    fn two_rapid_chat_translations_on_one_connection() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        let first = supervisor
+            .translate_text("hello", "english", "zh", "demo")
+            .expect("first chat must succeed");
+        assert!(!first.translated_text.is_empty());
+        let second = supervisor
+            .translate_text("hello again", "english", "zh", "demo")
+            .expect("second chat must succeed");
+        assert!(!second.translated_text.is_empty());
+        supervisor.stop();
+    }
+}

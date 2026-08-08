@@ -52,8 +52,6 @@ import { useSeparatedLiveTranslation } from "./live/useSeparatedLiveTranslation"
 import type {
   AsrProvider,
   LiveSourceRequest,
-  SourceMode as LiveSourceMode,
-  TargetLanguage,
   TranslationProvider,
 } from "./live/bridge";
 import { useGpuRuntime } from "./models/useGpuRuntime";
@@ -221,6 +219,7 @@ export function ControlApp() {
       audioSource: endpoint?.friendlyName ?? "",
       provider: modelLabel,
     });
+    void emitHistoryToOverlay(historyRef.current.activeEntries);
   });
   separatedLiveRef.current = separatedLive;
 
@@ -374,29 +373,23 @@ export function ControlApp() {
   // page reads) and shares the sidecar process — so loaded models are
   // reused, only genuinely-different ones load a second time.
   const startSeparatedLive = useCallback(async (): Promise<string | null> => {
-    const endpointId =
-      window.localStorage.getItem("lst.live.input-endpoint") ?? "";
-    if (endpointId === "") {
-      return "Pick an input endpoint in the config dialog first.";
+    // History live = YOUR voice: capture the configured mic and stamp the
+    // captions as "you" (right-aligned YOU bubbles), using the modal's
+    // models for the direction.
+    if (youSource === null) {
+      return "Pick a microphone in the config dialog first.";
     }
-    const sourceMode =
-      (window.localStorage.getItem("lst.live.source-mode") as
-        | LiveSourceMode
-        | null) ?? "filipino";
-    const targetLanguage =
-      (window.localStorage.getItem("lst.live.target-language") as
-        | TargetLanguage
-        | null) ?? "en";
-    const asrProvider =
-      (window.localStorage.getItem("lst.live.asr-provider") as
-        | AsrProvider
-        | null) ?? "whisper-turbo";
+    const direction = resolveYouDirection(youConfig, livePair);
     const translationProvider =
-      (window.localStorage.getItem("lst.live.translation-provider") as
-        | TranslationProvider
-        | null) ?? "nllb";
+      (window.localStorage.getItem(
+        "lst.live.translation-provider",
+      ) as TranslationProvider | null) ?? "nllb";
+    const asrProvider =
+      (window.localStorage.getItem(
+        "lst.live.asr-provider",
+      ) as AsrProvider | null) ?? "whisper-turbo";
     await separatedLive.start(
-      endpointId,
+      youSource.endpointId,
       null,
       asrProvider !== "groq-whisper" &&
         (translationProvider === "madlad" ||
@@ -406,13 +399,16 @@ export function ControlApp() {
         ? "local"
         : "http",
       false,
-      sourceMode,
-      targetLanguage,
+      direction.sourceMode,
+      direction.targetLanguage,
       asrProvider,
       translationProvider,
+      50,
+      "balanced",
+      [youSource],
     );
     return separatedLive.error;
-  }, [separatedLive]);
+  }, [livePair, separatedLive, youConfig, youSource]);
 
   const stopSeparatedLive = useCallback(async () => {
     await separatedLive.stop();
@@ -545,12 +541,12 @@ export function ControlApp() {
                 liveRunning={live.state === "listening"}
                 onToggleMic={toggleMic}
                 onSendChat={sendChat}
-                onOpenYouConfig={() => { setYouConfigOpen(true); }}
-                onOpenMicSettings={() => { void openMicrophoneSettings(); }}
-                separatedState={separatedLive.state}
-                separatedError={separatedLive.error}
-                onStartSeparatedLive={startSeparatedLive}
-                onStopSeparatedLive={stopSeparatedLive}
+                onOpenYouConfig={() => {
+                  setYouConfigOpen(true);
+                }}
+                onOpenMicSettings={() => {
+                  void openMicrophoneSettings();
+                }}
               />
             </div>
           )}
@@ -635,11 +631,17 @@ export function ControlApp() {
       {youConfigOpen && (
         <YouConfigDialog
           endpoints={audio.catalog?.endpoints ?? []}
-          installedModelIds={new Set(
-            models.installed.map((model) => model.id),
-          )}
-          onSaved={(config) => { setYouConfig(config); }}
-          onClose={() => { setYouConfigOpen(false); }}
+          installedModelIds={new Set(models.installed.map((model) => model.id))}
+          onSaved={(config) => {
+            setYouConfig(config);
+          }}
+          onClose={() => {
+            setYouConfigOpen(false);
+          }}
+          separatedState={separatedLive.state}
+          separatedError={separatedLive.error}
+          onStartSeparatedLive={startSeparatedLive}
+          onStopSeparatedLive={stopSeparatedLive}
         />
       )}
     </main>

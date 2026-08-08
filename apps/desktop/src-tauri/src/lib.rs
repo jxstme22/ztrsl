@@ -1586,6 +1586,15 @@ struct SidecarRuntime {
     supervisor: Arc<Mutex<Option<SidecarSupervisor>>>,
 }
 
+/// The typed-chat translation sidecar. Kept SEPARATE from `SidecarRuntime`
+/// (clip analysis) and from the live sidecar pool so that starting/stopping
+/// a live session never kills a supervisor the chat box is using — a killed
+/// supervisor silently drops the next chat request.
+#[derive(Clone, Default)]
+struct ChatRuntime {
+    supervisor: Arc<Mutex<Option<SidecarSupervisor>>>,
+}
+
 /// Pool of live sidecar processes, shared between the main live session and
 /// the separated live session. A process is kept alive while any connection
 /// holds it; the separated session attaches to the running process so loaded
@@ -2606,7 +2615,7 @@ async fn translate_text(
     source_mode: String,
     target_language: String,
     translation_provider: String,
-    runtime: tauri::State<'_, SidecarRuntime>,
+    runtime: tauri::State<'_, ChatRuntime>,
     paths: tauri::State<'_, SidecarPaths>,
 ) -> Result<TranslateTextResult, String> {
     let supervisor = Arc::clone(&runtime.supervisor);
@@ -4325,6 +4334,7 @@ pub fn run() {
         .manage(create_runtime())
         .manage(RoutingRuntime::default())
         .manage(SidecarRuntime::default())
+        .manage(ChatRuntime::default())
         .manage(LiveRuntime::default())
         .manage(SeparateLiveRuntime::default())
         .manage(SidecarPool::default())
