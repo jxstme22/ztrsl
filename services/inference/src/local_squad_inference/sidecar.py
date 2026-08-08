@@ -1881,7 +1881,8 @@ async def handle_connection(
                                 "captions": [asdict(caption) for caption in result.captions],
                                 "truncated": result.truncated,
                                 "mode": result.mode,
-                            },                            version=negotiated_version,
+                            },
+                            version=negotiated_version,
                         )
                     )
                 )

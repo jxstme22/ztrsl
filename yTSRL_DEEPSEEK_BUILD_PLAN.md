@@ -1,4 +1,5 @@
 # yTSRL Generalization Build Plan
+
 ## DeepSeek Flash Execution Edition
 
 **Target repository:** `jxstme22/ztrsl`  
@@ -292,15 +293,15 @@ Identify the commands already used by the repository for Python, Rust, desktop U
 Add a command table to `docs/GENERALIZATION_CONTEXT.md`:
 
 ```markdown
-| Area | Focused command | Full command |
-|---|---|---|
-| Python tests | ... | ... |
-| Python typing | ... | ... |
-| Rust tests | ... | ... |
-| Desktop tests | ... | ... |
-| Typecheck | ... | ... |
-| Lint | ... | ... |
-| Format check | ... | ... |
+| Area          | Focused command | Full command |
+| ------------- | --------------- | ------------ |
+| Python tests  | ...             | ...          |
+| Python typing | ...             | ...          |
+| Rust tests    | ...             | ...          |
+| Desktop tests | ...             | ...          |
+| Typecheck     | ...             | ...          |
+| Lint          | ...             | ...          |
+| Format check  | ...             | ...          |
 ```
 
 ### Acceptance
@@ -721,10 +722,7 @@ Replace a single profile string as the sole representation of recognition langua
 
 ```typescript
 type DetectionMode =
-  | "fixed"
-  | "primary_preferred"
-  | "limited_auto"
-  | "full_auto";
+  "fixed" | "primary_preferred" | "limited_auto" | "full_auto";
 
 type LanguageConfig = {
   primaryLanguage: string | null;
@@ -1679,6 +1677,7 @@ class RecognitionRequest:
     is_provisional: bool
     duration_ms: int
     hardware: HardwareCapabilities
+
 
 @dataclass(frozen=True)
 class RecognitionPlan:

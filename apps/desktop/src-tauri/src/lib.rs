@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -390,8 +390,11 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "paraformer-zh-streaming" => ids.push("paraformer-zh-streaming"),
         "sensevoice-small" | "sense-voice" => ids.push("sensevoice-small"),
         // Cloud ASR (Groq / NVIDIA NIM): no local model to check.
-        "groq-whisper" | "nvidia-whisper-large-v3" | "nvidia-nemotron-asr-streaming"
-        | "nvidia-parakeet-1.1b" | "nvidia-canary-1b" => {}
+        "groq-whisper"
+        | "nvidia-whisper-large-v3"
+        | "nvidia-nemotron-asr-streaming"
+        | "nvidia-parakeet-1.1b"
+        | "nvidia-canary-1b" => {}
         _ => {}
     }
     match translation_provider {
@@ -1179,7 +1182,6 @@ const OVERLAY_MODE_SIZE: (f64, f64) = (900.0, 150.0);
 const APP_MODE_SIZE: (f64, f64) = (995.0, 904.0);
 const APP_MODE_MIN_SIZE: (f64, f64) = (994.0, 904.0);
 
-
 /// Remembers the normal-mode window geometry while the mini (windowed)
 /// overlay is active, so leaving mini mode returns the app window to exactly
 /// where it was instead of leaving a tiny strip at the bottom of the screen.
@@ -1658,6 +1660,7 @@ fn app_status(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn launch_live_translation(
     request: LiveStartRequest,
     audio: &AudioRuntime,
@@ -1760,7 +1763,7 @@ async fn launch_live_translation(
     if !matches!(segmentation.as_str(), "chunk" | "balanced" | "sentence") {
         return Err("unknown caption segmentation".to_string());
     }
-    let endpoints = platform_endpoints(&audio)?;
+    let endpoints = platform_endpoints(audio)?;
     let endpoint = endpoints
         .iter()
         .find(|candidate| candidate.id == endpoint_id)
@@ -1917,6 +1920,7 @@ async fn launch_live_translation(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn start_live_translation(
     request: LiveStartRequest,
     audio: tauri::State<'_, AudioRuntime>,
@@ -2171,11 +2175,9 @@ async fn stop_separated_live_translation(
 ) -> Result<LiveSnapshot, String> {
     let state = Arc::clone(&live.state);
     let live_models = Arc::clone(&models.state);
-    tauri::async_runtime::spawn_blocking(move || {
-        stop_live_translation_blocking(state, live_models)
-    })
-    .await
-    .map_err(|error| format!("separated live stop worker failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || stop_live_translation_blocking(state, live_models))
+        .await
+        .map_err(|error| format!("separated live stop worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -2846,12 +2848,7 @@ fn push_live_registry(
     supervisor: &mut SidecarSupervisor,
     sources: &[LiveSource],
 ) -> Result<(), SupervisorError> {
-    supervisor.push_source_registry(
-        sources
-            .iter()
-            .map(LiveSource::to_registry_entry)
-            .collect(),
-    )
+    supervisor.push_source_registry(sources.iter().map(LiveSource::to_registry_entry).collect())
 }
 
 fn run_live_worker(
@@ -3031,7 +3028,10 @@ fn run_live_worker(
                 } else {
                     format!(
                         " Sidecar stderr:\n{}",
-                        tail.iter().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n")
+                        tail.iter()
+                            .map(|line| format!("  {line}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
                     )
                 };
                 let _ = events.try_send(LiveWorkerEvent::Warning(format!(
@@ -3184,8 +3184,10 @@ fn run_windows_live_loop(
                 "monitoring output endpoint is missing".to_owned(),
             ));
         };
-        Some(audio_core::WindowsAudioPlayback::start(name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
+        Some(
+            audio_core::WindowsAudioPlayback::start(name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
     } else {
         None
     };
@@ -3212,7 +3214,10 @@ fn run_windows_live_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
+        match capture
+            .try_next()
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+        {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
@@ -3326,11 +3331,11 @@ fn run_windows_multi_source_loop(
             if let Some(mic) = mic_source {
                 match audio_core::WindowsAudioCapture::start(&mic.endpoint_name, 32) {
                     Ok(capture) => {
-                        let resampler = StreamingLinearResampler::new(
-                            capture.format().sample_rate,
-                            16_000,
-                        )
-                        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+                        let resampler =
+                            StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
+                                .map_err(|error| {
+                                    LiveLoopError::Audio(audio_error_to_string(error))
+                                })?;
                         mic_capture = Some((capture, resampler));
                     }
                     Err(error) => {
@@ -3346,28 +3351,25 @@ fn run_windows_multi_source_loop(
         }
         let mut any_frame = false;
         for active in sources.iter_mut() {
-            match active
+            if let Some(frame) = active
                 .capture
                 .try_next()
                 .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
             {
-                Some(frame) => {
-                    any_frame = true;
-                    metrics.captured_frames = metrics.captured_frames.saturating_add(1);
-                    metrics.capture_drops = active.capture.dropped_frames();
-                    let samples = active.resampler.process(&frame.samples);
-                    if !samples.is_empty() {
-                        supervisor
-                            .send_live_audio_for_source(
-                                frame.capture_monotonic_ns,
-                                &active.source.source_id,
-                                samples,
-                            )
-                            .map_err(LiveLoopError::Supervisor)?;
-                        metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
-                    }
+                any_frame = true;
+                metrics.captured_frames = metrics.captured_frames.saturating_add(1);
+                metrics.capture_drops = active.capture.dropped_frames();
+                let samples = active.resampler.process(&frame.samples);
+                if !samples.is_empty() {
+                    supervisor
+                        .send_live_audio_for_source(
+                            frame.capture_monotonic_ns,
+                            &active.source.source_id,
+                            samples,
+                        )
+                        .map_err(LiveLoopError::Supervisor)?;
+                    metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
                 }
-                None => {}
             }
         }
         if let Some((capture, resampler)) = mic_capture.as_mut() {
@@ -3527,8 +3529,10 @@ fn run_macos_live_loop(
                 "monitoring output endpoint is missing".to_owned(),
             ));
         };
-        Some(audio_core::MacosAudioPlayback::start(name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
+        Some(
+            audio_core::MacosAudioPlayback::start(name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
     } else {
         None
     };
@@ -3573,7 +3577,10 @@ fn run_macos_live_loop(
                     .to_owned(),
             ));
         }
-        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
+        match capture
+            .try_next()
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+        {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
@@ -3672,11 +3679,11 @@ fn run_macos_multi_source_loop(
             if let Some(mic) = mic_source {
                 match audio_core::MacosAudioCapture::start(&mic.endpoint_name, 32) {
                     Ok(capture) => {
-                        let resampler = StreamingLinearResampler::new(
-                            capture.format().sample_rate,
-                            16_000,
-                        )
-                        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+                        let resampler =
+                            StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
+                                .map_err(|error| {
+                                    LiveLoopError::Audio(audio_error_to_string(error))
+                                })?;
                         mic_capture = Some((capture, resampler));
                     }
                     Err(error) => {
@@ -3692,28 +3699,25 @@ fn run_macos_multi_source_loop(
         }
         let mut any_frame = false;
         for active in sources.iter_mut() {
-            match active
+            if let Some(frame) = active
                 .capture
                 .try_next()
                 .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
             {
-                Some(frame) => {
-                    any_frame = true;
-                    metrics.captured_frames = metrics.captured_frames.saturating_add(1);
-                    metrics.capture_drops = active.capture.dropped_frames();
-                    let samples = active.resampler.process(&frame.samples);
-                    if !samples.is_empty() {
-                        supervisor
-                            .send_live_audio_for_source(
-                                frame.capture_monotonic_ns,
-                                &active.source.source_id,
-                                samples,
-                            )
-                            .map_err(LiveLoopError::Supervisor)?;
-                        metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
-                    }
+                any_frame = true;
+                metrics.captured_frames = metrics.captured_frames.saturating_add(1);
+                metrics.capture_drops = active.capture.dropped_frames();
+                let samples = active.resampler.process(&frame.samples);
+                if !samples.is_empty() {
+                    supervisor
+                        .send_live_audio_for_source(
+                            frame.capture_monotonic_ns,
+                            &active.source.source_id,
+                            samples,
+                        )
+                        .map_err(LiveLoopError::Supervisor)?;
+                    metrics.audio_packets_sent = metrics.audio_packets_sent.saturating_add(1);
                 }
-                None => {}
             }
         }
         if let Some((capture, resampler)) = mic_capture.as_mut() {

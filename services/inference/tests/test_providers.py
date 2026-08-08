@@ -27,6 +27,7 @@ class FakeSegment:
         self.no_speech_prob = no_speech_prob
         self.avg_logprob = avg_logprob
 
+
 def test_is_hallucination_matches_known_phrases() -> None:
     assert is_hallucination("Thanks for Watching!")
     assert is_hallucination("thank you")
@@ -39,6 +40,7 @@ def test_is_hallucination_matches_known_phrases() -> None:
     assert not is_hallucination("get into the game right now everyone")
     assert not is_hallucination("rotate to A")
 
+
 def test_keep_asr_segment_drops_non_speech_and_hallucinations() -> None:
     assert keep_asr_segment(FakeSegment("rotate B, they are on A")) is True
     assert keep_asr_segment(FakeSegment("Thank you!")) is False
@@ -46,6 +48,7 @@ def test_keep_asr_segment_drops_non_speech_and_hallucinations() -> None:
     assert keep_asr_segment(FakeSegment("", no_speech_prob=0.0)) is False
     assert keep_asr_segment(FakeSegment("let's go", no_speech_prob=0.95)) is False
     assert keep_asr_segment(FakeSegment("push now", no_speech_prob=0.1)) is True
+
 
 def test_keep_asr_segment_joint_no_speech_decision() -> None:
     # High no_speech_prob with STRONG logprob is confident speech: keep.
@@ -85,6 +88,7 @@ def test_keep_asr_segment_joint_no_speech_decision() -> None:
         is False
     )
 
+
 class FakeTranslator:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -92,6 +96,7 @@ class FakeTranslator:
     def translate_batch(self, source: list[list[str]], **kwargs: Any) -> list[Any]:
         self.calls.append({"source": source, **kwargs})
         return [SimpleNamespace(hypotheses=[["eng_Latn", "▁They", "▁are", "▁on", "▁A", "."]])]
+
 
 class FakeCTranslate2Module:
     def __init__(self) -> None:
@@ -107,9 +112,11 @@ class FakeCTranslate2Module:
         self.translator = FakeTranslator()
         return self.translator
 
+
 class FakeEncoding:
     def __init__(self) -> None:
         self.tokens: list[str] = ["▁Push", "▁na"]
+
 
 class FakeTokenizer:
     encodes: ClassVar[list[str]] = []
@@ -133,9 +140,11 @@ class FakeTokenizer:
         reverse = {100: "They", 101: "are", 102: "on", 103: "A", 104: "."}
         return " ".join(reverse.get(i, "?") for i in ids).replace(" .", ".")
 
+
 class FakeTokenizerModule:
     def __init__(self) -> None:
         self.Tokenizer = FakeTokenizer
+
 
 @pytest.fixture
 def nllb_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
@@ -180,6 +189,7 @@ def nllb_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str,
     monkeypatch.delenv("LST_TRANSLATION_COMPUTE_TYPE", raising=False)
     return {"ct2": ct2, "tok": tok}, model_dir
 
+
 @pytest.mark.skipif(
     platform.system() != "Windows",
     reason="CUDA is deliberately enabled only on Windows in this codebase",
@@ -192,12 +202,14 @@ def test_nllb_provider_uses_cuda_when_available(nllb_env: tuple[dict[str, Any], 
     assert created["compute_type"] == "int8"
     assert provider.runtime_detail == "cuda/int8"
 
+
 def test_nllb_provider_falls_back_to_cpu(nllb_env: tuple[dict[str, Any], Path]) -> None:
     modules, model_dir = nllb_env
     modules["ct2"].cuda_device_count = 0
     provider = NllbCTranslate2Provider(model_dir)
     assert modules["ct2"].created[0]["device"] == "cpu"
     assert provider.runtime_detail == "cpu/int8"
+
 
 def test_nllb_provider_translate_injects_lang_tokens_and_strips_prefix(
     nllb_env: tuple[dict[str, Any], Path],
@@ -222,6 +234,7 @@ def test_nllb_provider_translate_injects_lang_tokens_and_strips_prefix(
     assert result.model_id == "nllb-200-distilled-600M-ct2-int8"
     assert modules["tok"].Tokenizer.encodes == ["Push na"]
 
+
 def test_nllb_provider_injects_chinese_source_token(
     nllb_env: tuple[dict[str, Any], Path],
 ) -> None:
@@ -241,6 +254,7 @@ def test_nllb_provider_injects_chinese_source_token(
     call = modules["ct2"].translator.calls[0]
     assert call["source"] == [["zho_Hans", "▁Push", "▁na"]]
     assert call["target_prefix"] == [["eng_Latn"]]
+
 
 def test_nllb_provider_english_to_chinese_target(
     nllb_env: tuple[dict[str, Any], Path],
@@ -262,12 +276,14 @@ def test_nllb_provider_english_to_chinese_target(
     assert call["source"] == [["eng_Latn", "▁Push", "▁na"]]
     assert call["target_prefix"] == [["zho_Hans"]]
 
+
 def test_nllb_provider_rejects_unknown_target_language(
     nllb_env: tuple[dict[str, Any], Path],
 ) -> None:
     _, model_dir = nllb_env
     with pytest.raises(ValueError):
         NllbCTranslate2Provider(model_dir, target_language="de")
+
 
 def test_nllb_provider_passthrough_empty_and_long_text(
     nllb_env: tuple[dict[str, Any], Path],
@@ -301,6 +317,7 @@ def test_nllb_provider_passthrough_empty_and_long_text(
     assert "too long" in long_text.english_text
     assert modules["ct2"].translator.calls == []
 
+
 def test_nllb_provider_missing_manifest_is_visible(
     nllb_env: tuple[dict[str, Any], Path], tmp_path: Path
 ) -> None:
@@ -309,6 +326,7 @@ def test_nllb_provider_missing_manifest_is_visible(
     empty_dir.mkdir()
     with pytest.raises(ModelUnavailableError):
         NllbCTranslate2Provider(empty_dir)
+
 
 class FakeSherpaSenseVoiceModule:
     """Fake `sherpa_onnx` for SenseVoice: `from_sense_voice` returns a
@@ -423,6 +441,7 @@ def test_sensevoice_provider_transcribes_utterance(
     assert zh_config["tokens"].endswith("tokens.txt")
     assert calls[-1] == {"decoded": True}
 
+
 def test_sensevoice_uses_auto_recognizer_for_unknown_languages(
     sensevoice_env: tuple[dict[str, Any], Path],
 ) -> None:
@@ -449,6 +468,7 @@ def test_sensevoice_uses_auto_recognizer_for_unknown_languages(
     auto_config = next(call for call in modules["sherpa"].calls if call.get("language") == "auto")
     assert auto_config is not None
 
+
 def test_sensevoice_provider_missing_manifest_is_visible(tmp_path: Path) -> None:
     from local_squad_inference.providers import SenseVoiceProvider
 
@@ -456,6 +476,7 @@ def test_sensevoice_provider_missing_manifest_is_visible(tmp_path: Path) -> None
     empty.mkdir()
     with pytest.raises(ModelUnavailableError, match="not installed"):
         SenseVoiceProvider(empty)
+
 
 def test_sensevoice_provider_missing_library_is_visible(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

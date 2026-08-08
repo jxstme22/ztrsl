@@ -10,3 +10,4 @@ AGENTS.md
 README.md
 MANIFEST.md
 models/mlx-whisper-large-v3-turbo-q4/
+.venv-build

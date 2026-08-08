@@ -1021,7 +1021,8 @@ def test_caption_ids_are_scoped_to_the_live_run() -> None:
             while final.get("type") != "caption.final":
                 final = json.loads(await websocket.recv())
                 assert final["type"] in ("caption.provisional", "caption.final")
-            return final["payload"]["caption_id"]
+            caption_id: str = final["payload"]["caption_id"]
+            return caption_id
 
     async def scenario(url: str, stop: asyncio.Event) -> None:
         first = await run_once(url, "run-1")

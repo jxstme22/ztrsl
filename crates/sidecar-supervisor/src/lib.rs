@@ -1,7 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::fs;
 use std::collections::VecDeque;
+use std::fs;
 use std::io::BufRead;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -13,10 +13,10 @@ use std::time::{Duration, Instant};
 use ipc_protocol::{
     AudioPacket, AudioPacketV2, CAPABILITY_IPC_V2, CAPABILITY_MULTI_SOURCE, CaptionLabelStyle,
     CaptionPayload, CaptionStrictness, ClipComparePayload, ClipProcessPayload, ClipResultPayload,
-    Envelope, HelloAcceptedPayload, HelloPayload, LiveStartPayload, PROTOCOL_V2, PROTOCOL_VERSION,
-    SourceControlPayload, SourcePresentationUpdatePayload, SourceRegistryEntry,
-    SourceRegistryPayload, SourceSnapshot, TranslateResultPayload, TranslateTextPayload,
-    DEFAULT_SOURCE_ORIGIN, source_id_from_hex,
+    DEFAULT_SOURCE_ORIGIN, Envelope, HelloAcceptedPayload, HelloPayload, LiveStartPayload,
+    PROTOCOL_V2, PROTOCOL_VERSION, SourceControlPayload, SourcePresentationUpdatePayload,
+    SourceRegistryEntry, SourceRegistryPayload, SourceSnapshot, TranslateResultPayload,
+    TranslateTextPayload, source_id_from_hex,
 };
 use thiserror::Error;
 use tungstenite::{Message, WebSocket};
@@ -215,21 +215,12 @@ impl SidecarProcess {
     /// shared between sessions.
     fn connect(
         self: &Arc<Self>,
-    ) -> Result<
-        (
-            WebSocket<TcpStream>,
-            String,
-            [u8; 16],
-            u16,
-        ),
-        SupervisorError,
-    > {
+    ) -> Result<(WebSocket<TcpStream>, String, [u8; 16], u16), SupervisorError> {
         let session_bytes = random_bytes::<16>()?;
         let session_id = to_hex(&session_bytes);
-        let mut child = self
-            .child
-            .lock()
-            .map_err(|_| SupervisorError::Io(std::io::Error::other("sidecar child lock poisoned")))?;
+        let mut child = self.child.lock().map_err(|_| {
+            SupervisorError::Io(std::io::Error::other("sidecar child lock poisoned"))
+        })?;
         let stream = connect_with_retry(self.port, &mut child)?;
         drop(child);
         stream
@@ -241,7 +232,8 @@ impl SidecarProcess {
         let request = format!("ws://127.0.0.1:{}", self.port);
         let (mut socket, _) = tungstenite::client(request, stream)
             .map_err(|error| SupervisorError::Handshake(error.to_string()))?;
-        let hello = Envelope {        protocol_version: PROTOCOL_VERSION,
+        let hello = Envelope {
+            protocol_version: PROTOCOL_VERSION,
             message_id: "hello-1".to_owned(),
             session_id: session_id.clone(),
             message_type: "hello".to_owned(),
@@ -1291,7 +1283,6 @@ fn connect_with_retry(port: u16, child: &mut Child) -> Result<TcpStream, Supervi
 /// `restart` (crash recovery) so both paths behave identically. On any
 /// failure the child is terminated before the error is returned.
 #[allow(clippy::type_complexity)]
-
 fn write_json<T: serde::Serialize>(
     socket: &mut WebSocket<TcpStream>,
     value: &T,
@@ -1398,8 +1389,8 @@ mod tests {
         TEAM_SOURCE_ID, packaged_sidecar_available, to_hex, workspace_root_from_manifest,
     };
     use ipc_protocol::{
-        CaptionLabelStyle, CaptionPayload, CaptionStrictness, Envelope, SourceRegistryEntry,
-        DEFAULT_SOURCE_ORIGIN,
+        CaptionLabelStyle, CaptionPayload, CaptionStrictness, DEFAULT_SOURCE_ORIGIN, Envelope,
+        SourceRegistryEntry,
     };
     use std::time::Duration;
 
@@ -1452,7 +1443,9 @@ mod tests {
         }
         let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("live must start");
         let first_session = supervisor.session_id().to_owned();
 
@@ -1474,7 +1467,9 @@ mod tests {
             .expect("restart must re-establish the connection");
         assert_ne!(supervisor.session_id(), first_session);
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("live must restart after the crash");
         // A restarted live session routes audio through the real VAD
         // pipeline (not the fake-caption path), so send speech long enough
@@ -1714,7 +1709,9 @@ mod tests {
             ])
             .expect("registry push must succeed");
         supervisor
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("live must start");
 
         // Interleave speech and silence on both sources; VAD needs ~450 ms
@@ -1836,10 +1833,14 @@ mod shared_process_tests {
 
         // Each connection can run its own live session on the shared process.
         first
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("first live must start");
         second
-            .start_live("filipino", "demo", "local", "demo", "en", "quality", 50, "balanced")
+            .start_live(
+                "filipino", "demo", "local", "demo", "en", "quality", 50, "balanced",
+            )
             .expect("second live must start");
 
         // Stopping the first connection must NOT terminate the shared process
@@ -1851,7 +1852,9 @@ mod shared_process_tests {
         );
 
         // The second connection still works after the first stopped.
-        second.stop_live().expect("second live must stop after first closed");
+        second
+            .stop_live()
+            .expect("second live must stop after first closed");
         second.stop();
         // The supervisor structs still hold their Arcs until dropped; the
         // last one to drop releases the shared process (killing the child).
