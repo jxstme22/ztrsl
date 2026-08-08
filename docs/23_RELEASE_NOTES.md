@@ -661,3 +661,24 @@ minus macOS-only pieces (window chrome, system-audio capture, MLX, mic TCC).
 - **CI green** — repo-wide ruff/prettier/mypy/clippy gates fixed; the macos
   job skips the audio-core test binary (Swift-runtime crash on the runner;
   the crate's tests are hardware-dependent).
+
+## v0.9.3 — live registry wire fix, speaker log lines, new-session rotation
+
+Merged onto main from `feat/general-purpose-v0.8`:
+
+- **Live 1008 fix** — the sidecar's StrictModel rejected the app-shaped
+  `source.registry` payload (`capture_target` sent as a string instead of a
+  dict; `LanguageConfig` sent camelCase instead of snake_case), closing every
+  live session that pushed a registry (multi-source + you-mic) with
+  `1008 invalid message` while typed chat kept working. Both wire bugs fixed;
+  regression tests added (ipc-protocol round-trips + a real-wire registry
+  push test).
+- **Speaker log line** — the log/data line (speaker, time, latency, model)
+  shows above the FIRST bubble of each speaker in the transcript only.
+- **New session button** — History toolbar button opens a fresh session;
+  live captions and chat continue into it from both the Live and History
+  pages.
+- **Cap rotation** — `SESSION_MAX_ENTRIES` 2 000 with automatic rotation
+  into a fresh session at the cap, so live recording never stalls or drops.
+- **Light theme** — chat bubbles, avatars, the History toolbar, and the
+  input bar are solid `#ffffff` in the light theme.

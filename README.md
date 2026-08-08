@@ -44,6 +44,13 @@ typed messages are translated into the team's language as right-aligned
   per-caption bubbles (one bubble per finalized caption, sized to its text),
   per-source colors, a session sidebar, and a searchable, exportable
   transcript.
+- Groups bubbles per speaker: the **log line** (speaker, time, latency,
+  model) sits above the first bubble of each speaker — later bubbles stay
+  clean.
+- **New session** button in the History toolbar — live captions and chat
+  continue into the fresh session from both the Live and History pages; at
+  the session cap (2 000 entries) the app auto-rotates into a new session so
+  live recording never stalls or drops.
 - Runs a **separated live session** from the History page — a second,
   independent translation of your voice with its own models, sharing the
   loaded model cache with the main session.
@@ -53,7 +60,7 @@ It never touches the game: no injection, no memory reads, no automation.
 
 > **Download:** get the Windows installer or macOS app from
 > [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
-> **Status:** beta (v0.9). Works end-to-end; code signing + clean-machine
+> **Status:** beta (v0.9.3). Works end-to-end; code signing + clean-machine
 > tests are the remaining 1.0 work.
 
 ---
@@ -123,6 +130,8 @@ flowchart TB
     O[Transparent overlay window]
     S[Model manager<br/>download + verify]
     H[Session history<br/>chat-room transcript]
+    CHAT[Chat sidecar<br/>typed-chat translation]
+    MIC[Your microphone<br/>YOU stream]
   end
 
   subgraph Local inference sidecar
@@ -135,7 +144,10 @@ flowchart TB
   V --> C --> R --> VAD --> ASR --> SCHED --> MT
   SCHED --> O
   SCHED --> H
+  MIC --> C
+  CHAT --> MT
   S -. models .-> ASR & MT
+  H -. auto-rotate at 2 000 entries .-> H2[Fresh session<br/>live never stalls]
 ```
 
 **The 30-second version:**
@@ -146,11 +158,13 @@ flowchart TB
 4. **Translation** (local NLLB) turns that into English.
 5. A shared **scheduler** keeps finals ahead of drafts and everything bounded.
 6. The **overlay** shows it on screen — labeled per source.
-7. Finals land in **session history** as chat bubbles.
+7. Finals land in **session history** as chat bubbles; at the session cap the
+   app opens a fresh session automatically so recording never stops.
 
 Your own mic (the "You" stream) runs through the same pipeline in the reverse
-direction, and the chat box translates typed messages on demand. Everything
-runs on your machine. No audio ever leaves it.
+direction, and the chat box translates typed messages on demand through its
+own sidecar connection (so starting/stopping live never interrupts chat).
+Everything runs on your machine. No audio ever leaves it.
 
 ---
 
@@ -453,10 +467,10 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## Roadmap to 1.0
 
-Current release: **v0.9.2** (beta — Windows 11 + macOS, 7-language matrix,
+Current release: **v0.9.3** (beta — Windows 11 + macOS, 7-language matrix,
 chat-history overlay, per-caption bubbles, session sidebar, your-voice + typed
-chat translation, separated live, full i18n, multi-source live). Working
-toward 1.0:
+chat translation, separated live, new-session rotation, full i18n,
+multi-source live). Working toward 1.0:
 
 - [x] macOS support (Apple Silicon, MLX Metal ASR — macOS branch)
 - [x] full English/Chinese i18n
@@ -467,6 +481,8 @@ toward 1.0:
 - [x] Windows sidecar crash auto-recovery
 - [x] your-voice mic translation + typed chat translation
 - [x] per-caption chat-room history with session sidebar
+- [x] new-session button + auto-rotation at the session cap (live never stalls)
+- [x] light-theme solid-white history surfaces (bubbles, toolbar, input bar)
 - [ ] code signing (Windows SmartScreen, macOS notarization)
 - [ ] clean-machine installer walkthrough (the last hardware gate)
 - [ ] native-speaker accuracy benchmarks (Tagalog/Cebuano)

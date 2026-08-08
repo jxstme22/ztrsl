@@ -1,9 +1,9 @@
 # Project Overview (yTRSL)
 
-*Current state: **v0.9.2** (beta) — Windows 11 + macOS, 7×7 language matrix,
+*Current state: **v0.9.3** (beta) — Windows 11 + macOS, 7×7 language matrix,
 chat-room history (per-caption bubbles, session sidebar), your-voice + typed
-chat translation, separated live, full English/Chinese i18n, multi-source
-live.*
+chat translation, separated live, new-session rotation, full English/Chinese
+i18n, multi-source live.*
 
 ## Product
 
