@@ -3166,7 +3166,10 @@ fn run_windows_live_loop(
     // The user's mic stream lives on the same session: when configured, route
     // through the multi-source loop (with the classic endpoint synthesized as
     // a team source) so both captures share one loop and one sequence.
-    let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    let mic_present = mic_source
+        .lock()
+        .map(|slot| slot.is_some())
+        .unwrap_or(false);
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
     } else if mic_present {
@@ -3360,10 +3363,7 @@ fn run_windows_multi_source_loop(
         // Read the shared mic slot: the "you" button may add the source
         // mid-session. When it appears for the first time, re-push the
         // sidecar registry so captions carry the mic's tag/color.
-        let current_mic = mic_source
-            .lock()
-            .map(|slot| slot.clone())
-            .unwrap_or(None);
+        let current_mic = mic_source.lock().map(|slot| slot.clone()).unwrap_or(None);
         if current_mic.is_some() && !*mic_registry_pushed {
             let mut all = config_sources.to_vec();
             if let Some(mic) = &current_mic {
@@ -3523,7 +3523,10 @@ fn run_macos_live_loop(
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), LiveLoopError> {
-    let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    let mic_present = mic_source
+        .lock()
+        .map(|slot| slot.is_some())
+        .unwrap_or(false);
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
     } else if mic_present {
@@ -3726,10 +3729,7 @@ fn run_macos_multi_source_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        let current_mic = mic_source
-            .lock()
-            .map(|slot| slot.clone())
-            .unwrap_or(None);
+        let current_mic = mic_source.lock().map(|slot| slot.clone()).unwrap_or(None);
         if current_mic.is_some() && !*mic_registry_pushed {
             let mut all = config_sources.to_vec();
             if let Some(mic) = &current_mic {
@@ -3946,7 +3946,11 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         captions,
         error: state.error.clone(),
         warning: state.warning.clone(),
-        mic_enabled: state.mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false)
+        mic_enabled: state
+            .mic_source
+            .lock()
+            .map(|slot| slot.is_some())
+            .unwrap_or(false)
             && state.mic_enabled.load(Ordering::Relaxed),
     }
 }

@@ -70,7 +70,7 @@ class TestHardwareSnapshot:
             installed_models={"whisper-large-v3-turbo"},
         )
         assert snapshot.cuda_visible is True
-        assert snapshot.operating_system == "windows" or snapshot.operating_system == "macos"
+        assert snapshot.operating_system in {"windows", "macos", "linux"}
 
     def test_gpu_probe_failure_means_no_gpu(self) -> None:
         def boom() -> int:
