@@ -427,6 +427,21 @@ describe("HistoryPanel you bubble color", () => {
         }
       ).youColor,
     ).toBe("#ef4444");
+    // The menu auto-closes after picking a color.
+    expect(
+      screen.queryByRole("button", { name: /you bubble color #3b82f6/i }),
+    ).toBeNull();
+  });
+
+  it("auto-closes the settings menu after toggling an option", () => {
+    renderPanel([session({ entries: [] })]);
+    fireEvent.click(screen.getByRole("button", { name: /display options/i }));
+    fireEvent.click(
+      screen.getByRole("menuitemcheckbox", { name: /speaker names/i }),
+    );
+    expect(
+      screen.queryByRole("menuitemcheckbox", { name: /speaker names/i }),
+    ).toBeNull();
   });
 });
 

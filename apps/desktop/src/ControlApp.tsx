@@ -340,6 +340,19 @@ export function ControlApp() {
     return applied === next;
   }, [audio.catalog?.platform, live, youSource]);
 
+  // History-page mic: when the separated (history) live session is running it
+  // owns the mic (it captures the configured mic as a source), so the toggle
+  // reports it as on and does nothing extra; otherwise it falls back to the
+  // main live page's mic toggle.
+  const historyMicEnabled =
+    separatedLive.state === "listening" || live.snapshot.micEnabled;
+  const toggleHistoryMic = useCallback(async (): Promise<boolean> => {
+    if (separatedLive.state === "listening") {
+      return true;
+    }
+    return toggleMic();
+  }, [separatedLive.state, toggleMic]);
+
   // Typed-chat translation: translate on demand (standalone sidecar), then
   // record the "you" bubble. When no session is open (e.g. chat before any
   // live run), open a "Chat" session first so the bubble is saved.
@@ -630,10 +643,13 @@ export function ControlApp() {
                 onDeleteSession={history.deleteSession}
                 onClearSession={history.clearSession}
                 onCountChange={setHistoryCount}
-                micEnabled={live.snapshot.micEnabled}
+                micEnabled={historyMicEnabled}
                 micConfigured={youConfig.micEndpointId !== null}
-                liveRunning={live.state === "listening"}
-                onToggleMic={toggleMic}
+                liveRunning={
+                  separatedLive.state === "listening" ||
+                  live.state === "listening"
+                }
+                onToggleMic={toggleHistoryMic}
                 onSendChat={sendChat}
                 onOpenYouConfig={() => {
                   setYouConfigOpen(true);
