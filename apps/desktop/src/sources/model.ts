@@ -68,7 +68,10 @@ export type DetectionMode = z.infer<typeof detectionModeSchema>;
 export const languageConfigSchema = z
   .object({
     /** ISO-639-1/2 primary language, or null when nothing is fixed. */
-    primaryLanguage: z.string().regex(/^[a-z]{2,3}$/).nullable(),
+    primaryLanguage: z
+      .string()
+      .regex(/^[a-z]{2,3}$/)
+      .nullable(),
     secondaryLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)),
     detectionMode: detectionModeSchema,
   })
@@ -101,22 +104,52 @@ export const languageConfigSchema = z
 export type LanguageConfig = z.infer<typeof languageConfigSchema>;
 
 /** Deterministic profile → LanguageConfig adapter (DS-201 compatibility). */
-export function profileToLanguageConfig(profile: LanguageProfile): LanguageConfig {
+export function profileToLanguageConfig(
+  profile: LanguageProfile,
+): LanguageConfig {
   switch (profile) {
     case "mandarin":
-      return { primaryLanguage: "zh", secondaryLanguages: [], detectionMode: "fixed" };
+      return {
+        primaryLanguage: "zh",
+        secondaryLanguages: [],
+        detectionMode: "fixed",
+      };
     case "chinese_english":
-      return { primaryLanguage: "zh", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+      return {
+        primaryLanguage: "zh",
+        secondaryLanguages: ["en"],
+        detectionMode: "primary_preferred",
+      };
     case "tagalog":
-      return { primaryLanguage: "tl", secondaryLanguages: [], detectionMode: "fixed" };
+      return {
+        primaryLanguage: "tl",
+        secondaryLanguages: [],
+        detectionMode: "fixed",
+      };
     case "taglish":
-      return { primaryLanguage: "tl", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+      return {
+        primaryLanguage: "tl",
+        secondaryLanguages: ["en"],
+        detectionMode: "primary_preferred",
+      };
     case "cebuano":
-      return { primaryLanguage: "ceb", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+      return {
+        primaryLanguage: "ceb",
+        secondaryLanguages: ["en"],
+        detectionMode: "primary_preferred",
+      };
     case "bislish":
-      return { primaryLanguage: "ceb", secondaryLanguages: ["en"], detectionMode: "primary_preferred" };
+      return {
+        primaryLanguage: "ceb",
+        secondaryLanguages: ["en"],
+        detectionMode: "primary_preferred",
+      };
     case "auto":
-      return { primaryLanguage: null, secondaryLanguages: [], detectionMode: "full_auto" };
+      return {
+        primaryLanguage: null,
+        secondaryLanguages: [],
+        detectionMode: "full_auto",
+      };
   }
 }
 
@@ -178,7 +211,11 @@ export const audioSourceConfigSchema = z.object({
   /** DS-200: audio origin for policy selection (never replaces the endpoint). */
   sourceOrigin: sourceOriginSchema.default(DEFAULT_SOURCE_ORIGIN),
   /** DS-201: explicit language configuration (profile stays for display). */
-  languageConfig: languageConfigSchema.default({ primaryLanguage: null, secondaryLanguages: [], detectionMode: "full_auto" }),
+  languageConfig: languageConfigSchema.default({
+    primaryLanguage: null,
+    secondaryLanguages: [],
+    detectionMode: "full_auto",
+  }),
 });
 export type AudioSourceConfig = z.infer<typeof audioSourceConfigSchema>;
 

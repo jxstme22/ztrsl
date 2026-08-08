@@ -1,10 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  type HistoryEntry,
-  type HistorySession,
-} from "../captions/history";
+import { type HistoryEntry, type HistorySession } from "../captions/history";
 import { HistoryPanel } from "../captions/HistoryPanel";
 
 function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
@@ -76,9 +73,7 @@ function renderPanel(
 describe("HistoryPanel", () => {
   it("shows the empty state without sessions", () => {
     renderPanel([]);
-    expect(
-      screen.getByText(/no finished captions yet/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no finished captions yet/i)).toBeInTheDocument();
   });
 
   it("shows the selected session's transcript (source line hidden by default)", () => {
@@ -90,7 +85,9 @@ describe("HistoryPanel", () => {
   it("shows the transcribed input after toggling the option", () => {
     renderPanel([session()]);
     fireEvent.click(screen.getByRole("button", { name: /display options/i }));
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /transcribed/i }));
+    fireEvent.click(
+      screen.getByRole("menuitemcheckbox", { name: /transcribed/i }),
+    );
     expect(screen.getByText("sabihin mo")).toBeInTheDocument();
     expect(screen.getByText("Say it")).toBeInTheDocument();
   });
@@ -98,16 +95,16 @@ describe("HistoryPanel", () => {
   it("does not render a source line when the entry has no source text", () => {
     renderPanel([session({ entries: [entry({ sourceText: "" })] })]);
     fireEvent.click(screen.getByRole("button", { name: /display options/i }));
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /transcribed/i }));
+    fireEvent.click(
+      screen.getByRole("menuitemcheckbox", { name: /transcribed/i }),
+    );
     expect(screen.queryByText("sabihin mo")).toBeNull();
   });
 
   it("shows latency and model badges when the caption carried them", () => {
     renderPanel([
       session({
-        entries: [
-          entry({ latencyMs: 640, provider: "whisper-turbo + nllb" }),
-        ],
+        entries: [entry({ latencyMs: 640, provider: "whisper-turbo + nllb" })],
       }),
     ]);
     expect(screen.getByText("640 ms")).toBeInTheDocument();
@@ -139,7 +136,9 @@ describe("HistoryPanel", () => {
   it("deletes the session after a two-step confirm", () => {
     const onDeleteSession = vi.fn();
     renderPanel([session()], { onDeleteSession });
-    const deleteButton = screen.getByRole("button", { name: /delete session/i });
+    const deleteButton = screen.getByRole("button", {
+      name: /delete session/i,
+    });
     fireEvent.click(deleteButton);
     fireEvent.click(deleteButton);
     expect(onDeleteSession).toHaveBeenCalledWith("sess-1");
@@ -157,14 +156,19 @@ describe("HistoryPanel", () => {
     const onClearSession = vi.fn();
     renderPanel([session()], { onClearSession });
     fireEvent.click(screen.getByRole("button", { name: /display options/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /clear session messages/i }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /clear session messages/i }),
+    );
     expect(onClearSession).toHaveBeenCalledWith("sess-1");
   });
 
   it("badges the live session in the picker", () => {
     render(
       <HistoryPanel
-        sessions={[session(), session({ id: "sess-2", name: "Session · 14:45" })]}
+        sessions={[
+          session(),
+          session({ id: "sess-2", name: "Session · 14:45" }),
+        ]}
         currentSessionId="sess-2"
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
@@ -203,20 +207,27 @@ describe("HistoryPanel chat room", () => {
         layout: "chat",
       }),
     );
-    renderPanel([session({
-      entries: [
-        entry({ id: "e1", text: "Nice shot", displayName: "Team", fromSelf: false }),
-        entry({
-          id: "e2",
-          text: "Thank you",
-          sourceText: "谢谢",
-          displayName: "You",
-          sourceId: "00000000000000000000000000000000",
-          color: "#dc4d5e",
-          fromSelf: true,
-        }),
-      ],
-    })]);
+    renderPanel([
+      session({
+        entries: [
+          entry({
+            id: "e1",
+            text: "Nice shot",
+            displayName: "Team",
+            fromSelf: false,
+          }),
+          entry({
+            id: "e2",
+            text: "Thank you",
+            sourceText: "谢谢",
+            displayName: "You",
+            sourceId: "00000000000000000000000000000000",
+            color: "#dc4d5e",
+            fromSelf: true,
+          }),
+        ],
+      }),
+    ]);
     const bubbles = screen.getAllByRole("listitem");
     expect(bubbles).toHaveLength(2);
     const selfBubble = bubbles[1];
@@ -249,8 +260,12 @@ describe("HistoryPanel chat room", () => {
     const input = screen.getByPlaceholderText(/type a message/i);
     fireEvent.change(input, { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
-    await waitFor(() => { expect(onSendChat).toHaveBeenCalledWith("hello"); });
-    await waitFor(() => { expect((input as HTMLInputElement).value).toBe(""); });
+    await waitFor(() => {
+      expect(onSendChat).toHaveBeenCalledWith("hello");
+    });
+    await waitFor(() => {
+      expect((input as HTMLInputElement).value).toBe("");
+    });
   });
 
   it("keeps the draft when translation fails", async () => {
@@ -277,7 +292,9 @@ describe("HistoryPanel chat room", () => {
     const input = screen.getByPlaceholderText(/type a message/i);
     fireEvent.change(input, { target: { value: "hola" } });
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
-    await waitFor(() => { expect(onSendChat).toHaveBeenCalledWith("hola"); });
+    await waitFor(() => {
+      expect(onSendChat).toHaveBeenCalledWith("hola");
+    });
     expect((input as HTMLInputElement).value).toBe("hola");
   });
 
@@ -301,7 +318,9 @@ describe("HistoryPanel chat room", () => {
         onStopSeparatedLive={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: /translate my voice/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /translate my voice/i }),
+    ).toBeDisabled();
   });
 
   it("toggles the mic on a live session", () => {
@@ -325,16 +344,22 @@ describe("HistoryPanel chat room", () => {
         onStopSeparatedLive={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /translate my voice/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /translate my voice/i }),
+    );
     expect(onToggleMic).toHaveBeenCalled();
   });
 
   it("shows the profile icons toggle in the settings menu", () => {
     renderPanel([session({ entries: [] })]);
     fireEvent.click(screen.getByRole("button", { name: /display options/i }));
-    expect(screen.getByRole("menuitemcheckbox", { name: /profile icons/i })).toBeInTheDocument();
     expect(
-      screen.getByRole("menuitemcheckbox", { name: /tint bubbles with source colors/i }),
+      screen.getByRole("menuitemcheckbox", { name: /profile icons/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitemcheckbox", {
+        name: /tint bubbles with source colors/i,
+      }),
     ).toBeInTheDocument();
   });
 });
@@ -418,7 +443,12 @@ describe("HistoryPanel classic layout", () => {
     renderPanel([
       session({
         entries: [
-          entry({ id: "e1", text: "Nice shot", displayName: "Team", fromSelf: false }),
+          entry({
+            id: "e1",
+            text: "Nice shot",
+            displayName: "Team",
+            fromSelf: false,
+          }),
           entry({
             id: "e2",
             text: "Thank you",
@@ -443,12 +473,14 @@ describe("HistoryPanel classic layout", () => {
     fireEvent.click(screen.getByRole("button", { name: /display options/i }));
     // The layout picker is a nested submenu: open it first.
     fireEvent.click(screen.getByRole("menuitem", { name: /^layout/i }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /chat bubbles/i }));
+    fireEvent.click(
+      screen.getByRole("menuitemradio", { name: /chat bubbles/i }),
+    );
     expect(
       (
-        JSON.parse(
-          localStorage.getItem("lst.history.options.v3") ?? "{}",
-        ) as { layout?: string }
+        JSON.parse(localStorage.getItem("lst.history.options.v3") ?? "{}") as {
+          layout?: string;
+        }
       ).layout,
     ).toBe("chat");
   });
@@ -508,9 +540,13 @@ describe("HistoryPanel separated live", () => {
   it("opens the session sidebar as an in-card column via the toolbar toggle", () => {
     renderPanel([session(), session({ id: "sess-2", name: "Older" })]);
     fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
-    expect(screen.getByRole("complementary", { name: /sessions/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("complementary", { name: /sessions/i }),
+    ).toBeInTheDocument();
     // Clicking a session picks it and hides the sidebar.
     fireEvent.click(screen.getByRole("button", { name: /older/i }));
-    expect(screen.queryByRole("complementary", { name: /sessions/i })).toBeNull();
+    expect(
+      screen.queryByRole("complementary", { name: /sessions/i }),
+    ).toBeNull();
   });
 });

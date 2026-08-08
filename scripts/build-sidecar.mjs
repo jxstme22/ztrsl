@@ -106,13 +106,27 @@ const args = [
 // process on the standalone 1.27.0 DLL before PyInstaller collects it.
 if (process.platform === "win32") {
   const sitePackages = resolve(VENV_PYTHON, "..", "..", "Lib", "site-packages");
-  const bundled = resolve(sitePackages, "sherpa_onnx", "lib", "onnxruntime.dll");
-  const standalone = resolve(sitePackages, "onnxruntime", "capi", "onnxruntime.dll");
+  const bundled = resolve(
+    sitePackages,
+    "sherpa_onnx",
+    "lib",
+    "onnxruntime.dll",
+  );
+  const standalone = resolve(
+    sitePackages,
+    "onnxruntime",
+    "capi",
+    "onnxruntime.dll",
+  );
   if (existsSync(bundled) && existsSync(standalone)) {
     copyFileSync(standalone, bundled);
-    console.log("aligned sherpa_onnx/lib/onnxruntime.dll to the standalone 1.27.0 build");
+    console.log(
+      "aligned sherpa_onnx/lib/onnxruntime.dll to the standalone 1.27.0 build",
+    );
   } else {
-    console.warn("onnxruntime alignment skipped: bundled/standalone DLL missing");
+    console.warn(
+      "onnxruntime alignment skipped: bundled/standalone DLL missing",
+    );
   }
 }
 

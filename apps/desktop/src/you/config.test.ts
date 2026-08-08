@@ -80,7 +80,9 @@ describe("you config persistence", () => {
     const storage = new Map<string, string>();
     const fakeStorage = {
       getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => { storage.set(key, value); },
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
     };
     const config = {
       ...DEFAULT_YOU_CONFIG,
@@ -97,7 +99,9 @@ describe("you config persistence", () => {
     const storage = new Map<string, string>();
     const fakeStorage = {
       getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => { storage.set(key, value); },
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
     };
     expect(loadYouConfig(fakeStorage)).toEqual(DEFAULT_YOU_CONFIG);
     storage.set("lst.you.config.v1", "{not json");

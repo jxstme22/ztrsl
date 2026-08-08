@@ -206,7 +206,9 @@ export function useOverlayController() {
   const pin = useCallback(() => {
     setSettings((current) => {
       const next = { ...current, pinned: !current.pinned };
-      void getCurrentWindow().setAlwaysOnTop(next.pinned).catch(() => undefined);
+      void getCurrentWindow()
+        .setAlwaysOnTop(next.pinned)
+        .catch(() => undefined);
       return next;
     });
   }, []);

@@ -27,7 +27,10 @@ export function CaptionStack({
 
   const lanes = selectVisibleCaptions(snapshot.captions, snapshot.settings);
   const last = lanes[lanes.length - 1];
-  const miniLimit = snapshot.settings.historyMaxRows === "auto" ? 10 : snapshot.settings.historyMaxRows;
+  const miniLimit =
+    snapshot.settings.historyMaxRows === "auto"
+      ? 10
+      : snapshot.settings.historyMaxRows;
   const captions =
     mode === "latest" && last !== undefined
       ? [last]

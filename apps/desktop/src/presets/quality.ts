@@ -69,7 +69,10 @@ export function loadQualityProfileId(
   storage: Pick<Storage, "getItem"> = window.localStorage,
 ): QualityProfileId {
   const stored = storage.getItem(QUALITY_PROFILE_KEY);
-  if (stored !== null && (QUALITY_PROFILE_IDS as readonly string[]).includes(stored)) {
+  if (
+    stored !== null &&
+    (QUALITY_PROFILE_IDS as readonly string[]).includes(stored)
+  ) {
     return stored as QualityProfileId;
   }
   return DEFAULT_QUALITY_PROFILE_ID;

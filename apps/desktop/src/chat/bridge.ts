@@ -1,6 +1,10 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-import type { SourceMode, TargetLanguage, TranslationProvider } from "../live/bridge";
+import type {
+  SourceMode,
+  TargetLanguage,
+  TranslationProvider,
+} from "../live/bridge";
 
 export type TranslateTextResult = {
   translatedText: string;

@@ -36,7 +36,15 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
 }
 
 describe("transcript exporters (DS-901)", () => {
-  const entries = [entry(), entry({ id: "c2", text: "Rotate B", sourceText: "paikutin B", timestampMs: 5_000 })];
+  const entries = [
+    entry(),
+    entry({
+      id: "c2",
+      text: "Rotate B",
+      sourceText: "paikutin B",
+      timestampMs: 5_000,
+    }),
+  ];
 
   it("exports txt in chronological order with explicit speakers", () => {
     const text = exportTxt(entries);

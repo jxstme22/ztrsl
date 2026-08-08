@@ -10,20 +10,19 @@ import {
   resetProfile,
   saveRoutingProfiles,
 } from "./routingProfiles";
-import {
-  initialWizardState,
-  type WizardState,
-} from "./wizardState";
+import { initialWizardState, type WizardState } from "./wizardState";
 import { DOMAIN_PRESET_CATALOG, getDomainPreset } from "../presets/catalog";
-import {
-  resolveEffectiveConfig,
-  resolveExplain,
-} from "../presets/resolver";
+import { resolveEffectiveConfig, resolveExplain } from "../presets/resolver";
 import { defaultSourceConfig } from "../sources/model";
 import { createSourceFromPreset } from "../sources/presets";
 
 const ENDPOINTS: AudioEndpoint[] = [
-  { id: "cable-out", friendlyName: "CABLE Output", kind: "capture", state: "active" },
+  {
+    id: "cable-out",
+    friendlyName: "CABLE Output",
+    kind: "capture",
+    state: "active",
+  },
   { id: "hp", friendlyName: "Headphones", kind: "render", state: "active" },
 ] as AudioEndpoint[];
 
@@ -80,8 +79,20 @@ describe("routing profiles (DS-508)", () => {
     };
     saveRoutingProfiles(
       [
-        profileFromWizard(wizard(), "A", { id: "a", sourceOrigin: "virtual_voice_channel", domainPresetId: "general", qualityProfileId: "balanced", vadProfileId: "natural_conversation" }),
-        profileFromWizard(wizard(), "B", { id: "b", sourceOrigin: "virtual_voice_channel", domainPresetId: "general", qualityProfileId: "balanced", vadProfileId: "natural_conversation" }),
+        profileFromWizard(wizard(), "A", {
+          id: "a",
+          sourceOrigin: "virtual_voice_channel",
+          domainPresetId: "general",
+          qualityProfileId: "balanced",
+          vadProfileId: "natural_conversation",
+        }),
+        profileFromWizard(wizard(), "B", {
+          id: "b",
+          sourceOrigin: "virtual_voice_channel",
+          domainPresetId: "general",
+          qualityProfileId: "balanced",
+          vadProfileId: "natural_conversation",
+        }),
       ],
       store,
     );
@@ -96,7 +107,10 @@ describe("routing profiles (DS-508)", () => {
       qualityProfileId: "balanced",
       vadProfileId: "fast_callouts",
     });
-    const recovery = recoverProfile(profile, ENDPOINTS.filter((e) => e.id === "hp"));
+    const recovery = recoverProfile(
+      profile,
+      ENDPOINTS.filter((e) => e.id === "hp"),
+    );
     expect(recovery.usable).toBe(false);
     expect(recovery.missing).toContain("cable-out");
     expect(recovery.profile.id).toBe("p3");
@@ -110,7 +124,11 @@ describe("routing profiles (DS-508)", () => {
       qualityProfileId: "balanced",
       vadProfileId: "fast_callouts",
     });
-    const replaced = replaceProfileEndpoint(profile, "cable-out", "cable-out-2");
+    const replaced = replaceProfileEndpoint(
+      profile,
+      "cable-out",
+      "cable-out-2",
+    );
     expect(replaced.captureEndpointId).toBe("cable-out-2");
     expect(replaced.monitorEndpointId).toBe("hp");
     expect(replaced.name).toBe("Team");
@@ -150,7 +168,10 @@ describe("preset resolver (DS-600)", () => {
 
   it("explicit user overrides win over saved source overrides", () => {
     const effective = resolveEffectiveConfig({
-      sourceOverride: { domainPresetId: "meeting", qualityProfileId: "best_quality" },
+      sourceOverride: {
+        domainPresetId: "meeting",
+        qualityProfileId: "best_quality",
+      },
       userOverrides: { domainPresetId: "valorant", qualityProfileId: "fast" },
     });
     expect(effective.domainPresetId).toBe("valorant");
@@ -169,7 +190,9 @@ describe("preset resolver (DS-600)", () => {
     const { reasons } = resolveExplain({
       userOverrides: { domainPresetId: "discord" },
     });
-    expect(reasons.some((reason) => reason.includes("explicit user override"))).toBe(true);
+    expect(
+      reasons.some((reason) => reason.includes("explicit user override")),
+    ).toBe(true);
   });
 });
 

@@ -24,7 +24,10 @@ function srtTimestamp(timestampMs: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())},${String(date.getMilliseconds()).padStart(3, "0")}`;
 }
 
-export function exportTxt(entries: HistoryEntry[], options: ExportOptions = {}): string {
+export function exportTxt(
+  entries: HistoryEntry[],
+  options: ExportOptions = {},
+): string {
   const { includeSource = false, lineSeparator = "\n" } = options;
   return entries
     .map((entry) => {
@@ -38,7 +41,10 @@ export function exportTxt(entries: HistoryEntry[], options: ExportOptions = {}):
     .join(`${lineSeparator}${lineSeparator}`);
 }
 
-export function exportJson(entries: HistoryEntry[], options: ExportOptions = {}): string {
+export function exportJson(
+  entries: HistoryEntry[],
+  options: ExportOptions = {},
+): string {
   const { includeSource = false } = options;
   return JSON.stringify(
     {
@@ -58,46 +64,59 @@ export function exportJson(entries: HistoryEntry[], options: ExportOptions = {})
   );
 }
 
-export function exportSrt(entries: HistoryEntry[], options: ExportOptions = {}): string {
+export function exportSrt(
+  entries: HistoryEntry[],
+  options: ExportOptions = {},
+): string {
   const { includeSource = false, lineSeparator = "\n" } = options;
   const seconds = (index: number): number => entries[index]?.timestampMs ?? 0;
   return entries
     .map((entry, index) => {
       const start = srtTimestamp(seconds(index));
       const end = srtTimestamp(seconds(index + 1) || seconds(index) + 2000);
-      const text = includeSource && entry.sourceText !== ""
-        ? `${entry.text}\n(${entry.sourceText})`
-        : entry.text;
-      return [
-        String(index + 1),
-        `${start} --> ${end}`,
-        text,
-      ].join(lineSeparator);
+      const text =
+        includeSource && entry.sourceText !== ""
+          ? `${entry.text}\n(${entry.sourceText})`
+          : entry.text;
+      return [String(index + 1), `${start} --> ${end}`, text].join(
+        lineSeparator,
+      );
     })
     .join(`${lineSeparator}${lineSeparator}`);
 }
 
-export function exportVtt(entries: HistoryEntry[], options: ExportOptions = {}): string {
+export function exportVtt(
+  entries: HistoryEntry[],
+  options: ExportOptions = {},
+): string {
   const { includeSource = false, lineSeparator = "\n" } = options;
   const body = entries
     .map((entry, index) => {
       const start = srtTimestamp(entry.timestampMs);
-      const end = srtTimestamp(entries[index + 1]?.timestampMs ?? entry.timestampMs + 2000);
-      const text = includeSource && entry.sourceText !== ""
-        ? `${entry.text}\n(${entry.sourceText})`
-        : entry.text;
+      const end = srtTimestamp(
+        entries[index + 1]?.timestampMs ?? entry.timestampMs + 2000,
+      );
+      const text =
+        includeSource && entry.sourceText !== ""
+          ? `${entry.text}\n(${entry.sourceText})`
+          : entry.text;
       return `${start} --> ${end}\n${text}`;
     })
     .join(`${lineSeparator}${lineSeparator}`);
   return `WEBVTT${lineSeparator}${body}`;
 }
 
-export function exportMarkdown(entries: HistoryEntry[], options: ExportOptions = {}): string {
+export function exportMarkdown(
+  entries: HistoryEntry[],
+  options: ExportOptions = {},
+): string {
   const { includeSource = false, lineSeparator = "\n" } = options;
   return entries
     .map((entry) => {
       const who = entry.displayName || entry.sourceLabel || "Unknown";
-      const lines = [`**${timestamp(entry.timestampMs)} — ${who}:** ${entry.text}`];
+      const lines = [
+        `**${timestamp(entry.timestampMs)} — ${who}:** ${entry.text}`,
+      ];
       if (includeSource && entry.sourceText !== "") {
         lines.push(`> ${entry.sourceText}`);
       }

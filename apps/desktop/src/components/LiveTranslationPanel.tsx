@@ -65,7 +65,11 @@ export type CaptionMode = "streaming" | "final-only";
 /** Caption segmentation style: short chunks, balanced, or full sentences. */
 export type Segmentation = "chunk" | "balanced" | "sentence";
 
-const SEGMENTATIONS: readonly Segmentation[] = ["chunk", "balanced", "sentence"];
+const SEGMENTATIONS: readonly Segmentation[] = [
+  "chunk",
+  "balanced",
+  "sentence",
+];
 
 function loadCaptionMode(): CaptionMode {
   const stored = window.localStorage.getItem(CAPTION_MODE_KEY);
@@ -241,14 +245,12 @@ export function LiveTranslationPanel({
   const [asrProvider, setAsrProvider] = useState<AsrProvider>(loadAsrProvider);
   const [vadSensitivity, setVadSensitivity] =
     useState<number>(loadVadSensitivity);
-  const [qualityProfileId, setQualityProfileId] = useState<QualityProfileId>(
-    loadQualityProfileId,
-  );
+  const [qualityProfileId, setQualityProfileId] =
+    useState<QualityProfileId>(loadQualityProfileId);
   const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
   const [permissionError, setPermissionError] = useState<string | null>(null);
-  const [segmentation, setSegmentation] = useState<Segmentation>(
-    loadSegmentation,
-  );
+  const [segmentation, setSegmentation] =
+    useState<Segmentation>(loadSegmentation);
   const [groqApiKey, setGroqApiKey] = useState<string>(
     () => window.localStorage.getItem(GROQ_API_KEY_KEY) ?? "",
   );
@@ -371,7 +373,9 @@ export function LiveTranslationPanel({
 
   const configuredSources = useMemo(() => loadSourceConfigs().sources, []);
   const endpointInfo = useCallback(
-    (endpointId: string | null): { name: string; capturable: boolean } | null => {
+    (
+      endpointId: string | null,
+    ): { name: string; capturable: boolean } | null => {
       if (endpointId === null) {
         return null;
       }
@@ -406,7 +410,7 @@ export function LiveTranslationPanel({
         return {
           value:
             source.captureTarget.kind === "endpoint"
-              ? source.captureTarget.endpointId ?? ""
+              ? (source.captureTarget.endpointId ?? "")
               : "",
           label: `${source.displayName} (${info.name})`,
           group: "Your sources",
@@ -459,7 +463,8 @@ export function LiveTranslationPanel({
   const configComplete =
     (asrProvider !== "groq-whisper" || groqApiKey.trim().length > 0) &&
     (!asrProvider.startsWith("nvidia-") || nvidiaApiKey.trim().length > 0) &&
-    (!translationProvider.startsWith("nvidia-") || nvidiaApiKey.trim().length > 0) &&
+    (!translationProvider.startsWith("nvidia-") ||
+      nvidiaApiKey.trim().length > 0) &&
     (translationProvider !== "libretranslate" ||
       ltEndpoint.trim().length > 0) &&
     (translationProvider !== "custom-http" ||
@@ -609,8 +614,7 @@ export function LiveTranslationPanel({
             disabled={!canStart}
             aria-busy={busy}
             onClick={() => {
-              const activeSources =
-                channelMode === "all" ? allSources : [];
+              const activeSources = channelMode === "all" ? allSources : [];
               if (
                 channelMode === "all"
                   ? activeSources.length > 0
@@ -635,7 +639,7 @@ export function LiveTranslationPanel({
                       : null;
                   await live.start(
                     channelMode === "all"
-                      ? firstEndpoint ?? ""
+                      ? (firstEndpoint ?? "")
                       : (inputEndpointId ?? ""),
                     channelMode === "all"
                       ? null
@@ -673,10 +677,10 @@ export function LiveTranslationPanel({
                       sourceOrigin: source.sourceOrigin,
                       languageConfig: source.languageConfig,
                     })),
-                  sessionIdHint,
-                  micSource,
-                );
-              })();
+                    sessionIdHint,
+                    micSource,
+                  );
+                })();
               }
             }}
           >
@@ -703,7 +707,10 @@ export function LiveTranslationPanel({
               className={`live-level-fill${live.snapshot.metrics.capturePeak > 0.01 ? " on" : ""}`}
               style={{
                 width: String(
-                  Math.min(100, Math.round(live.snapshot.metrics.capturePeak * 100)),
+                  Math.min(
+                    100,
+                    Math.round(live.snapshot.metrics.capturePeak * 100),
+                  ),
                 ).concat("%"),
               }}
             />
@@ -795,9 +802,7 @@ export function LiveTranslationPanel({
               {allSources.map((source) => (
                 <li key={source.sourceId}>
                   <span className="live-source-tag">{source.captionTag}</span>
-                  <span className="live-source-name">
-                    {source.displayName}
-                  </span>
+                  <span className="live-source-name">{source.displayName}</span>
                 </li>
               ))}
             </ul>
@@ -1020,15 +1025,15 @@ export function LiveTranslationPanel({
           {translationProvider === "opus-mt-en-zh" &&
             (sourceMode !== "english" || targetLanguage !== "zh") && (
               <p className="diag-hint warn">
-                opus-mt (en→zh) needs the source set to English and the
-                output language set to Chinese.
+                opus-mt (en→zh) needs the source set to English and the output
+                language set to Chinese.
               </p>
             )}
           {translationProvider === "opus-mt-zh-en" &&
             (sourceMode !== "chinese" || targetLanguage !== "en") && (
               <p className="diag-hint warn">
-                opus-mt (zh→en) needs the source set to Chinese and the
-                output language set to English.
+                opus-mt (zh→en) needs the source set to Chinese and the output
+                language set to English.
               </p>
             )}
         </div>
@@ -1093,9 +1098,7 @@ export function LiveTranslationPanel({
             }}
           />
           <small className="field-note">
-            {t(
-              ("liveSegmentationNote" + segmentation) as UIKey,
-            )}
+            {t(("liveSegmentationNote" + segmentation) as UIKey)}
           </small>
         </div>
       </div>

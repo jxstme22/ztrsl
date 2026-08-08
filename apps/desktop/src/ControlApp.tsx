@@ -56,7 +56,11 @@ import type {
 } from "./live/bridge";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
-import { isDesktopRuntime, emitHistoryToOverlay, beginOverlayDrag } from "./overlay/bridge";
+import {
+  isDesktopRuntime,
+  emitHistoryToOverlay,
+  beginOverlayDrag,
+} from "./overlay/bridge";
 import type { Caption, OverlaySettings } from "./overlay/model";
 import {
   buildYouSourceRequest,
@@ -195,12 +199,13 @@ export function ControlApp() {
   // The separated live session (started from the history page): a second,
   // independent live translation that shares the sidecar process (models)
   // with the main live session. Its captions go to history only.
-  const separatedLiveRef = useRef<
-    ReturnType<typeof useSeparatedLiveTranslation> | null
-  >(null);
+  const separatedLiveRef = useRef<ReturnType<
+    typeof useSeparatedLiveTranslation
+  > | null>(null);
   const separatedLive = useSeparatedLiveTranslation((caption) => {
     const endpoint = audio.catalog?.endpoints.find(
-      (candidate) => candidate.id === separatedLiveRef.current?.sessionEndpointId,
+      (candidate) =>
+        candidate.id === separatedLiveRef.current?.sessionEndpointId,
     );
     let displayName = "";
     if (caption.source !== undefined) {
@@ -343,21 +348,21 @@ export function ControlApp() {
       return "Pick an input endpoint in the config dialog first.";
     }
     const sourceMode =
-      (window.localStorage.getItem("lst.live.source-mode") as
-        | LiveSourceMode
-        | null) ?? "filipino";
+      (window.localStorage.getItem(
+        "lst.live.source-mode",
+      ) as LiveSourceMode | null) ?? "filipino";
     const targetLanguage =
-      (window.localStorage.getItem("lst.live.target-language") as
-        | TargetLanguage
-        | null) ?? "en";
+      (window.localStorage.getItem(
+        "lst.live.target-language",
+      ) as TargetLanguage | null) ?? "en";
     const asrProvider =
-      (window.localStorage.getItem("lst.live.asr-provider") as
-        | AsrProvider
-        | null) ?? "whisper-turbo";
+      (window.localStorage.getItem(
+        "lst.live.asr-provider",
+      ) as AsrProvider | null) ?? "whisper-turbo";
     const translationProvider =
-      (window.localStorage.getItem("lst.live.translation-provider") as
-        | TranslationProvider
-        | null) ?? "nllb";
+      (window.localStorage.getItem(
+        "lst.live.translation-provider",
+      ) as TranslationProvider | null) ?? "nllb";
     await separatedLive.start(
       endpointId,
       null,
@@ -603,7 +608,9 @@ export function ControlApp() {
                 liveRunning={live.state === "listening"}
                 onToggleMic={toggleMic}
                 onSendChat={sendChat}
-                onOpenYouConfig={() => { setYouConfigOpen(true); }}
+                onOpenYouConfig={() => {
+                  setYouConfigOpen(true);
+                }}
                 separatedState={separatedLive.state}
                 separatedError={separatedLive.error}
                 onStartSeparatedLive={startSeparatedLive}
@@ -653,21 +660,27 @@ export function ControlApp() {
                 className="button primary btn-shine"
                 type="button"
                 autoFocus
-                onClick={() => { resolveStop(true); }}
+                onClick={() => {
+                  resolveStop(true);
+                }}
               >
                 {language.t("liveStopEnd")}
               </button>
               <button
                 className="button secondary"
                 type="button"
-                onClick={() => { resolveStop(false); }}
+                onClick={() => {
+                  resolveStop(false);
+                }}
               >
                 {language.t("liveStopKeep")}
               </button>
               <button
                 className="button quiet"
                 type="button"
-                onClick={() => { setStopDialogOpen(false); }}
+                onClick={() => {
+                  setStopDialogOpen(false);
+                }}
               >
                 {language.t("cancel")}
               </button>
@@ -692,11 +705,13 @@ export function ControlApp() {
       {youConfigOpen && (
         <YouConfigDialog
           endpoints={audio.catalog?.endpoints ?? []}
-          installedModelIds={new Set(
-            models.installed.map((model) => model.id),
-          )}
-          onSaved={(config) => { setYouConfig(config); }}
-          onClose={() => { setYouConfigOpen(false); }}
+          installedModelIds={new Set(models.installed.map((model) => model.id))}
+          onSaved={(config) => {
+            setYouConfig(config);
+          }}
+          onClose={() => {
+            setYouConfigOpen(false);
+          }}
         />
       )}
     </main>

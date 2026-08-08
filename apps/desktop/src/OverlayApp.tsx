@@ -26,8 +26,8 @@ import { DEFAULT_OVERLAY_SNAPSHOT } from "./overlay/model";
 
 export function OverlayApp() {
   const [snapshot, setSnapshot] = useState(DEFAULT_OVERLAY_SNAPSHOT);
-  const [history, setHistory] = useState<HistoryEntry[]>(
-    () => currentSessionEntries(loadHistoryState()),
+  const [history, setHistory] = useState<HistoryEntry[]>(() =>
+    currentSessionEntries(loadHistoryState()),
   );
   const t = useT();
 

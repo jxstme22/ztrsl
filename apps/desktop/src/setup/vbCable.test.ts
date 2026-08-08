@@ -41,7 +41,9 @@ describe("detectVirtualCables (DS-500)", () => {
   });
 
   it("reports missing cables with low confidence and a warning", () => {
-    const detection = detectVirtualCables(catalog([endpoint("m1", "Microphone", "capture")]));
+    const detection = detectVirtualCables(
+      catalog([endpoint("m1", "Microphone", "capture")]),
+    );
     expect(detection.confidence).toBe("low");
     expect(detection.warnings.length).toBeGreaterThan(0);
   });
@@ -67,13 +69,13 @@ describe("detectVirtualCables (DS-500)", () => {
       ]),
     );
     expect(detection.confidence).toBe("medium");
-    expect(
-      detection.warnings.some((w) => w.includes("not active")),
-    ).toBe(true);
+    expect(detection.warnings.some((w) => w.includes("not active"))).toBe(true);
   });
 
   it("keeps the strict single-cable view for the Sources card", () => {
-    expect(detectVbCable(catalog([CABLE_INPUT, CABLE_OUTPUT])).installed).toBe(true);
+    expect(detectVbCable(catalog([CABLE_INPUT, CABLE_OUTPUT])).installed).toBe(
+      true,
+    );
     expect(detectVbCable(catalog([CABLE_INPUT])).installed).toBe(false);
   });
 });

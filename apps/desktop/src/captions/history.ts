@@ -156,9 +156,10 @@ export function currentSessionEntries(state: HistoryState): HistoryEntry[] {
   if (state.sessions.length === 0) {
     return [];
   }
-  return [...state.sessions].sort(
-    (a, b) => b.startedAtMs - a.startedAtMs,
-  )[0]?.entries ?? [];
+  return (
+    [...state.sessions].sort((a, b) => b.startedAtMs - a.startedAtMs)[0]
+      ?.entries ?? []
+  );
 }
 
 function entryForCaption(
@@ -211,9 +212,7 @@ function recordIntoSession(
   const entries = session.entries.slice();
   // The same caption id upserts in place. Scoped to this session so a fresh
   // pipeline (new session) can never overwrite an older entry mid-list.
-  const existing = entries.findIndex(
-    (candidate) => candidate.id === entry.id,
-  );
+  const existing = entries.findIndex((candidate) => candidate.id === entry.id);
   if (existing !== -1) {
     entries[existing] = entry;
     return { ...session, entries };
@@ -350,12 +349,8 @@ export function historyReducer(
       return {
         ...state,
         currentSessionId:
-          state.currentSessionId === action.id
-            ? null
-            : state.currentSessionId,
-        sessions: state.sessions.filter(
-          (session) => session.id !== action.id,
-        ),
+          state.currentSessionId === action.id ? null : state.currentSessionId,
+        sessions: state.sessions.filter((session) => session.id !== action.id),
       };
     }
     case "selectSession": {
@@ -363,8 +358,7 @@ export function historyReducer(
       return {
         ...state,
         currentSessionId:
-          id !== null &&
-          state.sessions.some((session) => session.id === id)
+          id !== null && state.sessions.some((session) => session.id === id)
             ? id
             : null,
       };
@@ -489,8 +483,7 @@ export function loadHistoryDisplayOptions(
   storage: Pick<Storage, "getItem"> = window.localStorage,
 ): HistoryDisplayOptions {
   const serialized =
-    storage.getItem(DISPLAY_OPTIONS_KEY) ??
-    storage.getItem(LEGACY_OPTIONS_KEY);
+    storage.getItem(DISPLAY_OPTIONS_KEY) ?? storage.getItem(LEGACY_OPTIONS_KEY);
   if (serialized !== null) {
     try {
       const parsed = historyDisplayOptionsSchema.safeParse(

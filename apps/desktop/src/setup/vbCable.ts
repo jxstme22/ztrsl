@@ -20,8 +20,14 @@ export type VirtualCableDetection = {
   warnings: string[];
 };
 
-const CABLE_PLAYBACK_PATTERNS = [/cable\s+input/i, /vb-audio\s+virtual\s+cable/i];
-const CABLE_CAPTURE_PATTERNS = [/cable\s+output/i, /vb-audio\s+virtual\s+cable/i];
+const CABLE_PLAYBACK_PATTERNS = [
+  /cable\s+input/i,
+  /vb-audio\s+virtual\s+cable/i,
+];
+const CABLE_CAPTURE_PATTERNS = [
+  /cable\s+output/i,
+  /vb-audio\s+virtual\s+cable/i,
+];
 /** macOS virtual devices expose their input as a capture endpoint. */
 const BLACKHOLE_PATTERN = /blackhole|black\s+hole/i;
 

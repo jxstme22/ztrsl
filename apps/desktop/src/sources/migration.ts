@@ -27,7 +27,9 @@ type V3Configs = {
  * from real data but stays the safe fallback). Preserves every existing
  * field; idempotent (v4 documents pass through untouched).
  */
-export function migrateFromV03(configs: V3Configs | SourceConfigs): SourceConfigs {
+export function migrateFromV03(
+  configs: V3Configs | SourceConfigs,
+): SourceConfigs {
   if (configs.schemaVersion === 4) {
     return configs;
   }

@@ -61,7 +61,9 @@ describe("quality profiles (DS-203)", () => {
   it("defaults to balanced and persists the choice", () => {
     const storage = new Map<string, string>();
     const get = { getItem: (key: string) => storage.get(key) ?? null };
-    const set = { setItem: (key: string, value: string) => storage.set(key, value) };
+    const set = {
+      setItem: (key: string, value: string) => storage.set(key, value),
+    };
     expect(loadQualityProfileId(get)).toBe(DEFAULT_QUALITY_PROFILE_ID);
     saveQualityProfileId("best_quality", set);
     expect(loadQualityProfileId(get)).toBe("best_quality");

@@ -6,7 +6,8 @@
  * changes any audio device. Data-only: the wizard component consumes this.
  */
 
-export type UseCaseId = "valorant" | "discord" | "meeting" | "browser_call" | "other";
+export type UseCaseId =
+  "valorant" | "discord" | "meeting" | "browser_call" | "other";
 
 export type UseCase = {
   id: UseCaseId;

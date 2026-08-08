@@ -24,7 +24,10 @@ export function ProfilePage({
   const t = useT();
   return (
     <div className="page-stack">
-      <section className="card lst-section-card" aria-labelledby="profile-title">
+      <section
+        className="card lst-section-card"
+        aria-labelledby="profile-title"
+      >
         <div className="card-head">
           <h2 className="card-title" id="profile-title">
             {t("navSetup")}
@@ -32,7 +35,11 @@ export function ProfilePage({
         </div>
         <p className="card-note">{t("profileIntro")}</p>
       </section>
-      <SavedProfilesPanel audio={audio} live={live} sessionIdHint={sessionIdHint} />
+      <SavedProfilesPanel
+        audio={audio}
+        live={live}
+        sessionIdHint={sessionIdHint}
+      />
       <SetupWizard audio={audio} />
     </div>
   );

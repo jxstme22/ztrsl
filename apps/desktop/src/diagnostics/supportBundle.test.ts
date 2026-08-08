@@ -19,7 +19,11 @@ const SOURCE_CONFIGS: SourceConfigs = {
       monitoring: { enabled: false, headphoneEndpointId: null, volume: 0.5 },
       languageProfile: "tagalog",
       sourceOrigin: "virtual_voice_channel",
-      languageConfig: { primaryLanguage: "tl", secondaryLanguages: [], detectionMode: "fixed" },
+      languageConfig: {
+        primaryLanguage: "tl",
+        secondaryLanguages: [],
+        detectionMode: "fixed",
+      },
       strictness: "balanced",
     },
   ],

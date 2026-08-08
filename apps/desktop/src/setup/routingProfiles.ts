@@ -69,7 +69,9 @@ export function loadRoutingProfiles(
     return [];
   }
   try {
-    const parsed = z.array(routingProfileSchema).safeParse(JSON.parse(serialized));
+    const parsed = z
+      .array(routingProfileSchema)
+      .safeParse(JSON.parse(serialized));
     return parsed.success ? parsed.data : [];
   } catch {
     return [];
@@ -87,7 +89,9 @@ export function deleteRoutingProfile(
   id: string,
   storage: Pick<Storage, "getItem" | "setItem"> = window.localStorage,
 ): RoutingProfile[] {
-  const next = loadRoutingProfiles(storage).filter((profile) => profile.id !== id);
+  const next = loadRoutingProfiles(storage).filter(
+    (profile) => profile.id !== id,
+  );
   saveRoutingProfiles(next, storage);
   return next;
 }
@@ -104,9 +108,10 @@ export function recoverProfile(
   profile: RoutingProfile,
   endpoints: AudioEndpoint[],
 ): ProfileRecovery {
-  const referenced = [profile.captureEndpointId, profile.monitorEndpointId].filter(
-    (id): id is string => id !== null && id !== "",
-  );
+  const referenced = [
+    profile.captureEndpointId,
+    profile.monitorEndpointId,
+  ].filter((id): id is string => id !== null && id !== "");
   const missing = referenced.filter(
     (id) => !endpoints.some((endpoint) => endpoint.id === id),
   );

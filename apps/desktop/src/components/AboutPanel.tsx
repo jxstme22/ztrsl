@@ -19,7 +19,10 @@ export function AboutPanel({ version = "0.8.0" }: { version?: string }) {
         <p className="card-note">{t("aboutIntro")}</p>
       </section>
 
-      <section className="card lst-section-card" aria-labelledby="about-pages-title">
+      <section
+        className="card lst-section-card"
+        aria-labelledby="about-pages-title"
+      >
         <div className="card-head">
           <h3 className="card-title" id="about-pages-title">
             {t("aboutPagesTitle")}
@@ -27,30 +30,40 @@ export function AboutPanel({ version = "0.8.0" }: { version?: string }) {
         </div>
         <ul className="about-list">
           <li>
-            <strong>{t("aboutPageLiveTitle")}</strong> — {t("aboutPageLiveText")}
+            <strong>{t("aboutPageLiveTitle")}</strong> —{" "}
+            {t("aboutPageLiveText")}
           </li>
           <li>
-            <strong>{t("aboutPageProfileTitle")}</strong> — {t("aboutPageProfileText")}
+            <strong>{t("aboutPageProfileTitle")}</strong> —{" "}
+            {t("aboutPageProfileText")}
           </li>
           <li>
-            <strong>{t("aboutPageHistoryTitle")}</strong> — {t("aboutPageHistoryText")}
+            <strong>{t("aboutPageHistoryTitle")}</strong> —{" "}
+            {t("aboutPageHistoryText")}
           </li>
           <li>
-            <strong>{t("aboutPageModelsTitle")}</strong> — {t("aboutPageModelsText")}
+            <strong>{t("aboutPageModelsTitle")}</strong> —{" "}
+            {t("aboutPageModelsText")}
           </li>
           <li>
-            <strong>{t("aboutPageSourcesTitle")}</strong> — {t("aboutPageSourcesText")}
+            <strong>{t("aboutPageSourcesTitle")}</strong> —{" "}
+            {t("aboutPageSourcesText")}
           </li>
           <li>
-            <strong>{t("aboutPageSettingsTitle")}</strong> — {t("aboutPageSettingsText")}
+            <strong>{t("aboutPageSettingsTitle")}</strong> —{" "}
+            {t("aboutPageSettingsText")}
           </li>
           <li>
-            <strong>{t("aboutPageDiagnosticsTitle")}</strong> — {t("aboutPageDiagnosticsText")}
+            <strong>{t("aboutPageDiagnosticsTitle")}</strong> —{" "}
+            {t("aboutPageDiagnosticsText")}
           </li>
         </ul>
       </section>
 
-      <section className="card lst-section-card" aria-labelledby="about-models-title">
+      <section
+        className="card lst-section-card"
+        aria-labelledby="about-models-title"
+      >
         <div className="card-head">
           <h3 className="card-title" id="about-models-title">
             {t("aboutModelsTitle")}
@@ -100,7 +113,10 @@ export function AboutPanel({ version = "0.8.0" }: { version?: string }) {
         <p className="card-note">{t("aboutBestBoth")}</p>
       </section>
 
-      <section className="card lst-section-card" aria-labelledby="about-specs-title">
+      <section
+        className="card lst-section-card"
+        aria-labelledby="about-specs-title"
+      >
         <div className="card-head">
           <h3 className="card-title" id="about-specs-title">
             {t("aboutSpecsTitle")}
@@ -108,16 +124,20 @@ export function AboutPanel({ version = "0.8.0" }: { version?: string }) {
         </div>
         <ul className="about-list">
           <li>
-            <strong>{t("aboutSpecsMinTitle")}</strong> — {t("aboutSpecsMinText")}
+            <strong>{t("aboutSpecsMinTitle")}</strong> —{" "}
+            {t("aboutSpecsMinText")}
           </li>
           <li>
-            <strong>{t("aboutSpecsRecommendedTitle")}</strong> — {t("aboutSpecsRecommendedText")}
+            <strong>{t("aboutSpecsRecommendedTitle")}</strong> —{" "}
+            {t("aboutSpecsRecommendedText")}
           </li>
           <li>
-            <strong>{t("aboutSpecsAppleTitle")}</strong> — {t("aboutSpecsAppleText")}
+            <strong>{t("aboutSpecsAppleTitle")}</strong> —{" "}
+            {t("aboutSpecsAppleText")}
           </li>
           <li>
-            <strong>{t("aboutSpecsDiskTitle")}</strong> — {t("aboutSpecsDiskText")}
+            <strong>{t("aboutSpecsDiskTitle")}</strong> —{" "}
+            {t("aboutSpecsDiskText")}
           </li>
         </ul>
       </section>

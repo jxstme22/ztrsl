@@ -21,10 +21,7 @@ export type WizardStep =
 
 export type SignalLevel = "silent" | "very_quiet" | "healthy" | "clipping";
 export type IsolationResult =
-  | "passed"
-  | "inconclusive"
-  | "failed_non_voice_leak"
-  | "failed_no_voice";
+  "passed" | "inconclusive" | "failed_non_voice_leak" | "failed_no_voice";
 
 export type WizardState = {
   step: WizardStep;

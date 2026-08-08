@@ -36,7 +36,10 @@ function caption(overrides: Partial<Caption> = {}): Caption {
 }
 
 /** A ready-to-record state with a live session open. */
-function liveState(sessionId = "sess-1", name = "Session · 08/08 14:30"): HistoryState {
+function liveState(
+  sessionId = "sess-1",
+  name = "Session · 08/08 14:30",
+): HistoryState {
   return historyReducer(empty(), {
     type: "beginSession",
     id: sessionId,
@@ -127,10 +130,13 @@ describe("historyReducer sessions", () => {
     // The same caption id in a NEW session must not touch the old one —
     // that is the regression where a fresh pipeline overwrote an old entry
     // mid-list on the History page.
-    const second = historyReducer(historyReducer(withCaption, {
-      type: "endSession",
-      id: "sess-1",
-    }), { type: "beginSession", id: "sess-2", name: "Session · 14:45" });
+    const second = historyReducer(
+      historyReducer(withCaption, {
+        type: "endSession",
+        id: "sess-1",
+      }),
+      { type: "beginSession", id: "sess-2", name: "Session · 14:45" },
+    );
     const withSameId = historyReducer(second, {
       type: "record",
       caption: caption({ id: "c1", englishText: "Say it louder" }),
@@ -235,14 +241,17 @@ describe("historyReducer session lifecycle", () => {
       id: "sess-1",
       name: "Session · 08/08 14:30",
     });
-    const next = historyReducer(historyReducer(started, {
-      type: "endSession",
-      id: "sess-1",
-    }), {
-      type: "beginSession",
-      id: "sess-1",
-      name: "Session · 08/08 14:30",
-    });
+    const next = historyReducer(
+      historyReducer(started, {
+        type: "endSession",
+        id: "sess-1",
+      }),
+      {
+        type: "beginSession",
+        id: "sess-1",
+        name: "Session · 08/08 14:30",
+      },
+    );
     expect(next.sessions).toHaveLength(1);
     expect(next.currentSessionId).toBe("sess-1");
   });
@@ -291,9 +300,18 @@ describe("historyReducer session lifecycle", () => {
 
   it("selectSession validates the id and allows null", () => {
     const state = liveState();
-    expect(historyReducer(state, { type: "selectSession", id: "nope" }).currentSessionId).toBeNull();
-    expect(historyReducer(state, { type: "selectSession", id: "sess-1" }).currentSessionId).toBe("sess-1");
-    expect(historyReducer(state, { type: "selectSession", id: null }).currentSessionId).toBeNull();
+    expect(
+      historyReducer(state, { type: "selectSession", id: "nope" })
+        .currentSessionId,
+    ).toBeNull();
+    expect(
+      historyReducer(state, { type: "selectSession", id: "sess-1" })
+        .currentSessionId,
+    ).toBe("sess-1");
+    expect(
+      historyReducer(state, { type: "selectSession", id: null })
+        .currentSessionId,
+    ).toBeNull();
   });
 
   it("clearSession empties only the targeted session's entries", () => {
@@ -301,16 +319,22 @@ describe("historyReducer session lifecycle", () => {
       type: "record",
       caption: caption(),
     });
-    const next = historyReducer(withEntry, { type: "clearSession", id: "sess-1" });
+    const next = historyReducer(withEntry, {
+      type: "clearSession",
+      id: "sess-1",
+    });
     expect(next.sessions[0]?.entries).toHaveLength(0);
     expect(next.currentSessionId).toBe("sess-1");
   });
 
   it("clear resets everything", () => {
-    const state = historyReducer(historyReducer(liveState(), {
-      type: "record",
-      caption: caption(),
-    }), { type: "clear" });
+    const state = historyReducer(
+      historyReducer(liveState(), {
+        type: "record",
+        caption: caption(),
+      }),
+      { type: "clear" },
+    );
     expect(state).toEqual(empty());
   });
 });
@@ -376,10 +400,13 @@ describe("history storage", () => {
 
 describe("currentSessionEntries", () => {
   it("prefers the current session", () => {
-    const state = historyReducer(historyReducer(liveState("sess-1"), {
-      type: "record",
-      caption: caption({ id: "a" }),
-    }), { type: "beginSession", id: "sess-2", name: "Session · 14:45" });
+    const state = historyReducer(
+      historyReducer(liveState("sess-1"), {
+        type: "record",
+        caption: caption({ id: "a" }),
+      }),
+      { type: "beginSession", id: "sess-2", name: "Session · 14:45" },
+    );
     const next = historyReducer(state, {
       type: "record",
       caption: caption({ id: "b" }),
@@ -388,10 +415,13 @@ describe("currentSessionEntries", () => {
   });
 
   it("falls back to the most recently started session", () => {
-    const state = historyReducer(historyReducer(liveState("sess-1"), {
-      type: "record",
-      caption: caption({ id: "a" }),
-    }), { type: "endSession", id: "sess-1" });
+    const state = historyReducer(
+      historyReducer(liveState("sess-1"), {
+        type: "record",
+        caption: caption({ id: "a" }),
+      }),
+      { type: "endSession", id: "sess-1" },
+    );
     const older = historyReducer(state, {
       type: "beginSession",
       id: "sess-2",
@@ -404,10 +434,13 @@ describe("currentSessionEntries", () => {
       name: "Session · 15:00",
       startedAtMs: 9000,
     });
-    const recorded = historyReducer(historyReducer(newest, {
-      type: "record",
-      caption: caption({ id: "b" }),
-    }), { type: "endSession", id: "sess-3" });
+    const recorded = historyReducer(
+      historyReducer(newest, {
+        type: "record",
+        caption: caption({ id: "b" }),
+      }),
+      { type: "endSession", id: "sess-3" },
+    );
     expect(currentSessionEntries(recorded).map((e) => e.id)).toEqual(["b"]);
   });
 

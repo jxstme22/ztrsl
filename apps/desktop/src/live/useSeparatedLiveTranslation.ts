@@ -82,7 +82,9 @@ export function useSeparatedLiveTranslation(
           polling.current = false;
         });
     }, 250);
-    return () => { window.clearInterval(interval); };
+    return () => {
+      window.clearInterval(interval);
+    };
   }, [applySnapshot, state]);
 
   useEffect(() => {

@@ -14,7 +14,8 @@ export type FrameStats = { rms: number; peak: number; clippingRatio: number };
 
 export const SIGNAL_MESSAGES: Record<SignalLevel, string> = {
   healthy: "Voice detected. Signal level is healthy.",
-  silent: "No signal detected. Check that the application outputs to CABLE Input.",
+  silent:
+    "No signal detected. Check that the application outputs to CABLE Input.",
   very_quiet: "Signal is very quiet. Increase the application output volume.",
   clipping: "Signal is clipping. Lower the application output volume.",
 };

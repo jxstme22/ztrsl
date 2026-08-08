@@ -7,10 +7,7 @@ import {
   validateSources,
   validateTag,
 } from "./validation";
-import {
-  languageConfigSchema,
-  profileToLanguageConfig,
-} from "./model";
+import { languageConfigSchema, profileToLanguageConfig } from "./model";
 import type { AudioSourceConfig } from "./model";
 
 function makeSource(

@@ -30,7 +30,9 @@ export const domainPresetCatalogSchema = z
     presets: z.array(domainPresetSchema),
   })
   .refine(
-    (catalog) => new Set(catalog.presets.map((preset) => preset.id)).size === catalog.presets.length,
+    (catalog) =>
+      new Set(catalog.presets.map((preset) => preset.id)).size ===
+      catalog.presets.length,
     { message: "preset ids must be unique" },
   );
 

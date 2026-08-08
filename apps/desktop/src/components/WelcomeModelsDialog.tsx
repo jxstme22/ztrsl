@@ -221,7 +221,9 @@ export function WelcomeModelsDialog({
                               <button
                                 type="button"
                                 className="button secondary"
-                                onClick={() => { void models.cancel(model.id); }}
+                                onClick={() => {
+                                  void models.cancel(model.id);
+                                }}
                               >
                                 {t("cancel")}
                               </button>
@@ -229,9 +231,14 @@ export function WelcomeModelsDialog({
                               <button
                                 type="button"
                                 className="button primary btn-shine"
-                                onClick={() => { onInstall(model.id); }}
+                                onClick={() => {
+                                  onInstall(model.id);
+                                }}
                               >
-                                <HardDriveDownload aria-hidden="true" size={14} />
+                                <HardDriveDownload
+                                  aria-hidden="true"
+                                  size={14}
+                                />
                                 {t("install")}
                               </button>
                             )}

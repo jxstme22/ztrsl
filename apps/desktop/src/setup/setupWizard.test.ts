@@ -6,10 +6,7 @@ import {
   wizardReducer,
   type WizardState,
 } from "./wizardState";
-import {
-  classifySignalLevel,
-  decideIsolationResult,
-} from "./signalTest";
+import { classifySignalLevel, decideIsolationResult } from "./signalTest";
 import {
   validateWizardSelection,
   type SelectionValidation,
@@ -17,9 +14,19 @@ import {
 import type { AudioEndpoint } from "../audio/model";
 
 const ENDPOINTS: AudioEndpoint[] = [
-  { id: "cable-out", friendlyName: "CABLE Output", kind: "capture", state: "active" },
+  {
+    id: "cable-out",
+    friendlyName: "CABLE Output",
+    kind: "capture",
+    state: "active",
+  },
   { id: "hp", friendlyName: "Headphones", kind: "render", state: "active" },
-  { id: "cable-in", friendlyName: "CABLE Input", kind: "render", state: "active" },
+  {
+    id: "cable-in",
+    friendlyName: "CABLE Input",
+    kind: "render",
+    state: "active",
+  },
 ] as AudioEndpoint[];
 
 const DETECTION = {
@@ -92,7 +99,12 @@ describe("wizard state machine (DS-501)", () => {
 
   it("cancel resets everything without saving", () => {
     const state = wizardReducer(
-      { ...initialWizardState(), step: "review", useCaseId: "valorant", saved: false },
+      {
+        ...initialWizardState(),
+        step: "review",
+        useCaseId: "valorant",
+        saved: false,
+      },
       { type: "cancel" },
     );
     expect(state).toEqual(initialWizardState());
@@ -126,8 +138,12 @@ describe("use cases + routing (DS-502/DS-504)", () => {
   });
 
   it("adapts routing instructions per use case", () => {
-    expect(ROUTING_STEPS.valorant.some((s) => s.from.includes("Voice chat"))).toBe(true);
-    expect(ROUTING_STEPS.browser_call.some((s) => s.from.includes("Browser"))).toBe(true);
+    expect(
+      ROUTING_STEPS.valorant.some((s) => s.from.includes("Voice chat")),
+    ).toBe(true);
+    expect(
+      ROUTING_STEPS.browser_call.some((s) => s.from.includes("Browser")),
+    ).toBe(true);
     expect(ROUTING_STEPS.valorant.length).toBeGreaterThanOrEqual(4);
   });
 });
@@ -141,7 +157,9 @@ describe("selection validation (DS-505)", () => {
     };
     const result = validateWizardSelection(state, ENDPOINTS, DETECTION);
     expect(result.valid).toBe(false);
-    expect(result.problems.some((p) => p.code === "capture_missing")).toBe(true);
+    expect(result.problems.some((p) => p.code === "capture_missing")).toBe(
+      true,
+    );
   });
 
   it("rejects monitoring onto the cable itself", () => {
@@ -157,7 +175,9 @@ describe("selection validation (DS-505)", () => {
       ENDPOINTS,
       DETECTION,
     );
-    expect(result.problems.some((p) => p.code === "monitor_on_cable")).toBe(true);
+    expect(result.problems.some((p) => p.code === "monitor_on_cable")).toBe(
+      true,
+    );
   });
 
   it("accepts a valid capture + headphones monitoring", () => {
@@ -168,16 +188,26 @@ describe("selection validation (DS-505)", () => {
       monitoringEnabled: true,
       monitorEndpointId: "hp",
     };
-    expect(validateWizardSelection(state, ENDPOINTS, DETECTION).valid).toBe(true);
+    expect(validateWizardSelection(state, ENDPOINTS, DETECTION).valid).toBe(
+      true,
+    );
   });
 });
 
 describe("signal + isolation tests (DS-506/DS-507)", () => {
   it("classifies signal levels deterministically", () => {
-    expect(classifySignalLevel({ rms: 0.1, peak: 0.3, clippingRatio: 0 })).toBe("healthy");
-    expect(classifySignalLevel({ rms: 0.001, peak: 0.01, clippingRatio: 0 })).toBe("silent");
-    expect(classifySignalLevel({ rms: 0.01, peak: 0.04, clippingRatio: 0 })).toBe("very_quiet");
-    expect(classifySignalLevel({ rms: 0.1, peak: 0.99, clippingRatio: 0.05 })).toBe("clipping");
+    expect(classifySignalLevel({ rms: 0.1, peak: 0.3, clippingRatio: 0 })).toBe(
+      "healthy",
+    );
+    expect(
+      classifySignalLevel({ rms: 0.001, peak: 0.01, clippingRatio: 0 }),
+    ).toBe("silent");
+    expect(
+      classifySignalLevel({ rms: 0.01, peak: 0.04, clippingRatio: 0 }),
+    ).toBe("very_quiet");
+    expect(
+      classifySignalLevel({ rms: 0.1, peak: 0.99, clippingRatio: 0.05 }),
+    ).toBe("clipping");
   });
 
   it("decides isolation results with honest wording", () => {

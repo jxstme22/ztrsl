@@ -72,9 +72,7 @@ export function useCaptionHistory() {
   }, []);
 
   const endSession = useCallback((id: string) => {
-    setState((current) =>
-      historyReducer(current, { type: "endSession", id }),
-    );
+    setState((current) => historyReducer(current, { type: "endSession", id }));
   }, []);
 
   const renameSession = useCallback((id: string, name: string) => {
@@ -108,9 +106,8 @@ export function useCaptionHistory() {
 
   const activeSession = useMemo(
     () =>
-      state.sessions.find(
-        (session) => session.id === state.currentSessionId,
-      ) ?? null,
+      state.sessions.find((session) => session.id === state.currentSessionId) ??
+      null,
     [state],
   );
 

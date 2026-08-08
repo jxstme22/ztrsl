@@ -24,11 +24,18 @@ const AUDIO = {
   catalog: {
     platform: "windows",
     endpoints: [
-      { id: "cable-out", friendlyName: "CABLE Output", kind: "capture", state: "active" },
+      {
+        id: "cable-out",
+        friendlyName: "CABLE Output",
+        kind: "capture",
+        state: "active",
+      },
       { id: "hp", friendlyName: "Headphones", kind: "render", state: "active" },
     ],
   },
-} as unknown as ReturnType<typeof import("../audio/useAudioMeter").useAudioMeter>;
+} as unknown as ReturnType<
+  typeof import("../audio/useAudioMeter").useAudioMeter
+>;
 
 function liveController() {
   return {
@@ -40,7 +47,9 @@ function liveController() {
     error: null,
     warning: null,
     sessionEndpointId: null,
-  } as unknown as ReturnType<typeof import("../live/useLiveTranslation").useLiveTranslation>;
+  } as unknown as ReturnType<
+    typeof import("../live/useLiveTranslation").useLiveTranslation
+  >;
 }
 
 describe("SavedProfilesPanel (DS-604)", () => {
@@ -48,8 +57,8 @@ describe("SavedProfilesPanel (DS-604)", () => {
     const storage = new Map<string, string>([
       ["lst.routingProfiles.v1", JSON.stringify([PROFILE])],
     ]);
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation((key: string) =>
-      storage.get(key) ?? null,
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(
+      (key: string) => storage.get(key) ?? null,
     );
     const live = liveController();
     render(<SavedProfilesPanel audio={AUDIO} live={live} />);
@@ -78,8 +87,8 @@ describe("SavedProfilesPanel (DS-604)", () => {
         JSON.stringify([{ ...PROFILE, captureEndpointId: "gone" }]),
       ],
     ]);
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation((key: string) =>
-      storage.get(key) ?? null,
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(
+      (key: string) => storage.get(key) ?? null,
     );
     const live = liveController();
     render(<SavedProfilesPanel audio={AUDIO} live={live} />);
@@ -91,7 +100,9 @@ describe("SavedProfilesPanel (DS-604)", () => {
   it("renders nothing without saved profiles", () => {
     vi.spyOn(Storage.prototype, "getItem").mockReturnValue(null);
     const live = liveController();
-    const { container } = render(<SavedProfilesPanel audio={AUDIO} live={live} />);
+    const { container } = render(
+      <SavedProfilesPanel audio={AUDIO} live={live} />,
+    );
     expect(container).toBeEmptyDOMElement();
     vi.restoreAllMocks();
   });

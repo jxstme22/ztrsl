@@ -63,7 +63,10 @@ const UI_STRINGS = {
   historyCopy: { en: "Copy translation", zh: "复制译文" },
   historyCopyAll: { en: "Copy all messages", zh: "复制全部消息" },
   historySearch: { en: "Search captions", zh: "搜索字幕" },
-  historySearchEmpty: { en: "No captions match the search.", zh: "没有匹配搜索的字幕。" },
+  historySearchEmpty: {
+    en: "No captions match the search.",
+    zh: "没有匹配搜索的字幕。",
+  },
   historyClearSession: { en: "Clear session messages", zh: "清空会话消息" },
   historySessionEmpty: {
     en: "This session has no finished captions yet.",
@@ -87,7 +90,10 @@ const UI_STRINGS = {
   },
   chatSend: { en: "Send", zh: "发送" },
   chatMic: { en: "Translate my voice", zh: "翻译我的语音" },
-  chatMicLive: { en: "Your voice is being translated — click to stop", zh: "正在翻译你的语音 — 点击停止" },
+  chatMicLive: {
+    en: "Your voice is being translated — click to stop",
+    zh: "正在翻译你的语音 — 点击停止",
+  },
   chatMicRequiresLive: {
     en: "Start a live session first, then use the mic button",
     zh: "请先启动实时会话，再使用麦克风按钮",
@@ -130,7 +136,7 @@ const UI_STRINGS = {
     zh: "保存并使用独立实时配置",
   },
   chatConfigLiveNote: {
-    en: "The Live translation settings below only apply when you press \"Save & use separate live config\". Otherwise your voice uses the same models as the Live page.",
+    en: 'The Live translation settings below only apply when you press "Save & use separate live config". Otherwise your voice uses the same models as the Live page.',
     zh: "下方的实时翻译设置仅在点击“保存并使用独立实时配置”时生效。否则你的语音会使用与实时页面相同的模型。",
   },
   chatTranslateFailed: { en: "Translation failed", zh: "翻译失败" },
@@ -490,7 +496,10 @@ const UI_STRINGS = {
     zh: "流式模式在说话过程中实时预览并逐步修正；仅最终模式等语句说完后一次性翻译整段。",
   },
   liveSegmentation: { en: "Caption style", zh: "字幕分段" },
-  liveSegmentationchunk: { en: "Short chunks (fast callouts)", zh: "短句块（快速报点）" },
+  liveSegmentationchunk: {
+    en: "Short chunks (fast callouts)",
+    zh: "短句块（快速报点）",
+  },
   liveSegmentationbalanced: { en: "Balanced (auto)", zh: "均衡（自动）" },
   liveSegmentationsentence: { en: "Full sentences", zh: "完整句子" },
   liveSegmentationNotechunk: {
@@ -508,8 +517,8 @@ const UI_STRINGS = {
   liveStopListening: { en: "Stop listening", zh: "停止聆听" },
   liveStopConfirmTitle: { en: "End the session?", zh: "结束此会话？" },
   liveStopConfirmBody: {
-    en: "Stop live and end session \"{name}\"? The transcript stays in Captions history.",
-    zh: "停止实时翻译并结束会话 \"{name}\"？记录会保留在字幕历史中。",
+    en: 'Stop live and end session "{name}"? The transcript stays in Captions history.',
+    zh: '停止实时翻译并结束会话 "{name}"？记录会保留在字幕历史中。',
   },
   liveStopConfirmBodyShort: {
     en: "Stop live translation? The transcript stays in Captions history.",

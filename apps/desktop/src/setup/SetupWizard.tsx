@@ -143,17 +143,13 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
       void audio.stop();
     }
     const id = `profile-${String(Date.now())}`;
-    const profile = profileFromWizard(
-      state,
-      profileName.trim() || "My setup",
-      {
-        id,
-        sourceOrigin: useCase.suggestedSourceOrigin,
-        domainPresetId: useCase.suggestedPresetId,
-        qualityProfileId: "balanced",
-        vadProfileId: useCase.suggestedVadProfileId,
-      },
-    );
+    const profile = profileFromWizard(state, profileName.trim() || "My setup", {
+      id,
+      sourceOrigin: useCase.suggestedSourceOrigin,
+      domainPresetId: useCase.suggestedPresetId,
+      qualityProfileId: "balanced",
+      vadProfileId: useCase.suggestedVadProfileId,
+    });
     saveRoutingProfiles([...loadRoutingProfiles(), profile]);
     saveQualityProfileId("balanced");
     window.localStorage.setItem(INPUT_ENDPOINT_KEY, state.captureEndpointId);
@@ -264,7 +260,8 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
               audio.refresh().catch(() => undefined);
             }}
           >
-            <RefreshCw aria-hidden="true" size={14} /> {t("wizardRefreshDevices")}
+            <RefreshCw aria-hidden="true" size={14} />{" "}
+            {t("wizardRefreshDevices")}
           </button>
         </div>
       )}
@@ -388,7 +385,9 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
             )}
           </button>
           {state.signalResult && (
-            <p className="diag-hint ok">{t(signalLabels[state.signalResult])}</p>
+            <p className="diag-hint ok">
+              {t(signalLabels[state.signalResult])}
+            </p>
           )}
         </div>
       )}
@@ -444,7 +443,9 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
             <li>
               {t("wizardReviewUseCase").replace(
                 "{value}",
-                state.useCaseId ? t(USE_CASE_NAME_KEYS[state.useCaseId as UseCaseId]) : "—",
+                state.useCaseId
+                  ? t(USE_CASE_NAME_KEYS[state.useCaseId as UseCaseId])
+                  : "—",
               )}
             </li>
             <li>
@@ -459,18 +460,16 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
               {t("wizardReviewMonitor").replace(
                 "{value}",
                 state.monitoringEnabled
-                  ? audio.renderEndpoints.find(
+                  ? (audio.renderEndpoints.find(
                       (e) => e.id === state.monitorEndpointId,
-                    )?.friendlyName ?? "—"
+                    )?.friendlyName ?? "—")
                   : t("wizardNo"),
               )}
             </li>
             <li>
               {t("wizardReviewSignal").replace(
                 "{value}",
-                state.signalResult
-                  ? t(signalLabels[state.signalResult])
-                  : "—",
+                state.signalResult ? t(signalLabels[state.signalResult]) : "—",
               )}
             </li>
             <li>
@@ -506,10 +505,7 @@ export function SetupWizard({ audio }: { audio: AudioController }) {
       {state.step === "saved" && (
         <div>
           <p className="diag-hint ok">
-            {t("wizardSavedHint").replace(
-              "{id}",
-              savedId ?? "",
-            )}
+            {t("wizardSavedHint").replace("{id}", savedId ?? "")}
           </p>
         </div>
       )}

@@ -308,7 +308,10 @@ mod tests {
         let catalog = ModelCatalog::embedded();
         for id in ["omni-ctc-300m-int8", "paraformer-zh-streaming"] {
             let entry = catalog.entry(id).expect("entry");
-            assert!(entry.archive.is_none(), "{id} must not use a GitHub archive");
+            assert!(
+                entry.archive.is_none(),
+                "{id} must not use a GitHub archive"
+            );
             assert!(!entry.files.is_empty(), "{id} must have files");
             assert!(entry.source.starts_with("https://huggingface.co/"));
             assert_eq!(

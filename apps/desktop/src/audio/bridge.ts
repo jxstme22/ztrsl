@@ -82,4 +82,3 @@ export async function stopAudioMeter(): Promise<void> {
     await invoke("stop_audio_meter");
   }
 }
-

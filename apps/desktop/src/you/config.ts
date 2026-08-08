@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { YOU_ACCENT_COLOR, YOU_SOURCE_ID } from "../captions/history";
-import type { LiveSourceRequest, SourceMode, TargetLanguage } from "../live/bridge";
+import type {
+  LiveSourceRequest,
+  SourceMode,
+  TargetLanguage,
+} from "../live/bridge";
 
 /** Caption tag stamped on "you" captions by the sidecar. */
 export const YOU_CAPTION_TAG = "YOU";
@@ -10,28 +14,44 @@ export const YOU_CAPTION_TAG = "YOU";
  * sets for MT output and ASR input). */
 function targetToSourceMode(target: string): SourceMode | null {
   switch (target) {
-    case "en": return "english";
-    case "zh": return "chinese";
-    case "fil": return "filipino";
-    case "ind": return "indonesian";
-    case "vie": return "vietnamese";
-    case "tha": return "thai";
-    case "zsm": return "malay";
-    default: return null;
+    case "en":
+      return "english";
+    case "zh":
+      return "chinese";
+    case "fil":
+      return "filipino";
+    case "ind":
+      return "indonesian";
+    case "vie":
+      return "vietnamese";
+    case "tha":
+      return "thai";
+    case "zsm":
+      return "malay";
+    default:
+      return null;
   }
 }
 
 /** ASR source modes → target-language codes. */
 function sourceModeToTarget(source: string): TargetLanguage | null {
   switch (source) {
-    case "english": return "en";
-    case "chinese": return "zh";
-    case "filipino": return "fil";
-    case "indonesian": return "ind";
-    case "vietnamese": return "vie";
-    case "thai": return "tha";
-    case "malay": return "zsm";
-    default: return null;
+    case "english":
+      return "en";
+    case "chinese":
+      return "zh";
+    case "filipino":
+      return "fil";
+    case "indonesian":
+      return "ind";
+    case "vietnamese":
+      return "vie";
+    case "thai":
+      return "tha";
+    case "malay":
+      return "zsm";
+    default:
+      return null;
   }
 }
 

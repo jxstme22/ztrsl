@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { YouConfigDialog } from "./YouConfigDialog";
 
-function renderDialog(overrides: {
-  onSaved?: (config: unknown) => void;
-  onClose?: () => void;
-} = {}) {
+function renderDialog(
+  overrides: {
+    onSaved?: (config: unknown) => void;
+    onClose?: () => void;
+  } = {},
+) {
   return render(
     <YouConfigDialog
       endpoints={[
@@ -15,7 +17,11 @@ function renderDialog(overrides: {
           friendlyName: "Built-in Microphone",
           kind: "capture",
           state: "active",
-          defaultRoles: { console: true, multimedia: true, communications: true },
+          defaultRoles: {
+            console: true,
+            multimedia: true,
+            communications: true,
+          },
           nativeFormat: { sampleRate: 48000, channels: 1 },
           isSynthetic: false,
         },
@@ -24,12 +30,18 @@ function renderDialog(overrides: {
           friendlyName: "Headphones",
           kind: "render",
           state: "active",
-          defaultRoles: { console: true, multimedia: true, communications: true },
+          defaultRoles: {
+            console: true,
+            multimedia: true,
+            communications: true,
+          },
           nativeFormat: { sampleRate: 48000, channels: 2 },
           isSynthetic: false,
         },
       ]}
-      installedModelIds={new Set(["whisper-large-v3-turbo", "nllb-200-distilled-600M-ct2-int8"])}
+      installedModelIds={
+        new Set(["whisper-large-v3-turbo", "nllb-200-distilled-600M-ct2-int8"])
+      }
       onClose={overrides.onClose ?? vi.fn()}
       onSaved={overrides.onSaved ?? vi.fn()}
     />,
@@ -57,9 +69,7 @@ describe("YouConfigDialog", () => {
     window.localStorage.setItem("lst.live.translation-provider", "madlad");
     renderDialog();
     // Pick a different translation model in the Live section.
-    fireEvent.click(
-      screen.getByLabelText(/translation model/i),
-    );
+    fireEvent.click(screen.getByLabelText(/translation model/i));
     fireEvent.click(screen.getByRole("option", { name: /nllb/i }));
     fireEvent.click(
       screen.getByRole("button", { name: /save & use separate live config/i }),
@@ -71,8 +81,6 @@ describe("YouConfigDialog", () => {
 
   it("shows the live-section note so users know it is separate", () => {
     renderDialog();
-    expect(
-      screen.getByText(/only apply when you press/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/only apply when you press/i)).toBeInTheDocument();
   });
 });

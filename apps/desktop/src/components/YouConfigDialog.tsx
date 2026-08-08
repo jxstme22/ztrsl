@@ -62,7 +62,10 @@ const LIVE_ASR_OPTIONS: readonly { value: string; modelId: string | null }[] = [
 ];
 
 /** Translation backends shown in the Live section (mirrors the Live page). */
-const LIVE_TRANSLATION_OPTIONS: readonly { value: string; modelId: string | null }[] = [
+const LIVE_TRANSLATION_OPTIONS: readonly {
+  value: string;
+  modelId: string | null;
+}[] = [
   { value: "nllb", modelId: "nllb-200-distilled-600M-ct2-int8" },
   { value: "madlad", modelId: "madlad400-3b-mt" },
   { value: "opus-mt-en-zh", modelId: "opus-mt-en-zh-ct2-int8" },
@@ -111,9 +114,7 @@ export function YouConfigDialog({
     () => loadStored(LIVE_ASR_PROVIDER_KEY) ?? "whisper-turbo",
   );
   const [liveTranslationProvider, setLiveTranslationProvider] =
-    useState<string>(
-      () => loadStored(LIVE_TRANSLATION_PROVIDER_KEY) ?? "nllb",
-    );
+    useState<string>(() => loadStored(LIVE_TRANSLATION_PROVIDER_KEY) ?? "nllb");
 
   const mics = endpoints.filter((endpoint) => endpoint.kind === "capture");
   const micOptions = mics.map((mic) => ({
@@ -134,7 +135,9 @@ export function YouConfigDialog({
       }
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => { document.removeEventListener("keydown", onKeyDown); };
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [onClose]);
 
   const save = (applyLiveSeparately: boolean) => {
@@ -145,7 +148,10 @@ export function YouConfigDialog({
       try {
         window.localStorage.setItem(LIVE_INPUT_ENDPOINT_KEY, liveEndpointId);
         window.localStorage.setItem(LIVE_SOURCE_MODE_KEY, liveSourceMode);
-        window.localStorage.setItem(LIVE_TARGET_LANGUAGE_KEY, liveTargetLanguage);
+        window.localStorage.setItem(
+          LIVE_TARGET_LANGUAGE_KEY,
+          liveTargetLanguage,
+        );
         window.localStorage.setItem(LIVE_ASR_PROVIDER_KEY, liveAsrProvider);
         window.localStorage.setItem(
           LIVE_TRANSLATION_PROVIDER_KEY,
@@ -170,7 +176,9 @@ export function YouConfigDialog({
         aria-modal="true"
         aria-label={t("chatConfig")}
         className="lst-modal you-config-dialog"
-        onClick={(event) => { event.stopPropagation(); }}
+        onClick={(event) => {
+          event.stopPropagation();
+        }}
       >
         <div className="lst-modal-head">
           <h3>{t("chatConfig")}</h3>
@@ -178,7 +186,10 @@ export function YouConfigDialog({
 
         {/* ── You: the mic stream rides the live session; only the language
              pair (and which mic) differs from the live page. ── */}
-        <section className="you-config-section" aria-labelledby="you-section-title">
+        <section
+          className="you-config-section"
+          aria-labelledby="you-section-title"
+        >
           <h4 id="you-section-title" className="you-config-section-title">
             {t("chatConfigYouSection")}
           </h4>
@@ -252,7 +263,10 @@ export function YouConfigDialog({
 
         {/* ── Live translation: mirrors the Live page so users who want
              different models for the team stream can set them here. ── */}
-        <section className="you-config-section" aria-labelledby="live-section-title">
+        <section
+          className="you-config-section"
+          aria-labelledby="live-section-title"
+        >
           <h4 id="live-section-title" className="you-config-section-title">
             {t("chatConfigLiveSection")}
           </h4>
@@ -262,7 +276,9 @@ export function YouConfigDialog({
               id="live-endpoint"
               label={t("chatConfigLiveEndpoint")}
               value={liveEndpointId}
-              onChange={(value) => { setLiveEndpointId(value); }}
+              onChange={(value) => {
+                setLiveEndpointId(value);
+              }}
               options={liveEndpointOptions}
             />
           </label>
@@ -306,7 +322,9 @@ export function YouConfigDialog({
               id="live-asr"
               label={t("chatConfigAsr")}
               value={liveAsrProvider}
-              onChange={(value) => { setLiveAsrProvider(value); }}
+              onChange={(value) => {
+                setLiveAsrProvider(value);
+              }}
               options={LIVE_ASR_OPTIONS.map((option) => {
                 const notInstalled =
                   option.modelId !== null &&
@@ -352,14 +370,18 @@ export function YouConfigDialog({
           <button
             type="button"
             className="button primary btn-shine"
-            onClick={() => { save(true); }}
+            onClick={() => {
+              save(true);
+            }}
           >
             {t("chatConfigSaveSeparate")}
           </button>
           <button
             type="button"
             className="button secondary"
-            onClick={() => { save(false); }}
+            onClick={() => {
+              save(false);
+            }}
           >
             {t("chatConfigSave")}
           </button>
