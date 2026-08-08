@@ -593,3 +593,38 @@ corrections, and making Off/Balanced/Strict language handling real.
   `docs/v0_3/PHASE_11_EVIDENCE.md` (`[WINDOWS]`).
 - Deep, dense surfaces (Clip Lab, Accuracy Lab) remain English; the i18n
   framework is in place to extend.
+
+## v0.9.0 — you-voice, chat, separated live, 7-language matrix (feat/general-purpose-v0.8)
+
+The Windows general build picks up the full feature train from the macOS port,
+minus macOS-only pieces (window chrome, system-audio capture, MLX, mic TCC).
+
+- **Your voice on the same live session** — a "you" mic stream rides the live
+  pipeline: pick your mic + language pair in the history input-card config,
+  tap the mic button, and your own speech is transcribed and translated in the
+  reverse direction (default: auto-reverse of the live pair) into right-aligned
+  "you" bubbles. The mic opens/closes around the toggle — nothing is captured
+  while off.
+- **Typed chat translation** — a chat box on the History page translates typed
+  messages on demand (standalone; no live session needed) into "you" bubbles
+  you can copy and spell out. Works with the same language pair.
+- **Separated live** — a second, independent live translation started from the
+  History page with its own endpoint/models. It shares the sidecar process with
+  the main live session, so loaded models (whisper/NLLB) are reused — only
+  genuinely-different models load twice — and both sessions record into the
+  same history transcript.
+- **Chat-room history** — bubble layout with profile icons and per-source
+  colors (toggleable), same-speaker message merging, per-message copy,
+  auto-scroll to newest, a session sidebar column (latest on top), and a
+  Classic-list layout (the default) with "you" entries right-aligned.
+- **7-language matrix** — Filipino, Chinese, English, Indonesian, Vietnamese,
+  Thai, Malay sources → en/zh/fil/ind/vie/tha/zsm targets via NLLB,
+  opus-mt en↔zh, plus NVIDIA NIM ASR (Parakeet/Nemotron/Canary/Whisper) and
+  Riva translation, and Baidu Translate.
+- **Sidecar reliability** — per-utterance provisional latch (no more "stuck
+  mid-phrase"), no provisional decodes for remote ASR, crash-restart recovery,
+  and the shared-process model cache.
+- **Responsive dropdowns** — selects flip upward near the viewport bottom;
+  history menus are solid; settings menu redesigned with checkmarks and a
+  nested layout picker.
+- **Branding** — back to yTSRL on the Windows build.
