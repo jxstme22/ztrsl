@@ -188,14 +188,19 @@ export function useLiveTranslation(onCaption: (caption: Caption) => void) {
   );
 
   const setMicEnabled = useCallback(
-    async (enabled: boolean): Promise<boolean> => {
+    async (
+      enabled: boolean,
+      micSource: LiveSourceRequest | null = null,
+    ): Promise<boolean> => {
       try {
-        const next = await setLiveMicEnabled(enabled);
+        const next = await setLiveMicEnabled(enabled, micSource);
         setSnapshot((current) => ({ ...current, micEnabled: next }));
         return next;
       } catch (cause) {
+        // Surface the failure to the caller (the History page shows it next
+        // to the mic button) instead of swallowing it silently.
         setError(cause instanceof Error ? cause.message : String(cause));
-        return false;
+        throw cause;
       }
     },
     [],

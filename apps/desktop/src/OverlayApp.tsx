@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { GripHorizontal, History, X } from "lucide-react";
+import { GripHorizontal } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -15,8 +15,6 @@ import { useT } from "./features/i18n/store";
 import {
   beginOverlayDrag,
   emitDoneEditing,
-  emitHideOverlay,
-  emitToggleHistoryView,
   listenForHistory,
   listenForOverlaySnapshots,
   persistCurrentOverlayPlacement,
@@ -153,14 +151,6 @@ export function OverlayApp() {
     await emitDoneEditing();
   }
 
-  async function handleToggleView() {
-    await emitToggleHistoryView();
-  }
-
-  async function handleHideOverlay() {
-    await emitHideOverlay();
-  }
-
   /** Per-source accent for the speaker badge (tinted, colored text). */
   const badgeStyle = (
     color: string,
@@ -177,41 +167,6 @@ export function OverlayApp() {
       data-rows={snapshot.settings.historyMaxRows}
       aria-label={t("overlayAriaLabel")}
     >
-      <div className="overlay-controls">
-        <button
-          type="button"
-          className="overlay-control-button"
-          aria-label={t("overlayDragLabel")}
-          title={t("overlayDragLabel")}
-          onPointerDown={() => {
-            void handleDrag();
-          }}
-        >
-          <GripHorizontal aria-hidden="true" size={14} />
-        </button>
-        <button
-          type="button"
-          className="overlay-control-button"
-          aria-label={t("overlayToggleViewLabel")}
-          title={t("overlayToggleViewLabel")}
-          onClick={() => {
-            void handleToggleView();
-          }}
-        >
-          <History aria-hidden="true" size={14} />
-        </button>
-        <button
-          type="button"
-          className="overlay-control-button"
-          aria-label={t("overlayCloseLabel")}
-          title={t("overlayCloseLabel")}
-          onClick={() => {
-            void handleHideOverlay();
-          }}
-        >
-          <X aria-hidden="true" size={14} />
-        </button>
-      </div>
       {snapshot.mode === "edit" && (
         <div className="edit-toolbar">
           <span>{t("overlayEditModeHint")}</span>

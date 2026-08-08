@@ -550,3 +550,23 @@ describe("HistoryPanel separated live", () => {
     ).toBeNull();
   });
 });
+
+describe("HistoryPanel you bubble color", () => {
+  it("shows the you-color swatches in the settings menu", () => {
+    renderPanel([session({ entries: [] })]);
+    fireEvent.click(screen.getByRole("button", { name: /display options/i }));
+    expect(
+      screen.getByRole("button", { name: /you bubble color #3b82f6/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /you bubble color #ef4444/i }),
+    );
+    expect(
+      (
+        JSON.parse(localStorage.getItem("lst.history.options.v3") ?? "{}") as {
+          youColor?: string;
+        }
+      ).youColor,
+    ).toBe("#ef4444");
+  });
+});

@@ -1545,9 +1545,9 @@ struct LiveWorkerConfig {
     /// Multi-source captures; empty for classic single-channel sessions.
     sources: Vec<LiveSource>,
     /// The user's own microphone source (None = the mic feature is off for
-    /// this session). When present it is included in the sidecar registry,
-    /// and its capture is gated by the shared `mic_enabled` flag.
-    mic_source: Option<LiveSource>,
+    /// this session). Shared with the runtime so the "you" mic button can
+    /// add it mid-session; the capture is gated by `mic_enabled`.
+    mic_source: Arc<Mutex<Option<LiveSource>>>,
     /// Shared flag toggled by the "you" mic button. The live loop opens and
     /// closes the mic capture around this flag.
     mic_enabled: Arc<AtomicBool>,
@@ -1611,10 +1611,10 @@ struct LiveRuntimeState {
     /// Non-fatal capture stall warning; cleared when audio flows again.
     warning: Option<String>,
     stopped: bool,
-    /// The user's own mic stream: `mic_source` is set while a session with
-    /// the mic feature is running; `mic_enabled` is the shared toggle the
-    /// "you" mic button flips (the live loop opens/closes the capture).
-    mic_source: Option<LiveSource>,
+    /// The user's own mic stream (shared slot, so the mic button can be
+    /// enabled mid-session); `mic_enabled` is the shared toggle the "you"
+    /// mic button flips (the live loop opens/closes the capture).
+    mic_source: Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: Arc<AtomicBool>,
 }
 
@@ -1883,8 +1883,8 @@ async fn launch_live_translation(
         resolved
     };
     let mic_source = match request_mic_source {
-        None => None,
-        Some(source) => Some(resolve_mic_source(&endpoints, &source)?),
+        None => Arc::new(Mutex::new(None)),
+        Some(source) => Arc::new(Mutex::new(Some(resolve_mic_source(&endpoints, &source)?))),
     };
     let worker_config = LiveWorkerConfig {
         endpoint_name,
@@ -1901,8 +1901,8 @@ async fn launch_live_translation(
         vad_sensitivity,
         segmentation,
         sources,
-        mic_source: mic_source.clone(),
-        mic_enabled: mic_enabled.clone(),
+        mic_source,
+        mic_enabled,
     };
     tauri::async_runtime::spawn_blocking(move || {
         start_live_translation_blocking(
@@ -2112,14 +2112,33 @@ fn live_translation_snapshot(live: tauri::State<'_, LiveRuntime>) -> Result<Live
 #[tauri::command]
 fn set_live_mic_enabled(
     enabled: bool,
+    mic_source: Option<LiveSourceRequest>,
+    audio: tauri::State<'_, AudioRuntime>,
     live: tauri::State<'_, LiveRuntime>,
 ) -> Result<bool, String> {
     let state = live.state.lock().map_err(lock_error)?;
     if state.worker.is_none() || state.stopped {
         return Err("a live translation session must be running to use your mic".to_owned());
     }
-    if state.mic_source.is_none() {
-        return Err("the mic stream is not configured for this session".to_owned());
+    if enabled {
+        let mut slot = state
+            .mic_source
+            .lock()
+            .map_err(|error| format!("mic source lock poisoned: {error}"))?;
+        if slot.is_none() {
+            // The session started before the mic was configured: resolve the
+            // request now and hand it to the live loop through the shared
+            // slot. The loop re-pushes the sidecar registry when it sees the
+            // slot go from None to Some.
+            let Some(source) = mic_source else {
+                return Err(
+                    "pick a microphone in the config dialog first, then toggle your voice"
+                        .to_owned(),
+                );
+            };
+            let endpoints = platform_endpoints(&audio)?;
+            *slot = Some(resolve_mic_source(&endpoints, &source)?);
+        }
     }
     state.mic_enabled.store(enabled, Ordering::Relaxed);
     Ok(enabled)
@@ -2151,7 +2170,7 @@ fn stop_live_translation_blocking(
             .map_err(|_| "live worker terminated unexpectedly".to_owned())?;
     }
     state.stopped = true;
-    state.mic_source = None;
+    state.mic_source = Arc::new(Mutex::new(None));
     state.mic_enabled.store(false, Ordering::Relaxed);
     // The session is over; every model it marked in use is free to delete.
     if let Ok(mut models) = live_models.lock() {
@@ -2928,9 +2947,14 @@ fn run_live_worker(
     // caption gets stamped with its own tag/color/language profile. The
     // user's mic stream is registered too (its capture is gated separately).
     let mut registry_sources = config_sources.clone();
-    if let Some(mic_source) = &config_mic_source {
+    let current_mic = config_mic_source
+        .lock()
+        .map(|slot| slot.clone())
+        .unwrap_or(None);
+    if let Some(mic_source) = &current_mic {
         registry_sources.push(mic_source.clone());
     }
+    let mut mic_registry_pushed = current_mic.is_some();
     if !registry_sources.is_empty() {
         if let Err(error) = push_live_registry(&mut supervisor, &registry_sources) {
             let _ = ready.send(Err(error.to_string()));
@@ -2983,8 +3007,9 @@ fn run_live_worker(
                     loopback,
                     monitor_enabled,
                     playback_endpoint_name.clone(),
-                    config_mic_source.as_ref(),
+                    &config_mic_source,
                     &config_mic_enabled,
+                    &mut mic_registry_pushed,
                     &stop,
                     &events,
                     &mut supervisor,
@@ -2999,8 +3024,9 @@ fn run_live_worker(
                     system_audio,
                     monitor_enabled,
                     playback_endpoint_name.clone(),
-                    config_mic_source.as_ref(),
+                    &config_mic_source,
                     &config_mic_enabled,
+                    &mut mic_registry_pushed,
                     &stop,
                     &events,
                     &mut supervisor,
@@ -3130,8 +3156,9 @@ fn run_windows_live_loop(
     loopback: bool,
     monitor_enabled: bool,
     playback_endpoint_name: Option<String>,
-    mic_source: Option<&LiveSource>,
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -3139,9 +3166,10 @@ fn run_windows_live_loop(
     // The user's mic stream lives on the same session: when configured, route
     // through the multi-source loop (with the classic endpoint synthesized as
     // a team source) so both captures share one loop and one sequence.
+    let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
-    } else if mic_source.is_some() {
+    } else if mic_present {
         vec![LiveSource {
             source_id: "00000000000000000000000000000001".to_owned(),
             endpoint_name: endpoint_name.clone(),
@@ -3166,6 +3194,7 @@ fn run_windows_live_loop(
             &effective_sources,
             mic_source,
             mic_enabled,
+            mic_registry_pushed,
             stop,
             events,
             supervisor,
@@ -3287,8 +3316,9 @@ fn run_windows_live_loop(
 #[cfg(target_os = "windows")]
 fn run_windows_multi_source_loop(
     config_sources: &[LiveSource],
-    mic_source: Option<&LiveSource>,
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -3327,8 +3357,25 @@ fn run_windows_multi_source_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
+        // Read the shared mic slot: the "you" button may add the source
+        // mid-session. When it appears for the first time, re-push the
+        // sidecar registry so captions carry the mic's tag/color.
+        let current_mic = mic_source
+            .lock()
+            .map(|slot| slot.clone())
+            .unwrap_or(None);
+        if current_mic.is_some() && !*mic_registry_pushed {
+            let mut all = config_sources.to_vec();
+            if let Some(mic) = &current_mic {
+                all.push(mic.clone());
+            }
+            if let Err(error) = push_live_registry(supervisor, &all) {
+                return Err(LiveLoopError::Supervisor(error));
+            }
+            *mic_registry_pushed = true;
+        }
         if mic_enabled.load(Ordering::Relaxed) && mic_capture.is_none() {
-            if let Some(mic) = mic_source {
+            if let Some(mic) = &current_mic {
                 match audio_core::WindowsAudioCapture::start(&mic.endpoint_name, 32) {
                     Ok(capture) => {
                         let resampler =
@@ -3373,7 +3420,7 @@ fn run_windows_multi_source_loop(
             }
         }
         if let Some((capture, resampler)) = mic_capture.as_mut() {
-            if let Some(mic_source) = mic_source {
+            if let Some(mic) = &current_mic {
                 if let Some(frame) = capture
                     .try_next()
                     .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
@@ -3385,7 +3432,7 @@ fn run_windows_multi_source_loop(
                         supervisor
                             .send_live_audio_for_source(
                                 frame.capture_monotonic_ns,
-                                &mic_source.source_id,
+                                &mic.source_id,
                                 samples,
                             )
                             .map_err(LiveLoopError::Supervisor)?;
@@ -3469,15 +3516,17 @@ fn run_macos_live_loop(
     system_audio: bool,
     monitor_enabled: bool,
     playback_endpoint_name: Option<String>,
-    mic_source: Option<&LiveSource>,
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), LiveLoopError> {
+    let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
-    } else if mic_source.is_some() {
+    } else if mic_present {
         vec![LiveSource {
             source_id: "00000000000000000000000000000001".to_owned(),
             endpoint_name: endpoint_name.clone(),
@@ -3502,6 +3551,7 @@ fn run_macos_live_loop(
             &effective_sources,
             mic_source,
             mic_enabled,
+            mic_registry_pushed,
             stop,
             events,
             supervisor,
@@ -3636,8 +3686,9 @@ fn run_macos_live_loop(
 #[cfg(target_os = "macos")]
 fn run_macos_multi_source_loop(
     config_sources: &[LiveSource],
-    mic_source: Option<&LiveSource>,
+    mic_source: &Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: &Arc<AtomicBool>,
+    mic_registry_pushed: &mut bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -3675,8 +3726,22 @@ fn run_macos_multi_source_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
+        let current_mic = mic_source
+            .lock()
+            .map(|slot| slot.clone())
+            .unwrap_or(None);
+        if current_mic.is_some() && !*mic_registry_pushed {
+            let mut all = config_sources.to_vec();
+            if let Some(mic) = &current_mic {
+                all.push(mic.clone());
+            }
+            if let Err(error) = push_live_registry(supervisor, &all) {
+                return Err(LiveLoopError::Supervisor(error));
+            }
+            *mic_registry_pushed = true;
+        }
         if mic_enabled.load(Ordering::Relaxed) && mic_capture.is_none() {
-            if let Some(mic) = mic_source {
+            if let Some(mic) = &current_mic {
                 match audio_core::MacosAudioCapture::start(&mic.endpoint_name, 32) {
                     Ok(capture) => {
                         let resampler =
@@ -3721,7 +3786,7 @@ fn run_macos_multi_source_loop(
             }
         }
         if let Some((capture, resampler)) = mic_capture.as_mut() {
-            if let Some(mic_source) = mic_source {
+            if let Some(mic) = &current_mic {
                 if let Some(frame) = capture
                     .try_next()
                     .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
@@ -3733,7 +3798,7 @@ fn run_macos_multi_source_loop(
                         supervisor
                             .send_live_audio_for_source(
                                 frame.capture_monotonic_ns,
-                                &mic_source.source_id,
+                                &mic.source_id,
                                 samples,
                             )
                             .map_err(LiveLoopError::Supervisor)?;
@@ -3881,7 +3946,8 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         captions,
         error: state.error.clone(),
         warning: state.warning.clone(),
-        mic_enabled: state.mic_source.is_some() && state.mic_enabled.load(Ordering::Relaxed),
+        mic_enabled: state.mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false)
+            && state.mic_enabled.load(Ordering::Relaxed),
     }
 }
 

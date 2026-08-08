@@ -2590,7 +2590,7 @@ input[type="range"]::-moz-range-thumb {
   flex: 0 0 260px;
   min-height: 0;
   border: 1px solid var(--stroke);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--popup);
   overflow: hidden;
 }
@@ -2698,8 +2698,6 @@ input[type="range"]::-moz-range-thumb {
 .history-entry-classic.self {
   margin-left: auto;
   max-width: min(640px, 88%);
-  border-color: rgba(220, 77, 94, 0.35);
-  background: rgba(220, 77, 94, 0.08);
 }
 
 .history-entry-classic[data-uncertain] .history-text {
@@ -2780,17 +2778,35 @@ input[type="range"]::-moz-range-thumb {
   background: var(--bg-elevated);
 }
 
+/* YOU bubble: same shape/radius as other bubbles, solid configurable
+   background (default blue) instead of the red/pink tint. */
 .history-entry.chat-bubble.self .chat-bubble-tip {
-  border-radius: 14px 4px 14px 14px;
-  border-color: rgba(220, 77, 94, 0.35);
-  background: rgba(220, 77, 94, 0.12);
+  border-radius: 14px 14px 14px 14px;
+  border-color: transparent;
 }
 
-/* Multiple messages from the same speaker in one bubble. */
+/* Each message inside a merged bubble: caption text + copy button beside
+   it on the same row (button vertically centered, never stretches the
+   bubble or adds trailing free space). */
+.chat-bubble-message {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.chat-bubble-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .chat-bubble-message + .chat-bubble-message {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--stroke);
+}
+
+.history-entry.chat-bubble.self .chat-bubble-message {
+  flex-direction: row-reverse;
 }
 
 .history-entry.chat-bubble[data-uncertain] .history-text {
@@ -2846,14 +2862,22 @@ input[type="range"]::-moz-range-thumb {
 
 .history-copy {
   display: grid;
+  flex: 0 0 auto;
   width: 24px;
   height: 20px;
+  margin-top: 2px;
   place-items: center;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
+  opacity: 0.55;
+}
+
+.history-entry:hover .history-copy,
+.history-entry .history-copy:focus-visible {
+  opacity: 1;
 }
 
 /* Input card: chat input + settings + mic + send, pinned at the bottom of
@@ -3163,6 +3187,34 @@ input[type="range"]::-moz-range-thumb {
 
 .history-menu-chevron:dir(rtl) {
   transform: rotate(90deg);
+}
+
+/* "You bubble color" preset swatches in the settings menu. */
+.history-you-color-row {
+  cursor: default;
+}
+
+.history-you-colors {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.history-you-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.history-you-swatch.on {
+  border-color: var(--fg-strong);
+}
+
+.history-you-swatch:hover:not(.on) {
+  transform: scale(1.15);
 }
 
 /* Nested submenu (e.g. the layout picker) opens to the right of its row. */

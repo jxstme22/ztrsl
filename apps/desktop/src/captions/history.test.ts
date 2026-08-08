@@ -461,6 +461,7 @@ describe("history display options", () => {
       showAvatars: true,
       bubbleColor: "source" as const,
       layout: "classic" as const,
+      youColor: "#3b82f6" as const,
     };
     saveHistoryDisplayOptions(options, storage);
     expect(loadHistoryDisplayOptions(storage)).toEqual(options);
@@ -476,6 +477,7 @@ describe("history display options", () => {
       showAvatars: true,
       bubbleColor: "source",
       layout: "classic",
+      youColor: "#3b82f6",
     });
   });
 

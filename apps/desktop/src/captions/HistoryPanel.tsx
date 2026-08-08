@@ -21,7 +21,6 @@ import {
   type HistorySession,
   loadHistoryDisplayOptions,
   saveHistoryDisplayOptions,
-  YOU_ACCENT_COLOR,
 } from "../captions/history";
 import { useT } from "../features/i18n/store";
 import type { UIKey } from "../features/i18n/strings";
@@ -56,7 +55,10 @@ function sourceAccent(color: string): {
 
 /** Options menu rows: label + persisted checkbox toggle. */
 const OPTION_TOGGLES: readonly {
-  key: Exclude<keyof HistoryDisplayOptions, "bubbleColor" | "layout">;
+  key: Exclude<
+    keyof HistoryDisplayOptions,
+    "bubbleColor" | "layout" | "youColor"
+  >;
   label: UIKey;
 }[] = [
   { key: "showSource", label: "historyShowTranscribed" },
@@ -65,6 +67,18 @@ const OPTION_TOGGLES: readonly {
   { key: "showLatency", label: "historyShowLatency" },
   { key: "showModels", label: "historyShowModels" },
   { key: "showAvatars", label: "historyShowAvatars" },
+];
+
+/** Preset solid colors for the "you" bubble (configurable in settings). */
+const YOU_COLOR_PRESETS = [
+  "#3b82f6",
+  "#0284c7",
+  "#059669",
+  "#7c3aed",
+  "#f59e0b",
+  "#ef4444",
+  "#dc4d5e",
+  "#64748b",
 ];
 
 export function HistoryPanel({
@@ -267,22 +281,6 @@ export function HistoryPanel({
     }
   };
 
-  // Copy a merged bubble group: mark the first entry in the group.
-  const copyMerged = async (text: string, group: HistoryEntry[]) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      const first = group[0];
-      if (first !== undefined) {
-        setCopiedId(first.id);
-      }
-      window.setTimeout(() => {
-        setCopiedId(null);
-      }, 1200);
-    } catch {
-      // Clipboard unavailable; nothing else to do.
-    }
-  };
-
   const startRename = () => {
     if (selected === null) {
       return;
@@ -365,7 +363,10 @@ export function HistoryPanel({
     }
   };
 
-  const micDisabled = !liveRunning || !micConfigured;
+  // Requires a running live session; the mic endpoint is resolved at toggle
+  // time (from the config dialog) so clicking with no mic configured shows
+  // the error instead of doing nothing.
+  const micDisabled = !liveRunning || micBusy;
   const micHint = !liveRunning
     ? t("chatMicRequiresLive")
     : !micConfigured
@@ -691,6 +692,36 @@ export function HistoryPanel({
                   )}
                 </div>
 
+                <div className="history-menu-row history-you-color-row">
+                  <span className="history-menu-label">
+                    {t("historyYouColor")}
+                  </span>
+                  <span className="history-you-colors">
+                    {YOU_COLOR_PRESETS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`history-you-swatch ${
+                          options.youColor === color ? "on" : ""
+                        }`}
+                        style={{ backgroundColor: color }}
+                        aria-label={`${t("historyYouColor")} ${color}`}
+                        title={color}
+                        onClick={() => {
+                          setOptions((current) => {
+                            const next: HistoryDisplayOptions = {
+                              ...current,
+                              youColor: color,
+                            };
+                            saveHistoryDisplayOptions(next);
+                            return next;
+                          });
+                        }}
+                      />
+                    ))}
+                  </span>
+                </div>
+
                 <div className="history-menu-sep" />
                 <button
                   type="button"
@@ -787,7 +818,14 @@ export function HistoryPanel({
                         fromSelf ? "self" : ""
                       }`}
                       data-uncertain={entry.uncertain || undefined}
-                      style={accent.entry}
+                      style={
+                        fromSelf
+                          ? {
+                              backgroundColor: options.youColor,
+                              color: "#ffffff",
+                            }
+                          : accent.entry
+                      }
                     >
                       <div className="history-entry-meta">
                         {options.showSpeaker && (
@@ -851,13 +889,6 @@ export function HistoryPanel({
                       copiedId={copiedId}
                       onCopyOne={(item) => {
                         void copyEntry(item);
-                      }}
-                      onCopyAll={() => {
-                        const merged = group
-                          .map((entry) => entry.text)
-                          .filter((text) => text !== "")
-                          .join("\n");
-                        void copyMerged(merged, group);
                       }}
                       formatTime={formatTime}
                       firstTimestamp={first.timestampMs}
@@ -934,7 +965,6 @@ function ChatBubble({
   options,
   copiedId,
   onCopyOne,
-  onCopyAll,
   formatTime,
   firstTimestamp,
   lastTimestamp,
@@ -946,8 +976,6 @@ function ChatBubble({
   copiedId: string | null;
   /** Copy one message inside a merged bubble. */
   onCopyOne: (entry: HistoryEntry) => void;
-  /** Copy the whole merged bubble's text. */
-  onCopyAll: () => void;
   formatTime: (timestampMs: number) => string;
   firstTimestamp: number;
   lastTimestamp: number;
@@ -956,12 +984,11 @@ function ChatBubble({
   const entry = group[0];
   const fromSelf = entry?.fromSelf ?? false;
   const accent = sourceAccent(entry?.color ?? "");
-  const bubbleTint =
-    options.bubbleColor === "source" && entry?.color !== ""
+  const bubbleTint = fromSelf
+    ? options.youColor
+    : options.bubbleColor === "source" && entry?.color !== ""
       ? (entry?.color ?? "")
-      : fromSelf
-        ? YOU_ACCENT_COLOR
-        : "";
+      : "";
   const who =
     (entry?.displayName ?? "") !== ""
       ? (entry?.displayName ?? "")
@@ -1025,20 +1052,22 @@ function ChatBubble({
             style={
               bubbleTint !== ""
                 ? {
-                    backgroundColor:
-                      options.bubbleColor === "source" && entry?.color !== ""
-                        ? `${entry?.color ?? ""}14`
-                        : `${YOU_ACCENT_COLOR}14`,
+                    backgroundColor: fromSelf
+                      ? options.youColor
+                      : `${entry?.color ?? ""}14`,
+                    color: fromSelf ? "#ffffff" : undefined,
                   }
                 : undefined
             }
           >
             {group.map((item) => (
               <div className="chat-bubble-message" key={item.id}>
-                <p className="history-text">{item.text}</p>
-                {options.showSource && item.sourceText !== "" && (
-                  <p className="history-source">{item.sourceText}</p>
-                )}
+                <div className="chat-bubble-text">
+                  <p className="history-text">{item.text}</p>
+                  {options.showSource && item.sourceText !== "" && (
+                    <p className="history-source">{item.sourceText}</p>
+                  )}
+                </div>
                 <button
                   className="history-copy"
                   type="button"
@@ -1057,21 +1086,6 @@ function ChatBubble({
               </div>
             ))}
           </div>
-          {group.length > 1 && (
-            <button
-              className="history-copy history-copy-all"
-              type="button"
-              aria-label={t("historyCopyAll")}
-              title={t("historyCopyAll")}
-              onClick={onCopyAll}
-            >
-              {copiedId !== null && group.some((e) => e.id === copiedId) ? (
-                <Check aria-hidden="true" size={13} />
-              ) : (
-                <Copy aria-hidden="true" size={13} />
-              )}
-            </button>
-          )}
         </div>
       </div>
     </li>

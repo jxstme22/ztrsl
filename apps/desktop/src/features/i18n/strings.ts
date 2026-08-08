@@ -53,6 +53,7 @@ const UI_STRINGS = {
     zh: "气泡使用来源颜色",
   },
   historyLayout: { en: "Layout", zh: "布局" },
+  historyYouColor: { en: "You bubble color", zh: "你的气泡颜色" },
   historySeparatedLive: { en: "Separate live", zh: "独立实时" },
   historySeparatedStart: { en: "Start", zh: "启动" },
   historySeparatedStarting: { en: "Starting…", zh: "启动中…" },
@@ -61,7 +62,6 @@ const UI_STRINGS = {
   historyLayoutChat: { en: "Chat bubbles", zh: "聊天气泡" },
   historyYou: { en: "You", zh: "你" },
   historyCopy: { en: "Copy translation", zh: "复制译文" },
-  historyCopyAll: { en: "Copy all messages", zh: "复制全部消息" },
   historySearch: { en: "Search captions", zh: "搜索字幕" },
   historySearchEmpty: {
     en: "No captions match the search.",

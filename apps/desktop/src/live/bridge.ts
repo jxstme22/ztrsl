@@ -131,11 +131,14 @@ export async function startLiveTranslation(
 /** Flip the "you" mic stream on/off on the running live session. Returns the
  * new state. Errors when no live session is running or the mic stream was
  * not configured at live start. */
-export async function setLiveMicEnabled(enabled: boolean): Promise<boolean> {
+export async function setLiveMicEnabled(
+  enabled: boolean,
+  micSource: LiveSourceRequest | null = null,
+): Promise<boolean> {
   if (!isTauri()) {
     return enabled;
   }
-  return await invoke("set_live_mic_enabled", { enabled });
+  return await invoke("set_live_mic_enabled", { enabled, micSource });
 }
 
 /** Start the SEPARATED live session (a second, independent live translation
