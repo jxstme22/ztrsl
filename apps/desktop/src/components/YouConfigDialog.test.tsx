@@ -144,6 +144,29 @@ describe("YouConfigDialog API credentials", () => {
     window.localStorage.clear();
   });
 
+  it("shows only installed local models plus cloud models", () => {
+    renderDialog();
+    // Installed local model is listed.
+    fireEvent.click(screen.getByLabelText(/voice recognition model/i));
+    expect(
+      screen.getByRole("option", { name: /Local Whisper large-v3-turbo/i }),
+    ).toBeInTheDocument();
+    // Cloud models are always visible even when not installed locally.
+    expect(
+      screen.getByRole("option", { name: /NVIDIA Parakeet CTC 1\.1B/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Groq Whisper/i }),
+    ).toBeInTheDocument();
+    // Uninstalled local models are hidden (only whisper-turbo is installed).
+    expect(
+      screen.queryByRole("option", { name: /Local Whisper large-v3 \(full\)/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("option", { name: /NCSpeech FastConformer/i }),
+    ).toBeNull();
+  });
+
   it("shows the NVIDIA API key input when an NVIDIA provider is selected", () => {
     window.localStorage.setItem("lst.live.asr-provider", "nvidia-parakeet-1.1b");
     renderDialog();

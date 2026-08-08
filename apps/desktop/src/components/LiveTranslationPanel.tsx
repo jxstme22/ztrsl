@@ -372,9 +372,6 @@ export function LiveTranslationPanel({
     return installed;
   }, [models?.installed, models?.knownInstalled]);
 
-  const tag = (label: string, installed: boolean): string =>
-    installed ? label : `${label} (${t("liveNotInstalled")})`;
-
   /** Mark a cloud/API provider so it is clearly distinct from local ones. */
   const cloud = (label: string): string => `${label} · Cloud`;
 
@@ -878,54 +875,31 @@ export function LiveTranslationPanel({
             options={[
               {
                 value: "whisper-turbo",
-                label: tag(
-                  "Local Whisper large-v3-turbo (fast)",
-                  installedModelIds.has("whisper-large-v3-turbo"),
-                ),
+                label: "Local Whisper large-v3-turbo (fast)",
               },
               {
                 value: "whisper-full",
-                label: tag(
-                  "Local Whisper large-v3 (full)",
-                  installedModelIds.has("whisper-large-v3"),
-                ),
+                label: "Local Whisper large-v3 (full)",
               },
               {
                 value: "ncspeech",
-                label: tag(
-                  "NCSpeech FastConformer (Tagalog)",
-                  installedModelIds.has(
-                    "ncspeech-tl-fastconformer-hybrid-large",
-                  ),
-                ),
+                label: "NCSpeech FastConformer (Tagalog)",
               },
               {
                 value: "ncspeech-zh",
-                label: tag(
-                  "NCSpeech Citrinet-1024 (Mandarin)",
-                  installedModelIds.has("ncspeech-zh-citrinet-1024-gamma"),
-                ),
+                label: "NCSpeech Citrinet-1024 (Mandarin)",
               },
               {
                 value: "ncspeech-zh-parakeet",
-                label: tag(
-                  "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
-                  installedModelIds.has("ncspeech-zh-parakeet-ctc-0.6b"),
-                ),
+                label: "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
               },
               {
                 value: "paraformer-zh-streaming",
-                label: tag(
-                  "FunASR Paraformer (streaming zh)",
-                  installedModelIds.has("paraformer-zh-streaming"),
-                ),
+                label: "FunASR Paraformer (streaming zh)",
               },
               {
                 value: "sensevoice-small",
-                label: tag(
-                  "SenseVoice Small (zh/en/ja/ko/yue)",
-                  installedModelIds.has("sensevoice-small"),
-                ),
+                label: "SenseVoice Small (zh/en/ja/ko/yue)",
               },
               {
                 value: "nvidia-parakeet-1.1b",
@@ -954,31 +928,19 @@ export function LiveTranslationPanel({
             options={[
               {
                 value: "nllb",
-                label: tag(
-                  "Local NLLB (offline, near-real-time, GPU)",
-                  installedModelIds.has("nllb-200-distilled-600M-ct2-int8"),
-                ),
+                label: "Local NLLB (offline, near-real-time, GPU)",
               },
               {
                 value: "madlad",
-                label: tag(
-                  "Local MADLAD (offline, slower)",
-                  installedModelIds.has("madlad400-3b-mt"),
-                ),
+                label: "Local MADLAD (offline, slower)",
               },
               {
                 value: "opus-mt-en-zh",
-                label: tag(
-                  "Local opus-mt (en→zh, Apache-2.0)",
-                  installedModelIds.has("opus-mt-en-zh-ct2-int8"),
-                ),
+                label: "Local opus-mt (en→zh, Apache-2.0)",
               },
               {
                 value: "opus-mt-zh-en",
-                label: tag(
-                  "Local opus-mt (zh→en, Apache-2.0)",
-                  installedModelIds.has("opus-mt-zh-en-ct2-int8"),
-                ),
+                label: "Local opus-mt (zh→en, Apache-2.0)",
               },
               {
                 value: "google-translate",
