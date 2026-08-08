@@ -641,3 +641,23 @@ minus macOS-only pieces (window chrome, system-audio capture, MLX, mic TCC).
 - **Settings dropdown** — the History display-options menu is tall enough to
   list every config row (toggles, bubble color, layout, clear) without
   scrolling.
+
+## v0.9.2 — mic late-enable, YOU bubble color, overlay polish (feat/general-purpose-v0.8)
+
+- **Mic button fix (Windows)** — the "you" mic toggle no longer fails silently:
+  the mic source can be enabled mid-session (the live loop re-registers it),
+  and failures now surface an error message instead of doing nothing.
+- **YOU bubble** — same shape as other bubbles with a solid configurable
+  background (default blue); new "You bubble color" swatches in the History
+  settings menu.
+- **Copy buttons** — sit beside each caption on the same row (hover-reveal);
+  removed the copy-all icon.
+- **Overlay** — restored the v0.8.1 overlay (no drag/history/close control
+  cluster) while keeping "you" captions right-aligned; removed the windowed
+  overlay button from the titlebar.
+- **Live card** — removed the status pill and the metrics logs (device,
+  captions, ASR, packets, drops).
+- **History sidebar** — corners match the card.
+- **CI green** — repo-wide ruff/prettier/mypy/clippy gates fixed; the macos
+  job skips the audio-core test binary (Swift-runtime crash on the runner;
+  the crate's tests are hardware-dependent).
