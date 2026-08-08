@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -25,7 +25,7 @@ use ipc_protocol::{
 };
 use serde::{Deserialize, Serialize};
 use sidecar_supervisor::{
-    SidecarConfig, SidecarSupervisor, SupervisorError, workspace_root_from_manifest,
+    SidecarConfig, SidecarProcess, SidecarSupervisor, SupervisorError, workspace_root_from_manifest,
 };
 use tauri::{Emitter, Manager};
 
@@ -1586,6 +1586,22 @@ struct SidecarRuntime {
     supervisor: Arc<Mutex<Option<SidecarSupervisor>>>,
 }
 
+/// Pool of live sidecar processes, shared between the main live session and
+/// the separated live session. A process is kept alive while any connection
+/// holds it; the separated session attaches to the running process so loaded
+/// models (whisper / NLLB) are reused instead of duplicated.
+struct SidecarPool {
+    inner: Arc<Mutex<Option<Weak<SidecarProcess>>>>,
+}
+
+impl Default for SidecarPool {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SidecarStatus {
@@ -1860,6 +1876,14 @@ struct LiveRuntime {
     state: Arc<Mutex<LiveRuntimeState>>,
 }
 
+/// Second, independent live session ("separated live") started from the
+/// history page. Shares the sidecar process (and loaded models) with the
+/// main live session, but has its own capture endpoint and configuration.
+#[derive(Default)]
+struct SeparateLiveRuntime {
+    state: Arc<Mutex<LiveRuntimeState>>,
+}
+
 #[tauri::command]
 fn app_status(
     runtime: tauri::State<'_, AudioRuntime>,
@@ -1889,15 +1913,15 @@ fn app_status(
     }
 }
 
-#[tauri::command]
-async fn start_live_translation(
+async fn launch_live_translation(
     request: LiveStartRequest,
-    audio: tauri::State<'_, AudioRuntime>,
-    sidecar: tauri::State<'_, SidecarRuntime>,
-    live: tauri::State<'_, LiveRuntime>,
-    translation_api: tauri::State<'_, TranslationApiRuntime>,
-    models: tauri::State<'_, ModelRuntime>,
-    paths: tauri::State<'_, SidecarPaths>,
+    audio: &AudioRuntime,
+    paths: &SidecarPaths,
+    state: Arc<Mutex<LiveRuntimeState>>,
+    sidecar: Arc<Mutex<Option<SidecarSupervisor>>>,
+    pool: Arc<Mutex<Option<Weak<SidecarProcess>>>>,
+    translation_api: Arc<Mutex<Vec<(String, String)>>>,
+    live_models: Arc<Mutex<ModelRuntimeState>>,
 ) -> Result<LiveSnapshot, String> {
     let LiveStartRequest {
         endpoint_id,
@@ -2071,10 +2095,6 @@ async fn start_live_translation(
         None
     };
 
-    let state = Arc::clone(&live.state);
-    let sidecar = Arc::clone(&sidecar.supervisor);
-    let translation_api = Arc::clone(&translation_api.env);
-    let live_models = Arc::clone(&models.state);
     let bundled = paths.bundled.clone();
     let endpoint_name = endpoint.friendly_name.clone();
     // Multi-source mode: one capture per configured source, each tagged with
@@ -2167,10 +2187,60 @@ async fn start_live_translation(
             translation_api,
             live_models,
             bundled,
+            Some(pool),
         )
     })
     .await
     .map_err(|error| format!("live start worker failed: {error}"))?
+}
+
+#[tauri::command]
+async fn start_live_translation(
+    request: LiveStartRequest,
+    audio: tauri::State<'_, AudioRuntime>,
+    sidecar: tauri::State<'_, SidecarRuntime>,
+    live: tauri::State<'_, LiveRuntime>,
+    pool: tauri::State<'_, SidecarPool>,
+    translation_api: tauri::State<'_, TranslationApiRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
+) -> Result<LiveSnapshot, String> {
+    launch_live_translation(
+        request,
+        &audio,
+        &paths,
+        Arc::clone(&live.state),
+        Arc::clone(&sidecar.supervisor),
+        Arc::clone(&pool.inner),
+        Arc::clone(&translation_api.env),
+        Arc::clone(&models.state),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn start_separated_live_translation(
+    request: LiveStartRequest,
+    audio: tauri::State<'_, AudioRuntime>,
+    live: tauri::State<'_, SeparateLiveRuntime>,
+    pool: tauri::State<'_, SidecarPool>,
+    translation_api: tauri::State<'_, TranslationApiRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
+    paths: tauri::State<'_, SidecarPaths>,
+) -> Result<LiveSnapshot, String> {
+    // The separated session shares the live sidecar pool (loaded models)
+    // but runs its own worker; it does not own the clip-analysis sidecar.
+    launch_live_translation(
+        request,
+        &audio,
+        &paths,
+        Arc::clone(&live.state),
+        Arc::new(Mutex::new(None)),
+        Arc::clone(&pool.inner),
+        Arc::clone(&translation_api.env),
+        Arc::clone(&models.state),
+    )
+    .await
 }
 
 /// Resolve the user's own microphone source request. The endpoint must be
@@ -2237,6 +2307,7 @@ fn start_live_translation_blocking(
     translation_api: Arc<Mutex<Vec<(String, String)>>>,
     live_models: Arc<Mutex<ModelRuntimeState>>,
     bundled: Option<BundledPaths>,
+    pool: Option<Arc<Mutex<Option<Weak<SidecarProcess>>>>>,
 ) -> Result<LiveSnapshot, String> {
     let mut state = live.lock().map_err(lock_error)?;
     if state.worker.is_some() && !state.stopped {
@@ -2254,6 +2325,7 @@ fn start_live_translation_blocking(
         &worker_config.asr_provider,
         &worker_config.translation_provider,
     );
+    let worker_pool = pool.map(|inner| Arc::clone(&inner));
     // The mic stream's registry identity lives with the session; the worker
     // takes the config, so snapshot the identity before moving it.
     let session_mic_source = worker_config.mic_source.clone();
@@ -2268,6 +2340,7 @@ fn start_live_translation_blocking(
                 ready_tx,
                 Arc::clone(&translation_api),
                 bundled,
+                worker_pool,
             );
         })
         .map_err(|error| format!("live worker could not start: {error}"))?;
@@ -2359,6 +2432,28 @@ fn stop_live_translation_blocking(
         models.in_use.clear();
     }
     Ok(live_snapshot(&mut state))
+}
+
+#[tauri::command]
+fn separated_live_translation_snapshot(
+    live: tauri::State<'_, SeparateLiveRuntime>,
+) -> Result<LiveSnapshot, String> {
+    let mut state = live.state.lock().map_err(lock_error)?;
+    Ok(live_snapshot(&mut state))
+}
+
+#[tauri::command]
+async fn stop_separated_live_translation(
+    live: tauri::State<'_, SeparateLiveRuntime>,
+    models: tauri::State<'_, ModelRuntime>,
+) -> Result<LiveSnapshot, String> {
+    let state = Arc::clone(&live.state);
+    let live_models = Arc::clone(&models.state);
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_live_translation_blocking(state, live_models)
+    })
+    .await
+    .map_err(|error| format!("separated live stop worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -3057,6 +3152,7 @@ fn run_live_worker(
     ready: SyncSender<Result<LiveStarted, String>>,
     translation_env: Arc<Mutex<Vec<(String, String)>>>,
     bundled: Option<BundledPaths>,
+    pool: Option<Arc<Mutex<Option<Weak<SidecarProcess>>>>>,
 ) {
     let LiveWorkerConfig {
         endpoint_name,
@@ -3077,12 +3173,34 @@ fn run_live_worker(
         mic_enabled: config_mic_enabled,
     } = config;
     let sidecar_config = worker_sidecar_config(&translation_env, bundled.as_ref());
-    let mut supervisor = match SidecarSupervisor::start(&sidecar_config) {
-        Ok(supervisor) => supervisor,
-        Err(error) => {
-            let _ = ready.send(Err(error.to_string()));
-            return;
-        }
+    // Attach to an already-running live sidecar when one exists (separated
+    // live shares models with the main session); otherwise spawn fresh.
+    let shared_process = pool
+        .as_ref()
+        .and_then(|inner| inner.lock().ok())
+        .and_then(|slot| slot.as_ref()?.upgrade());
+    let mut supervisor = match shared_process {
+        Some(shared) => match SidecarSupervisor::attach(&shared) {
+            Ok(supervisor) => supervisor,
+            Err(error) => {
+                let _ = ready.send(Err(error.to_string()));
+                return;
+            }
+        },
+        None => match SidecarSupervisor::start(&sidecar_config) {
+            Ok(supervisor) => {
+                if let Some(inner) = pool.as_ref() {
+                    if let Ok(mut slot) = inner.lock() {
+                        *slot = Some(Arc::downgrade(supervisor.shared_process()));
+                    }
+                }
+                supervisor
+            }
+            Err(error) => {
+                let _ = ready.send(Err(error.to_string()));
+                return;
+            }
+        },
     };
     let detail = match supervisor.start_live(
         &source_mode,
@@ -3212,6 +3330,13 @@ fn run_live_worker(
                      inference session automatically…"
                 )));
                 match supervisor.restart().and_then(|_| {
+                    // The restart spawned a fresh process; re-register it so
+                    // other sessions attach to the new one.
+                    if let Some(inner) = pool.as_ref() {
+                        if let Ok(mut slot) = inner.lock() {
+                            *slot = Some(Arc::downgrade(supervisor.shared_process()));
+                        }
+                    }
                     supervisor
                         .start_live(
                             &source_mode,
@@ -4135,6 +4260,8 @@ pub fn run() {
         .manage(RoutingRuntime::default())
         .manage(SidecarRuntime::default())
         .manage(LiveRuntime::default())
+        .manage(SeparateLiveRuntime::default())
+        .manage(SidecarPool::default())
         .manage(TranslationApiRuntime::default())
         .setup(|app| {
             let models_dir = resolve_models_dir(app.handle());
@@ -4172,9 +4299,12 @@ pub fn run() {
             fake_multi_source_roundtrip,
             stop_fake_sidecar,
             start_live_translation,
+            start_separated_live_translation,
             live_translation_snapshot,
+            separated_live_translation_snapshot,
             set_live_mic_enabled,
             stop_live_translation,
+            stop_separated_live_translation,
             set_translation_env,
             analyze_clip,
             clip_compare,

@@ -862,6 +862,13 @@ select:disabled {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
+/* Responsive dropdown: flip above the trigger when the button sits near
+   the bottom of the viewport (or the card is near the page bottom). */
+.lst-select-listbox.up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
 .lst-select-listbox::-webkit-scrollbar {
   width: 10px;
 }
@@ -2560,6 +2567,105 @@ input[type="range"]::-moz-range-thumb {
   padding-bottom: 14px;
 }
 
+/* Body row: session sidebar (left column when open) + chat main column. */
+.history-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 10px;
+}
+
+.history-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Session sidebar: a real left column inside the card, latest on top. */
+.history-sessions {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 260px;
+  min-height: 0;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: var(--popup);
+  overflow: hidden;
+}
+
+.history-sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--stroke);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.history-sessions-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--glass);
+  color: var(--fg-strong);
+  font-size: 10.5px;
+}
+
+.history-sessions-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.history-session-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-session-row:hover {
+  background: var(--glass);
+}
+
+.history-session-row.on {
+  background: var(--glass-strong);
+}
+
+.history-session-name {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.history-session-meta {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .history-scroll {
   flex: 1;
   min-height: 0;
@@ -2576,6 +2682,32 @@ input[type="range"]::-moz-range-thumb {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* Classic layout: the old flat entry rows (left accent + badge + text).
+   "You" entries stay right-aligned like in chat mode. */
+.history-entry-classic {
+  align-self: stretch;
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.history-entry-classic.self {
+  margin-left: auto;
+  max-width: min(640px, 88%);
+  border-color: rgba(220, 77, 94, 0.35);
+  background: rgba(220, 77, 94, 0.08);
+}
+
+.history-entry-classic[data-uncertain] .history-text {
+  opacity: 0.72;
+}
+
+.history-entry-classic .history-copy {
+  margin-left: auto;
 }
 
 /* Bubble chat rows: profile icon beside a rounded bubble; "you" (own mic /
@@ -2759,6 +2891,11 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
+.history-mic-button svg {
+  width: 15px;
+  height: 15px;
+}
+
 .history-mic-button:hover:not(:disabled) {
   background: var(--glass);
   color: var(--fg-strong);
@@ -2864,6 +3001,48 @@ input[type="range"]::-moz-range-thumb {
   font-size: 12px;
 }
 
+/* Separated live pill: a second live session run from this page. */
+.history-separated {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: 2px;
+  padding: 3px 5px 3px 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: var(--glass);
+}
+
+.history-separated.on {
+  border-color: rgba(220, 77, 94, 0.45);
+  background: rgba(220, 77, 94, 0.12);
+}
+
+.history-separated-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.history-separated.on .history-separated-label {
+  color: #f8728a;
+}
+
+.history-separated-start,
+.history-separated-stop {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.history-separated-error {
+  color: var(--danger);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .history-toolbar-label {
   max-width: 180px;
   overflow: hidden;
@@ -2904,6 +3083,12 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
 }
 
+/* The settings menu hosts a nested submenu beside it, so it must not clip
+   overflow (its own content is short and fits without scrolling). */
+.history-menu.history-menu-noclip {
+  overflow: visible;
+}
+
 .history-menu[aria-expanded] {
   display: flex;
 }
@@ -2919,6 +3104,7 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: space-between;
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -2936,6 +3122,46 @@ input[type="range"]::-moz-range-thumb {
 
 .history-menu-row:disabled {
   opacity: 0.45;
+}
+
+/* Label on the left, checkmark on the right. */
+.history-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-menu-value {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.history-menu-chevron {
+  transform: rotate(-90deg);
+}
+
+.history-menu-chevron:dir(rtl) {
+  transform: rotate(90deg);
+}
+
+/* Nested submenu (e.g. the layout picker) opens to the right of its row. */
+.history-submenu {
+  position: absolute;
+  top: -6px;
+  left: calc(100% + 6px);
+  width: 220px;
+}
+
+.history-menu-anchor-right .history-submenu,
+.history-submenu:dir(rtl) {
+  left: auto;
+  right: calc(100% + 6px);
+}
   cursor: default;
 }
 
@@ -3680,6 +3906,21 @@ input[type="range"]::-moz-range-thumb {
 
 .you-config-dialog .lst-modal-actions {
   margin-top: 8px;
+}
+
+.you-config-live-note {
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  background: var(--glass);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.you-config-actions {
+  flex-wrap: wrap;
 }
 
 .you-config-dialog .lst-modal-actions .button {

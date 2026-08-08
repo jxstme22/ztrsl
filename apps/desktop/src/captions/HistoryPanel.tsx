@@ -56,7 +56,7 @@ function sourceAccent(color: string): {
 
 /** Options menu rows: label + persisted checkbox toggle. */
 const OPTION_TOGGLES: readonly {
-  key: Exclude<keyof HistoryDisplayOptions, "bubbleColor">;
+  key: Exclude<keyof HistoryDisplayOptions, "bubbleColor" | "layout">;
   label: UIKey;
 }[] = [
   { key: "showSource", label: "historyShowTranscribed" },
@@ -81,6 +81,10 @@ export function HistoryPanel({
   onSendChat,
   onOpenYouConfig,
   onOpenMicSettings,
+  separatedState,
+  separatedError,
+  onStartSeparatedLive,
+  onStopSeparatedLive,
 }: {
   sessions: HistorySession[];
   currentSessionId: string | null;
@@ -101,6 +105,11 @@ export function HistoryPanel({
   onOpenYouConfig: () => void;
   /** Open the macOS Microphone privacy pane (denied-mic recovery). */
   onOpenMicSettings: () => void;
+  /** Separated live session status (started from this page). */
+  separatedState: "idle" | "starting" | "listening" | "stopping" | "error";
+  separatedError: string | null;
+  onStartSeparatedLive: () => Promise<string | null>;
+  onStopSeparatedLive: () => Promise<void>;
 }) {
   const t = useT();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -108,9 +117,11 @@ export function HistoryPanel({
     loadHistoryDisplayOptions,
   );
   const [query, setQuery] = useState("");
-  const [menuOpen, setMenuOpen] = useState<"sessions" | "settings" | null>(
-    null,
-  );
+  const [menuOpen, setMenuOpen] = useState<"settings" | null>(null);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  const [separatedBusy, setSeparatedBusy] = useState(false);
+  const [separatedLocalError, setSeparatedLocalError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -211,17 +222,27 @@ export function HistoryPanel({
 
   // Close the popovers when clicking anywhere else.
   useEffect(() => {
-    if (menuOpen === null) {
+    if (menuOpen === null && !sessionsOpen) {
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
       if (!toolbarRef.current?.contains(event.target as Node)) {
         setMenuOpen(null);
+        setSessionsOpen(false);
+        setLayoutOpen(false);
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => { document.removeEventListener("pointerdown", onPointerDown); };
-  }, [menuOpen]);
+  }, [menuOpen, sessionsOpen]);
+
+  // Session sidebar is mutually exclusive with the settings menu.
+  useEffect(() => {
+    if (sessionsOpen) {
+      setMenuOpen(null);
+      setLayoutOpen(false);
+    }
+  }, [sessionsOpen]);
 
   const toggleOption = (key: keyof HistoryDisplayOptions) => {
     setOptions((current) => {
@@ -231,7 +252,18 @@ export function HistoryPanel({
     });
   };
 
-  // Copy a merged bubble group: mark every entry in the group as copied.
+  // Copy one translation (a single message inside a bubble).
+  const copyEntry = async (entry: HistoryEntry) => {
+    try {
+      await navigator.clipboard.writeText(entry.text);
+      setCopiedId(entry.id);
+      window.setTimeout(() => { setCopiedId(null); }, 1200);
+    } catch {
+      // Clipboard unavailable; nothing else to do.
+    }
+  };
+
+  // Copy a merged bubble group: mark the first entry in the group.
   const copyMerged = async (text: string, group: HistoryEntry[]) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -339,57 +371,74 @@ export function HistoryPanel({
     >
       <div className="history-toolbar" ref={toolbarRef}>
         <div className="history-toolbar-group">
-          <div className="history-menu-anchor">
-            <button
-              className="button quiet history-toolbar-button"
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen === "sessions"}
-              disabled={sessions.length === 0}
-              onClick={() =>
-                { setMenuOpen(menuOpen === "sessions" ? null : "sessions"); }
-              }
-            >
-              <CalendarClock aria-hidden="true" size={14} />
-              <span className="history-toolbar-label">
-                {selected !== null
-                  ? selected.name
-                  : t("historySessions")}
-              </span>
-              <ChevronDown aria-hidden="true" size={14} />
-            </button>
-            {menuOpen === "sessions" && (
-              <div className="history-menu" role="menu">
-                {sessions.map((session) => (
-                  <button
-                    key={session.id}
-                    type="button"
-                    role="menuitem"
-                    className="history-menu-row"
-                    onClick={() => {
-                      setSelectedId(session.id);
-                      setMenuOpen(null);
-                    }}
-                  >
-                    <span className="history-menu-name">
-                      {session.name}
-                      {session.id === currentSessionId && (
-                        <span
-                          className="history-live-dot"
-                          title={t("historyLiveSession")}
-                          aria-label={t("historyLiveSession")}
-                        />
-                      )}
-                    </span>
-                    <span className="history-menu-meta">
-                      {session.entries.length} ·{" "}
-                      {formatTime(session.startedAtMs)}
-                    </span>
-                  </button>
-                ))}
-              </div>
+          <button
+            className={`button quiet history-toolbar-button ${sessionsOpen ? "on" : ""}`}
+            type="button"
+            aria-expanded={sessionsOpen}
+            aria-label={t("historySessions")}
+            disabled={sessions.length === 0}
+            onClick={() => { setSessionsOpen((current) => !current); }}
+          >
+            <CalendarClock aria-hidden="true" size={14} />
+            <span className="history-toolbar-label">
+              {selected !== null
+                ? selected.name
+                : t("historySessions")}
+            </span>
+            <ChevronDown aria-hidden="true" size={14} />
+          </button>
+
+          <div
+            className={`history-separated ${separatedState === "listening" ? "on" : ""}`}
+            role="status"
+          >
+            <span className="history-separated-label">
+              {t("historySeparatedLive")}
+            </span>
+            {separatedState === "listening" ? (
+              <button
+                type="button"
+                className="button quiet history-separated-stop"
+                disabled={separatedBusy}
+                onClick={() => {
+                  setSeparatedBusy(true);
+                  void onStopSeparatedLive().finally(() => {
+                    setSeparatedBusy(false);
+                  });
+                }}
+              >
+                {t("historySeparatedStop")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="button quiet history-separated-start"
+                disabled={separatedBusy || separatedState === "starting"}
+                onClick={() => {
+                  setSeparatedBusy(true);
+                  setSeparatedLocalError(null);
+                  void onStartSeparatedLive()
+                    .then((error) => {
+                      if (error !== null) {
+                        setSeparatedLocalError(error);
+                      }
+                    })
+                    .finally(() => {
+                      setSeparatedBusy(false);
+                    });
+                }}
+              >
+                {separatedState === "starting"
+                  ? t("historySeparatedStarting")
+                  : t("historySeparatedStart")}
+              </button>
             )}
           </div>
+          {(separatedLocalError ?? separatedError) !== null && (
+            <span className="history-separated-error" role="alert">
+              {separatedLocalError ?? separatedError}
+            </span>
+          )}
 
           {renaming ? (
             <div className="history-rename">
@@ -479,13 +528,13 @@ export function HistoryPanel({
               aria-label={t("historySettings")}
               title={t("historySettings")}
               onClick={() =>
-                { setMenuOpen(menuOpen === "settings" ? null : "settings"); }
+                { setMenuOpen(menuOpen === "settings" ? null : "settings"); setLayoutOpen(false); }
               }
             >
               <Settings aria-hidden="true" size={14} />
             </button>
             {menuOpen === "settings" && (
-              <div className="history-menu" role="menu">
+              <div className="history-menu history-menu-noclip" role="menu">
                 {OPTION_TOGGLES.map(({ key, label }) => (
                   <button
                     key={key}
@@ -495,13 +544,13 @@ export function HistoryPanel({
                     className="history-menu-row"
                     onClick={() => { toggleOption(key); }}
                   >
+                    <span className="history-menu-label">{t(label)}</span>
                     <span
                       className={`history-check ${options[key] ? "on" : ""}`}
                       aria-hidden="true"
                     >
-                      {options[key] && <Check size={11} />}
+                      {options[key] && <Check size={12} />}
                     </span>
-                    {t(label)}
                   </button>
                 ))}
                 <button
@@ -521,14 +570,104 @@ export function HistoryPanel({
                     });
                   }}
                 >
+                  <span className="history-menu-label">
+                    {t("historyBubbleColor")}
+                  </span>
                   <span
                     className={`history-check ${options.bubbleColor === "source" ? "on" : ""}`}
                     aria-hidden="true"
                   >
-                    {options.bubbleColor === "source" && <Check size={11} />}
+                    {options.bubbleColor === "source" && <Check size={12} />}
                   </span>
-                  {t("historyBubbleColor")}
                 </button>
+
+                <div className="history-menu-anchor">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    aria-expanded={layoutOpen}
+                    className="history-menu-row"
+                    onClick={() => { setLayoutOpen((current) => !current); }}
+                  >
+                    <span className="history-menu-label">
+                      {t("historyLayout")}
+                    </span>
+                    <span className="history-menu-value">
+                      {options.layout === "classic"
+                        ? t("historyLayoutClassic")
+                        : t("historyLayoutChat")}
+                      <ChevronDown
+                        aria-hidden="true"
+                        size={12}
+                        className="history-menu-chevron"
+                      />
+                    </span>
+                  </button>
+                  {layoutOpen && (
+                    <div
+                      className="history-menu history-submenu"
+                      role="menu"
+                      aria-label={t("historyLayout")}
+                    >
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={options.layout === "classic"}
+                        className="history-menu-row"
+                        onClick={() => {
+                          setOptions((current) => {
+                            const next: HistoryDisplayOptions = {
+                              ...current,
+                              layout: "classic",
+                            };
+                            saveHistoryDisplayOptions(next);
+                            return next;
+                          });
+                          setLayoutOpen(false);
+                        }}
+                      >
+                        <span className="history-menu-label">
+                          {t("historyLayoutClassic")}
+                        </span>
+                        <span
+                          className={`history-check ${options.layout === "classic" ? "on" : ""}`}
+                          aria-hidden="true"
+                        >
+                          {options.layout === "classic" && <Check size={12} />}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={options.layout === "chat"}
+                        className="history-menu-row"
+                        onClick={() => {
+                          setOptions((current) => {
+                            const next: HistoryDisplayOptions = {
+                              ...current,
+                              layout: "chat",
+                            };
+                            saveHistoryDisplayOptions(next);
+                            return next;
+                          });
+                          setLayoutOpen(false);
+                        }}
+                      >
+                        <span className="history-menu-label">
+                          {t("historyLayoutChat")}
+                        </span>
+                        <span
+                          className={`history-check ${options.layout === "chat" ? "on" : ""}`}
+                          aria-hidden="true"
+                        >
+                          {options.layout === "chat" && <Check size={12} />}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="history-menu-sep" />
                 <button
                   type="button"
@@ -537,8 +676,10 @@ export function HistoryPanel({
                   disabled={selected === null || selected.entries.length === 0}
                   onClick={clearSelected}
                 >
+                  <span className="history-menu-label">
+                    {t("historyClearSession")}
+                  </span>
                   <Trash2 aria-hidden="true" size={13} />
-                  {t("historyClearSession")}
                 </button>
               </div>
             )}
@@ -546,13 +687,56 @@ export function HistoryPanel({
         </div>
       </div>
 
-      <div
-        className="history-scroll"
-        ref={scrollRef}
-        onScroll={onScroll}
-        role="log"
-        aria-live="polite"
-      >
+      <div className="history-body">
+        {sessionsOpen && (
+          <aside className="history-sessions" aria-label={t("historySessions")}>
+            <div className="history-sessions-head">
+              <span>{t("historySessions")}</span>
+              <span className="history-sessions-count">{sessions.length}</span>
+            </div>
+            <ol className="history-sessions-list">
+              {[...sessions]
+                .sort((a, b) => b.startedAtMs - a.startedAtMs)
+                .map((session) => (
+                  <li key={session.id}>
+                    <button
+                      type="button"
+                      className={`history-session-row ${
+                        selected?.id === session.id ? "on" : ""
+                      }`}
+                      onClick={() => {
+                        setSelectedId(session.id);
+                        setSessionsOpen(false);
+                      }}
+                    >
+                      <span className="history-session-name">
+                        {session.name}
+                        {session.id === currentSessionId && (
+                          <span
+                            className="history-live-dot"
+                            title={t("historyLiveSession")}
+                            aria-label={t("historyLiveSession")}
+                          />
+                        )}
+                      </span>
+                      <span className="history-session-meta">
+                        {session.entries.length} · {formatTime(session.startedAtMs)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+            </ol>
+          </aside>
+        )}
+
+        <div className="history-main">
+          <div
+            className="history-scroll"
+            ref={scrollRef}
+            onScroll={onScroll}
+            role="log"
+            aria-live="polite"
+          >
         {selected === null ? (
           <p className="lst-model-empty">{t("historyEmpty")}</p>
         ) : entries.length === 0 ? (
@@ -561,6 +745,68 @@ export function HistoryPanel({
               ? t("historySessionEmpty")
               : t("historySearchEmpty")}
           </p>
+        ) : options.layout === "classic" ? (
+          <ol className="history-list history-list-classic">
+            {entries.map((entry) => {
+              const accent = sourceAccent(entry.color);
+              const fromSelf = entry.fromSelf;
+              const who =
+                entry.displayName !== ""
+                  ? entry.displayName
+                  : entry.sourceLabel !== ""
+                    ? entry.sourceLabel
+                    : t("historyUnknownSpeaker");
+              return (
+                <li
+                  key={entry.id}
+                  className={`history-entry-classic ${
+                    fromSelf ? "self" : ""
+                  }`}
+                  data-uncertain={entry.uncertain || undefined}
+                  style={accent.entry}
+                >
+                  <div className="history-entry-meta">
+                    {options.showSpeaker && (
+                      <span className="history-who" style={accent.badge}>
+                        {fromSelf ? t("historyYou") : who}
+                      </span>
+                    )}
+                    {options.showTimestamp && (
+                      <time>{formatTime(entry.timestampMs)}</time>
+                    )}
+                    {options.showLatency && entry.latencyMs > 0 && (
+                      <span className="history-latency">
+                        {entry.latencyMs} ms
+                      </span>
+                    )}
+                    {options.showModels && entry.provider !== "" && (
+                      <span className="history-models">{entry.provider}</span>
+                    )}
+                    {entry.uncertain && (
+                      <span className="history-uncertain">?</span>
+                    )}
+                    <button
+                      className="history-copy"
+                      type="button"
+                      aria-label={t("historyCopy")}
+                      title={t("historyCopy")}
+                      onClick={() => { void copyEntry(entry); }}
+                    >
+                      {copiedId === entry.id ? (
+                        <Check aria-hidden="true" size={13} />
+                      ) : (
+                        <Copy aria-hidden="true" size={13} />
+                      )}
+                    </button>
+                  </div>
+                  <p className="history-text">{entry.text}</p>
+                  {options.showSource && entry.sourceText !== "" && (
+                    <p className="history-source">{entry.sourceText}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
         ) : (
           <ol className="history-list">
             {messageGroups.map((group) => {
@@ -574,10 +820,9 @@ export function HistoryPanel({
                   key={first.id}
                   group={group}
                   options={options}
-                  copied={
-                    copiedId !== null && group.some((e) => e.id === copiedId)
-                  }
-                  onCopy={() => {
+                  copiedId={copiedId}
+                  onCopyOne={(item) => { void copyEntry(item); }}
+                  onCopyAll={() => {
                     const merged = group
                       .map((entry) => entry.text)
                       .filter((text) => text !== "")
@@ -624,7 +869,7 @@ export function HistoryPanel({
           disabled={micDisabled || micBusy}
           onClick={onMicClick}
         >
-          <Mic aria-hidden="true" size={16} />
+          <Mic aria-hidden="true" size={14} />
         </button>
         <button
           type="submit"
@@ -651,6 +896,8 @@ export function HistoryPanel({
           </div>
         )}
       </form>
+        </div>
+      </div>
     </section>
   );
 }
@@ -658,8 +905,9 @@ export function HistoryPanel({
 function ChatBubble({
   group,
   options,
-  copied,
-  onCopy,
+  copiedId,
+  onCopyOne,
+  onCopyAll,
   formatTime,
   firstTimestamp,
   lastTimestamp,
@@ -667,8 +915,12 @@ function ChatBubble({
   /** One or more consecutive messages from the same speaker. */
   group: HistoryEntry[];
   options: HistoryDisplayOptions;
-  copied: boolean;
-  onCopy: () => void;
+  /** Which entry currently shows the "copied" check, or null. */
+  copiedId: string | null;
+  /** Copy one message inside a merged bubble. */
+  onCopyOne: (entry: HistoryEntry) => void;
+  /** Copy the whole merged bubble's text. */
+  onCopyAll: () => void;
   formatTime: (timestampMs: number) => string;
   firstTimestamp: number;
   lastTimestamp: number;
@@ -761,22 +1013,37 @@ function ChatBubble({
                 {options.showSource && item.sourceText !== "" && (
                   <p className="history-source">{item.sourceText}</p>
                 )}
+                <button
+                  className="history-copy"
+                  type="button"
+                  aria-label={t("historyCopy")}
+                  title={t("historyCopy")}
+                  onClick={() => { onCopyOne(item); }}
+                >
+                  {copiedId === item.id ? (
+                    <Check aria-hidden="true" size={13} />
+                  ) : (
+                    <Copy aria-hidden="true" size={13} />
+                  )}
+                </button>
               </div>
             ))}
           </div>
-          <button
-            className="history-copy"
-            type="button"
-            aria-label={t("historyCopy")}
-            title={t("historyCopy")}
-            onClick={onCopy}
-          >
-            {copied ? (
-              <Check aria-hidden="true" size={13} />
-            ) : (
-              <Copy aria-hidden="true" size={13} />
-            )}
-          </button>
+          {group.length > 1 && (
+            <button
+              className="history-copy history-copy-all"
+              type="button"
+              aria-label={t("historyCopyAll")}
+              title={t("historyCopyAll")}
+              onClick={onCopyAll}
+            >
+              {copiedId !== null && group.some((e) => e.id === copiedId) ? (
+                <Check aria-hidden="true" size={13} />
+              ) : (
+                <Copy aria-hidden="true" size={13} />
+              )}
+            </button>
+          )}
         </div>
       </div>
     </li>

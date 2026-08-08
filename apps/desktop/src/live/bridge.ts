@@ -139,6 +139,72 @@ export async function setLiveMicEnabled(enabled: boolean): Promise<boolean> {
   return await invoke("set_live_mic_enabled", { enabled });
 }
 
+/** Start the SEPARATED live session (a second, independent live translation
+ * started from the history page). It shares the sidecar process — and its
+ * loaded models — with the main live session, but has its own endpoint and
+ * configuration, and records into the same history session. */
+export async function startSeparatedLiveTranslation(
+  endpointId: string,
+  playbackEndpointId: string | null,
+  provider: "demo" | "local" | "http",
+  monitorEnabled: boolean,
+  sourceMode: SourceMode,
+  targetLanguage: TargetLanguage,
+  asrProvider: AsrProvider,
+  translationProvider: TranslationProvider,
+  vadSensitivity = 50,
+  segmentation: "chunk" | "balanced" | "sentence" = "balanced",
+  sources: LiveSourceRequest[] = [],
+): Promise<LiveSnapshot> {
+  if (!isTauri()) {
+    return {
+      ...EMPTY_LIVE_SNAPSHOT,
+      state: "listening",
+      provider: "demo",
+      asrModel: "browser-preview",
+      sourceMode,
+      targetLanguage,
+      resourceProfile: "quality",
+    };
+  }
+  return liveSnapshotSchema.parse(
+    await invoke("start_separated_live_translation", {
+      request: {
+        endpointId,
+        playbackEndpointId: playbackEndpointId ?? "",
+        sourceMode,
+        targetLanguage,
+        provider,
+        asrProvider,
+        translationProvider,
+        resourceProfile: "quality",
+        monitorEnabled,
+        vadSensitivity,
+        segmentation,
+        sources,
+      },
+    }),
+  );
+}
+
+export async function fetchSeparatedLiveSnapshot(): Promise<LiveSnapshot> {
+  if (!isTauri()) {
+    return EMPTY_LIVE_SNAPSHOT;
+  }
+  return liveSnapshotSchema.parse(
+    await invoke("separated_live_translation_snapshot"),
+  );
+}
+
+export async function stopSeparatedLiveTranslation(): Promise<LiveSnapshot> {
+  if (!isTauri()) {
+    return EMPTY_LIVE_SNAPSHOT;
+  }
+  return liveSnapshotSchema.parse(
+    await invoke("stop_separated_live_translation"),
+  );
+}
+
 export async function fetchLiveSnapshot(): Promise<LiveSnapshot> {
   if (!isTauri()) {
     return {

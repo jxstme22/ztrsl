@@ -427,6 +427,7 @@ describe("history display options", () => {
       showModels: true,
       showAvatars: true,
       bubbleColor: "source" as const,
+      layout: "classic" as const,
     };
     saveHistoryDisplayOptions(options, storage);
     expect(loadHistoryDisplayOptions(storage)).toEqual(options);
@@ -441,6 +442,7 @@ describe("history display options", () => {
       showModels: true,
       showAvatars: true,
       bubbleColor: "source",
+      layout: "classic",
     });
   });
 

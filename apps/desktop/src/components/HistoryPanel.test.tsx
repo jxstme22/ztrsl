@@ -66,6 +66,10 @@ function renderPanel(
       onSendChat={vi.fn()}
       onOpenYouConfig={vi.fn()}
       onOpenMicSettings={vi.fn()}
+      separatedState={"idle"}
+      separatedError={null}
+      onStartSeparatedLive={vi.fn()}
+      onStopSeparatedLive={vi.fn()}
     />,
   );
 }
@@ -173,16 +177,34 @@ describe("HistoryPanel", () => {
         onSendChat={vi.fn()}
         onOpenYouConfig={vi.fn()}
         onOpenMicSettings={vi.fn()}
+        separatedState={"idle"}
+        separatedError={null}
+        onStartSeparatedLive={vi.fn()}
+        onStopSeparatedLive={vi.fn()}
       />,
     );
-    // The toolbar button shows the selected (live) session's name.
-    fireEvent.click(screen.getByRole("button", { name: /session · 14:45/i }));
+    // The toolbar button shows the selected (live) session's name; clicking
+    // it opens the session sidebar, which carries the live dot.
+    fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
     expect(screen.getAllByLabelText(/live session/i)).toHaveLength(1);
   });
 });
 
 describe("HistoryPanel chat room", () => {
   it("renders 'you' bubbles right-aligned with the you label", () => {
+    localStorage.setItem(
+      "lst.history.options.v3",
+      JSON.stringify({
+        showSource: false,
+        showSpeaker: true,
+        showTimestamp: true,
+        showLatency: true,
+        showModels: true,
+        showAvatars: true,
+        bubbleColor: "source",
+        layout: "chat",
+      }),
+    );
     renderPanel([session({
       entries: [
         entry({ id: "e1", text: "Nice shot", displayName: "Team", fromSelf: false }),
@@ -221,6 +243,10 @@ describe("HistoryPanel chat room", () => {
         onSendChat={onSendChat}
         onOpenYouConfig={vi.fn()}
         onOpenMicSettings={vi.fn()}
+        separatedState={"idle"}
+        separatedError={null}
+        onStartSeparatedLive={vi.fn()}
+        onStopSeparatedLive={vi.fn()}
       />,
     );
     const input = screen.getByPlaceholderText(/type a message/i);
@@ -246,6 +272,10 @@ describe("HistoryPanel chat room", () => {
         onSendChat={onSendChat}
         onOpenYouConfig={vi.fn()}
         onOpenMicSettings={vi.fn()}
+        separatedState={"idle"}
+        separatedError={null}
+        onStartSeparatedLive={vi.fn()}
+        onStopSeparatedLive={vi.fn()}
       />,
     );
     const input = screen.getByPlaceholderText(/type a message/i);
@@ -270,6 +300,10 @@ describe("HistoryPanel chat room", () => {
         onSendChat={vi.fn()}
         onOpenYouConfig={vi.fn()}
         onOpenMicSettings={vi.fn()}
+        separatedState={"idle"}
+        separatedError={null}
+        onStartSeparatedLive={vi.fn()}
+        onStopSeparatedLive={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: /translate my voice/i })).toBeDisabled();
@@ -291,6 +325,10 @@ describe("HistoryPanel chat room", () => {
         onSendChat={vi.fn()}
         onOpenYouConfig={vi.fn()}
         onOpenMicSettings={vi.fn()}
+        separatedState={"idle"}
+        separatedError={null}
+        onStartSeparatedLive={vi.fn()}
+        onStopSeparatedLive={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /translate my voice/i }));
@@ -308,7 +346,24 @@ describe("HistoryPanel chat room", () => {
 });
 
 describe("HistoryPanel bubble grouping", () => {
+  const chatOptions = () => {
+    localStorage.setItem(
+      "lst.history.options.v3",
+      JSON.stringify({
+        showSource: false,
+        showSpeaker: true,
+        showTimestamp: true,
+        showLatency: true,
+        showModels: true,
+        showAvatars: true,
+        bubbleColor: "source",
+        layout: "chat",
+      }),
+    );
+  };
+
   it("merges consecutive same-speaker entries into one bubble", () => {
+    chatOptions();
     renderPanel([
       session({
         entries: [
@@ -344,6 +399,7 @@ describe("HistoryPanel bubble grouping", () => {
   });
 
   it("keeps different speakers as separate bubbles", () => {
+    chatOptions();
     renderPanel([
       session({
         entries: [
@@ -359,5 +415,110 @@ describe("HistoryPanel bubble grouping", () => {
       }),
     ]);
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
+  });
+});
+
+describe("HistoryPanel classic layout", () => {
+  it("renders classic rows by default with you-entries right-aligned", () => {
+    localStorage.removeItem("lst.history.options.v3");
+    renderPanel([
+      session({
+        entries: [
+          entry({ id: "e1", text: "Nice shot", displayName: "Team", fromSelf: false }),
+          entry({
+            id: "e2",
+            text: "Thank you",
+            displayName: "You",
+            sourceId: "00000000000000000000000000000000",
+            fromSelf: true,
+          }),
+        ],
+      }),
+    ]);
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    const selfRow = rows[1];
+    expect(selfRow?.className).toContain("self");
+    expect(selfRow?.className).toContain("history-entry-classic");
+    expect(rows[0]?.className).not.toContain("self");
+  });
+
+  it("switches to chat bubbles via the settings menu", () => {
+    localStorage.removeItem("lst.history.options.v3");
+    renderPanel([session({ entries: [] })]);
+    fireEvent.click(screen.getByRole("button", { name: /display options/i }));
+    // The layout picker is a nested submenu: open it first.
+    fireEvent.click(screen.getByRole("menuitem", { name: /^layout/i }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /chat bubbles/i }));
+    expect(
+      (
+        JSON.parse(
+          localStorage.getItem("lst.history.options.v3") ?? "{}",
+        ) as { layout?: string }
+      ).layout,
+    ).toBe("chat");
+  });
+});
+
+describe("HistoryPanel separated live", () => {
+  it("shows a Start pill when idle and starts the separated live", () => {
+    const onStart = vi.fn().mockResolvedValue(null);
+    render(
+      <HistoryPanel
+        sessions={[session({ entries: [] })]}
+        currentSessionId={null}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={true}
+        onToggleMic={vi.fn()}
+        onSendChat={vi.fn()}
+        onOpenYouConfig={vi.fn()}
+        onOpenMicSettings={vi.fn()}
+        separatedState="idle"
+        separatedError={null}
+        onStartSeparatedLive={onStart}
+        onStopSeparatedLive={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
+    expect(onStart).toHaveBeenCalled();
+  });
+
+  it("shows a Stop pill while the separated live is listening", () => {
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    render(
+      <HistoryPanel
+        sessions={[session({ entries: [] })]}
+        currentSessionId={null}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={true}
+        onToggleMic={vi.fn()}
+        onSendChat={vi.fn()}
+        onOpenYouConfig={vi.fn()}
+        onOpenMicSettings={vi.fn()}
+        separatedState="listening"
+        separatedError={null}
+        onStartSeparatedLive={vi.fn()}
+        onStopSeparatedLive={onStop}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^stop$/i }));
+    expect(onStop).toHaveBeenCalled();
+  });
+
+  it("opens the session sidebar as an in-card column via the toolbar toggle", () => {
+    renderPanel([session(), session({ id: "sess-2", name: "Older" })]);
+    fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
+    expect(screen.getByRole("complementary", { name: /sessions/i })).toBeInTheDocument();
+    // Clicking a session picks it and hides the sidebar.
+    fireEvent.click(screen.getByRole("button", { name: /older/i }));
+    expect(screen.queryByRole("complementary", { name: /sessions/i })).toBeNull();
   });
 });

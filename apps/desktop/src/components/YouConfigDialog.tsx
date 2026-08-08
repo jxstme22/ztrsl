@@ -138,21 +138,23 @@ export function YouConfigDialog({
     return () => { document.removeEventListener("keydown", onKeyDown); };
   }, [onClose]);
 
-  const save = () => {
+  const save = (applyLiveSeparately: boolean) => {
     saveYouConfig(config);
-    // Persist the Live section to the same keys the Live page reads, so the
-    // modal's "Live" section and the Live page stay in sync.
-    try {
-      window.localStorage.setItem(LIVE_INPUT_ENDPOINT_KEY, liveEndpointId);
-      window.localStorage.setItem(LIVE_SOURCE_MODE_KEY, liveSourceMode);
-      window.localStorage.setItem(LIVE_TARGET_LANGUAGE_KEY, liveTargetLanguage);
-      window.localStorage.setItem(LIVE_ASR_PROVIDER_KEY, liveAsrProvider);
-      window.localStorage.setItem(
-        LIVE_TRANSLATION_PROVIDER_KEY,
-        liveTranslationProvider,
-      );
-    } catch {
-      // localStorage unavailable; the Live page keeps its own state.
+    if (applyLiveSeparately) {
+      // Apply the Live section as a SEPARATE live config (different models
+      // than the Live page). Otherwise the Live page's mode is kept.
+      try {
+        window.localStorage.setItem(LIVE_INPUT_ENDPOINT_KEY, liveEndpointId);
+        window.localStorage.setItem(LIVE_SOURCE_MODE_KEY, liveSourceMode);
+        window.localStorage.setItem(LIVE_TARGET_LANGUAGE_KEY, liveTargetLanguage);
+        window.localStorage.setItem(LIVE_ASR_PROVIDER_KEY, liveAsrProvider);
+        window.localStorage.setItem(
+          LIVE_TRANSLATION_PROVIDER_KEY,
+          liveTranslationProvider,
+        );
+      } catch {
+        // localStorage unavailable; the Live page keeps its own state.
+      }
     }
     onSaved(config);
     onClose();
@@ -342,14 +344,23 @@ export function YouConfigDialog({
           </label>
         </section>
 
-        <div className="lst-modal-actions">
+        <p className="you-config-live-note">{t("chatConfigLiveNote")}</p>
+
+        <div className="lst-modal-actions you-config-actions">
           <button type="button" className="button quiet" onClick={onClose}>
             {t("cancel")}
           </button>
           <button
             type="button"
             className="button primary btn-shine"
-            onClick={save}
+            onClick={() => { save(true); }}
+          >
+            {t("chatConfigSaveSeparate")}
+          </button>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => { save(false); }}
           >
             {t("chatConfigSave")}
           </button>

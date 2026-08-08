@@ -9,9 +9,9 @@ import {
   Minus,
   PictureInPicture2,
   Pin,
+  Rocket,
   ScrollText,
   Settings,
-  Sparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -51,7 +51,14 @@ import { useUiLanguage } from "./features/i18n/useUiLanguage";
 import { useT } from "./features/i18n/store";
 import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
-import type { LiveSourceRequest, TranslationProvider } from "./live/bridge";
+import { useSeparatedLiveTranslation } from "./live/useSeparatedLiveTranslation";
+import type {
+  AsrProvider,
+  LiveSourceRequest,
+  SourceMode as LiveSourceMode,
+  TargetLanguage,
+  TranslationProvider,
+} from "./live/bridge";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime, emitHistoryToOverlay, beginOverlayDrag } from "./overlay/bridge";
@@ -106,7 +113,7 @@ function navItems(
 const NAV_ICONS: Record<SectionId, LucideIcon> = {
   live: Activity,
   history: MessageSquareText,
-  profile: Sparkles,
+  profile: Rocket,
   sources: Mic,
   models: Boxes,
   settings: Settings,
@@ -189,6 +196,36 @@ export function ControlApp() {
   const [showWelcome, setShowWelcome] = useState(
     () => !models.hasInstalledModels,
   );
+
+  // The separated live session (started from the history page): a second,
+  // independent live translation that shares the sidecar process (models)
+  // with the main live session. Its captions go to history only.
+  const separatedLiveRef = useRef<
+    ReturnType<typeof useSeparatedLiveTranslation> | null
+  >(null);
+  const separatedLive = useSeparatedLiveTranslation((caption) => {
+    const endpoint = audio.catalog?.endpoints.find(
+      (candidate) => candidate.id === separatedLiveRef.current?.sessionEndpointId,
+    );
+    let displayName = "";
+    if (caption.source !== undefined) {
+      displayName =
+        loadSourceConfigs().sources.find(
+          (config) => config.sourceId === caption.source?.sourceId,
+        )?.displayName ?? caption.source.captionTag;
+    }
+    const snapshot = separatedLiveRef.current?.snapshot;
+    const modelLabel =
+      snapshot?.asrModel !== null && snapshot?.provider !== null
+        ? `${snapshot?.asrModel ?? ""} + ${snapshot?.provider ?? ""}`
+        : "";
+    historyRef.current.record(caption, {
+      displayName,
+      audioSource: endpoint?.friendlyName ?? "",
+      provider: modelLabel,
+    });
+  });
+  separatedLiveRef.current = separatedLive;
 
   // On macOS, ask for microphone access once per launch (only while the
   // status is still undetermined — a denied grant must go through System
@@ -334,6 +371,55 @@ export function ControlApp() {
     },
     [language, livePair, youConfig],
   );
+
+  // Start the separated live session from the history page. It uses the
+  // modal's "Live translation" section (the same lst.live.* keys the Live
+  // page reads) and shares the sidecar process — so loaded models are
+  // reused, only genuinely-different ones load a second time.
+  const startSeparatedLive = useCallback(async (): Promise<string | null> => {
+    const endpointId =
+      window.localStorage.getItem("lst.live.input-endpoint") ?? "";
+    if (endpointId === "") {
+      return "Pick an input endpoint in the config dialog first.";
+    }
+    const sourceMode =
+      (window.localStorage.getItem("lst.live.source-mode") as
+        | LiveSourceMode
+        | null) ?? "filipino";
+    const targetLanguage =
+      (window.localStorage.getItem("lst.live.target-language") as
+        | TargetLanguage
+        | null) ?? "en";
+    const asrProvider =
+      (window.localStorage.getItem("lst.live.asr-provider") as
+        | AsrProvider
+        | null) ?? "whisper-turbo";
+    const translationProvider =
+      (window.localStorage.getItem("lst.live.translation-provider") as
+        | TranslationProvider
+        | null) ?? "nllb";
+    await separatedLive.start(
+      endpointId,
+      null,
+      asrProvider !== "groq-whisper" &&
+        (translationProvider === "madlad" ||
+          translationProvider === "nllb" ||
+          translationProvider === "opus-mt-en-zh" ||
+          translationProvider === "opus-mt-zh-en")
+        ? "local"
+        : "http",
+      false,
+      sourceMode,
+      targetLanguage,
+      asrProvider,
+      translationProvider,
+    );
+    return separatedLive.error;
+  }, [separatedLive]);
+
+  const stopSeparatedLive = useCallback(async () => {
+    await separatedLive.stop();
+  }, [separatedLive]);
 
   const minimize = () => {
     if (desktop) {
@@ -561,6 +647,10 @@ export function ControlApp() {
                 onSendChat={sendChat}
                 onOpenYouConfig={() => { setYouConfigOpen(true); }}
                 onOpenMicSettings={() => { void openMicrophoneSettings(); }}
+                separatedState={separatedLive.state}
+                separatedError={separatedLive.error}
+                onStartSeparatedLive={startSeparatedLive}
+                onStopSeparatedLive={stopSeparatedLive}
               />
             </div>
           )}

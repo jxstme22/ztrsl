@@ -461,6 +461,9 @@ export const historyDisplayOptionsSchema = z.object({
   /** "source" tints bubbles with their audio-source color; "default" keeps
    * the neutral theme bubble for everyone. */
   bubbleColor: z.enum(["source", "default"]).default("source"),
+  /** History translation layout: "chat" = bubble chat, "classic" = the old
+   * flat list (default; "you" entries stay right-aligned). */
+  layout: z.enum(["chat", "classic"]).default("classic"),
 });
 
 export type HistoryDisplayOptions = z.infer<typeof historyDisplayOptionsSchema>;
@@ -479,6 +482,7 @@ export const DEFAULT_DISPLAY_OPTIONS: HistoryDisplayOptions = {
   showModels: true,
   showAvatars: true,
   bubbleColor: "source",
+  layout: "classic",
 };
 
 export function loadHistoryDisplayOptions(
