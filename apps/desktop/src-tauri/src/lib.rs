@@ -2889,7 +2889,7 @@ fn run_live_worker(
         target_language,
         resource_profile,
         loopback,
-        system_audio,
+        system_audio: _system_audio,
         monitor_enabled,
         vad_sensitivity,
         segmentation,
@@ -3021,7 +3021,7 @@ fn run_live_worker(
                     &config_sources,
                     endpoint_name.clone(),
                     loopback,
-                    system_audio,
+                    _system_audio,
                     monitor_enabled,
                     playback_endpoint_name.clone(),
                     &config_mic_source,
@@ -3150,6 +3150,7 @@ impl std::fmt::Display for LiveLoopError {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(clippy::too_many_arguments)]
 fn run_windows_live_loop(
     config_sources: &[LiveSource],
     endpoint_name: String,
