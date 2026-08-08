@@ -2390,8 +2390,15 @@ fn translate_text_blocking(
     let result = supervisor
         .as_mut()
         .expect("sidecar was started above")
-        .translate_text(&text, &source_mode, &target_language, &translation_provider)
-        .map_err(|error| error.to_string())?;
+        .translate_text(&text, &source_mode, &target_language, &translation_provider);
+    // A dead or wedged sidecar must never poison the shared chat slot: drop
+    // the supervisor so the next send respawns a fresh process. Otherwise a
+    // single transport failure stalls every later message (the connection
+    // error is swallowed by the UI as a silent null bubble).
+    if result.is_err() {
+        let _ = supervisor.take();
+    }
+    let result = result.map_err(|error| error.to_string())?;
     Ok(TranslateTextResult {
         translated_text: result.translated_text,
         provider: result.provider,

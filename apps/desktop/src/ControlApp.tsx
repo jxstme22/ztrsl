@@ -44,6 +44,7 @@ import { useT } from "./features/i18n/store";
 import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useSeparatedLiveTranslation } from "./live/useSeparatedLiveTranslation";
+import { setTranslationEnv } from "./live/bridge";
 import type {
   AsrProvider,
   LiveSourceRequest,
@@ -182,9 +183,13 @@ export function ControlApp() {
   // lifted up so it can be displayed in the titlebar window-actions.
   const [historyCount, setHistoryCount] = useState(0);
   // Show the welcome card only on a fresh install — when no models are
-  // installed yet. Once the user has models, the welcome never reappears.
+  // installed yet AND the user has not dismissed it before. Skipping the
+  // welcome persists so it never nags on every app open.
+  const WELCOME_DISMISSED_KEY = "lst.welcome.dismissed";
   const [showWelcome, setShowWelcome] = useState(
-    () => !models.hasInstalledModels,
+    () =>
+      !models.hasInstalledModels &&
+      window.localStorage.getItem(WELCOME_DISMISSED_KEY) !== "1",
   );
 
   // The separated live session (started from the history page): a second,
@@ -296,6 +301,19 @@ export function ControlApp() {
     return applied === next;
   }, [live, youSource]);
 
+  // History-page mic: when the separated (history) live session is running it
+  // owns the mic (it captures the configured mic as a source), so the toggle
+  // reports it as on and does nothing extra; otherwise it falls back to the
+  // main live page's mic toggle.
+  const historyMicEnabled =
+    separatedLive.state === "listening" || live.snapshot.micEnabled;
+  const toggleHistoryMic = useCallback(async (): Promise<boolean> => {
+    if (separatedLive.state === "listening") {
+      return true;
+    }
+    return toggleMic();
+  }, [separatedLive.state, toggleMic]);
+
   // Typed-chat translation: translate on demand (standalone sidecar), then
   // record the "you" bubble. When no session is open (e.g. chat before any
   // live run), open a "Chat" session first so the bubble is saved.
@@ -368,7 +386,76 @@ export function ControlApp() {
       (window.localStorage.getItem(
         "lst.live.asr-provider",
       ) as AsrProvider | null) ?? "whisper-turbo";
-    await separatedLive.start(
+    // Push the API credentials the modal's Live section saved so remote
+    // backends (NVIDIA NIM, Groq, LibreTranslate, Baidu, custom HTTP) work
+    // for the separated session too — the live worker reads them from env.
+    try {
+      const pairs: [string, string][] = [];
+      if (asrProvider === "groq-whisper") {
+        pairs.push([
+          "LST_GROQ_API_KEY",
+          window.localStorage.getItem("lst.live.groq-api-key") ?? "",
+        ]);
+      }
+      if (
+        asrProvider.startsWith("nvidia-") ||
+        translationProvider.startsWith("nvidia-")
+      ) {
+        pairs.push([
+          "LST_NVIDIA_API_KEY",
+          window.localStorage.getItem("lst.live.nvidia-api-key") ?? "",
+        ]);
+      }
+      if (translationProvider === "libretranslate") {
+        pairs.push([
+          "LST_LT_ENDPOINT",
+          window.localStorage.getItem("lst.live.lt-endpoint") ?? "",
+        ]);
+        pairs.push([
+          "LST_LT_API_KEY",
+          window.localStorage.getItem("lst.live.lt-api-key") ?? "",
+        ]);
+      } else if (translationProvider === "baidu-translate") {
+        pairs.push([
+          "LST_BAIDU_APPID",
+          window.localStorage.getItem("lst.live.baidu-appid") ?? "",
+        ]);
+        pairs.push([
+          "LST_BAIDU_SECRET",
+          window.localStorage.getItem("lst.live.baidu-secret") ?? "",
+        ]);
+      } else if (translationProvider === "custom-http") {
+        pairs.push([
+          "LST_CUSTOM_TX_ENDPOINT",
+          window.localStorage.getItem("lst.live.custom-tx-endpoint") ?? "",
+        ]);
+        pairs.push([
+          "LST_CUSTOM_TX_API_KEY",
+          window.localStorage.getItem("lst.live.custom-tx-api-key") ?? "",
+        ]);
+      }
+      await setTranslationEnv(pairs);
+    } catch (cause) {
+      console.error("failed to push separated-live provider env:", cause);
+    }
+    // The separated session records into the current history session; if no
+    // live session has ever been started, open one so captions are not
+    // silently dropped ("separated live says live but the mic shows nothing").
+    if (historyRef.current.currentSessionId === null) {
+      const locale = language.language === "zh" ? "zh-CN" : "en-US";
+      const date = new Date().toLocaleString(locale, {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      historyRef.current.beginSession(
+        `sess-${String(Date.now())}`,
+        `${language.t("historySessionPrefix")} · ${date}`,
+      );
+      void emitHistoryToOverlay(historyRef.current.activeEntries);
+    }
+    const error = await separatedLive.start(
       youSource.endpointId,
       null,
       asrProvider !== "groq-whisper" &&
@@ -387,8 +474,8 @@ export function ControlApp() {
       "balanced",
       [youSource],
     );
-    return separatedLive.error;
-  }, [livePair, separatedLive, youConfig, youSource]);
+    return error;
+  }, [language, livePair, separatedLive, youConfig, youSource]);
 
   const stopSeparatedLive = useCallback(async () => {
     await separatedLive.stop();
@@ -516,14 +603,20 @@ export function ControlApp() {
                 onDeleteSession={history.deleteSession}
                 onClearSession={history.clearSession}
                 onCountChange={setHistoryCount}
-                micEnabled={live.snapshot.micEnabled}
+                micEnabled={historyMicEnabled}
                 micConfigured={youConfig.micEndpointId !== null}
-                liveRunning={live.state === "listening"}
-                onToggleMic={toggleMic}
+                liveRunning={
+                  separatedLive.state === "listening" ||
+                  live.state === "listening"
+                }
+                onToggleMic={toggleHistoryMic}
                 onSendChat={sendChat}
                 onOpenYouConfig={() => {
                   setYouConfigOpen(true);
                 }}
+                separatedState={separatedLive.state}
+                onStartSeparated={startSeparatedLive}
+                onStopSeparated={stopSeparatedLive}
               />
             </div>
           )}
@@ -606,6 +699,11 @@ export function ControlApp() {
           onRetry={() => void models.refresh()}
           onDismiss={() => {
             setShowWelcome(false);
+            try {
+              window.localStorage.setItem(WELCOME_DISMISSED_KEY, "1");
+            } catch {
+              // localStorage unavailable; the dismissal just lasts this run.
+            }
           }}
           language={language}
         />

@@ -138,3 +138,59 @@ describe("YouConfigDialog separated live controls", () => {
     expect(onStop).toHaveBeenCalled();
   });
 });
+
+describe("YouConfigDialog API credentials", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("shows only installed local models plus cloud models", () => {
+    renderDialog();
+    // Installed local model is listed.
+    fireEvent.click(screen.getByLabelText(/voice recognition model/i));
+    expect(
+      screen.getByRole("option", { name: /Local Whisper large-v3-turbo/i }),
+    ).toBeInTheDocument();
+    // Cloud models are always visible even when not installed locally.
+    expect(
+      screen.getByRole("option", { name: /NVIDIA Parakeet CTC 1\.1B/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Groq Whisper/i }),
+    ).toBeInTheDocument();
+    // Uninstalled local models are hidden (only whisper-turbo is installed).
+    expect(
+      screen.queryByRole("option", { name: /Local Whisper large-v3 \(full\)/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("option", { name: /NCSpeech FastConformer/i }),
+    ).toBeNull();
+  });
+
+  it("shows the NVIDIA API key input when an NVIDIA provider is selected", () => {
+    window.localStorage.setItem("lst.live.asr-provider", "nvidia-parakeet-1.1b");
+    renderDialog();
+    const input = screen.getByLabelText(/nvidia api key/i);
+    fireEvent.change(input, { target: { value: "nvapi-test" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: /save & use separate live config/i }),
+    );
+    expect(window.localStorage.getItem("lst.live.nvidia-api-key")).toBe(
+      "nvapi-test",
+    );
+  });
+
+  it("hides the NVIDIA API key input for local providers", () => {
+    window.localStorage.setItem("lst.live.asr-provider", "whisper-turbo");
+    window.localStorage.setItem("lst.live.translation-provider", "nllb");
+    renderDialog();
+    expect(screen.queryByLabelText(/nvidia api key/i)).toBeNull();
+  });
+
+  it("no longer offers the auto-reverse checkbox", () => {
+    renderDialog();
+    expect(
+      screen.queryByLabelText(/auto \(reverse of the live pair\)/i),
+    ).toBeNull();
+  });
+});

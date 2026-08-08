@@ -39,6 +39,14 @@ const LIVE_SOURCE_MODE_KEY = "lst.live.source-mode";
 const LIVE_TARGET_LANGUAGE_KEY = "lst.live.target-language";
 const LIVE_ASR_PROVIDER_KEY = "lst.live.asr-provider";
 const LIVE_TRANSLATION_PROVIDER_KEY = "lst.live.translation-provider";
+const GROQ_API_KEY_KEY = "lst.live.groq-api-key";
+const NVIDIA_API_KEY_KEY = "lst.live.nvidia-api-key";
+const LT_ENDPOINT_KEY = "lst.live.lt-endpoint";
+const LT_API_KEY_KEY = "lst.live.lt-api-key";
+const BAIDU_APPID_KEY = "lst.live.baidu-appid";
+const BAIDU_SECRET_KEY = "lst.live.baidu-secret";
+const CUSTOM_TX_ENDPOINT_KEY = "lst.live.custom-tx-endpoint";
+const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
 
 function loadStored(key: string): string | null {
   try {
@@ -49,33 +57,114 @@ function loadStored(key: string): string | null {
 }
 
 /** ASR backends shown in the Live section (mirrors the Live page). */
-const LIVE_ASR_OPTIONS: readonly { value: string; modelId: string | null }[] = [
-  { value: "whisper-turbo", modelId: "whisper-large-v3-turbo" },
-  { value: "whisper-full", modelId: "whisper-large-v3" },
-  { value: "ncspeech", modelId: "ncspeech-tl-fastconformer-hybrid-large" },
-  { value: "ncspeech-zh", modelId: "ncspeech-zh-citrinet-1024-gamma" },
-  { value: "ncspeech-zh-parakeet", modelId: "ncspeech-zh-parakeet-ctc-0.6b" },
-  { value: "paraformer-zh-streaming", modelId: "paraformer-zh-streaming" },
-  { value: "sensevoice-small", modelId: "sensevoice-small" },
-  { value: "nvidia-parakeet-1.1b", modelId: null },
-  { value: "groq-whisper", modelId: null },
+const LIVE_ASR_OPTIONS: readonly {
+  value: string;
+  modelId: string | null;
+  label: string;
+}[] = [
+  {
+    value: "whisper-turbo",
+    modelId: "whisper-large-v3-turbo",
+    label: "Local Whisper large-v3-turbo (fast)",
+  },
+  {
+    value: "whisper-full",
+    modelId: "whisper-large-v3",
+    label: "Local Whisper large-v3 (full)",
+  },
+  {
+    value: "ncspeech",
+    modelId: "ncspeech-tl-fastconformer-hybrid-large",
+    label: "NCSpeech FastConformer (Tagalog)",
+  },
+  {
+    value: "ncspeech-zh",
+    modelId: "ncspeech-zh-citrinet-1024-gamma",
+    label: "NCSpeech Citrinet-1024 (Mandarin)",
+  },
+  {
+    value: "ncspeech-zh-parakeet",
+    modelId: "ncspeech-zh-parakeet-ctc-0.6b",
+    label: "NCSpeech Parakeet-CTC 0.6B (Mandarin)",
+  },
+  {
+    value: "paraformer-zh-streaming",
+    modelId: "paraformer-zh-streaming",
+    label: "FunASR Paraformer (streaming zh)",
+  },
+  {
+    value: "sensevoice-small",
+    modelId: "sensevoice-small",
+    label: "SenseVoice Small (zh/en/ja/ko/yue)",
+  },
+  {
+    value: "nvidia-parakeet-1.1b",
+    modelId: null,
+    label: "NVIDIA Parakeet CTC 1.1B (NIM) · Cloud",
+  },
+  {
+    value: "groq-whisper",
+    modelId: null,
+    label: "Groq Whisper (API) · Cloud",
+  },
 ];
 
 /** Translation backends shown in the Live section (mirrors the Live page). */
 const LIVE_TRANSLATION_OPTIONS: readonly {
   value: string;
   modelId: string | null;
+  label: string;
 }[] = [
-  { value: "nllb", modelId: "nllb-200-distilled-600M-ct2-int8" },
-  { value: "madlad", modelId: "madlad400-3b-mt" },
-  { value: "opus-mt-en-zh", modelId: "opus-mt-en-zh-ct2-int8" },
-  { value: "opus-mt-zh-en", modelId: "opus-mt-zh-en-ct2-int8" },
-  { value: "google-translate", modelId: null },
-  { value: "libretranslate", modelId: null },
-  { value: "mymemory", modelId: null },
-  { value: "baidu-translate", modelId: null },
-  { value: "nvidia-riva-4b", modelId: null },
-  { value: "custom-http", modelId: null },
+  {
+    value: "nllb",
+    modelId: "nllb-200-distilled-600M-ct2-int8",
+    label: "Local NLLB (offline, near-real-time, GPU)",
+  },
+  {
+    value: "madlad",
+    modelId: "madlad400-3b-mt",
+    label: "Local MADLAD (offline, slower)",
+  },
+  {
+    value: "opus-mt-en-zh",
+    modelId: "opus-mt-en-zh-ct2-int8",
+    label: "Local opus-mt (en→zh)",
+  },
+  {
+    value: "opus-mt-zh-en",
+    modelId: "opus-mt-zh-en-ct2-int8",
+    label: "Local opus-mt (zh→en)",
+  },
+  {
+    value: "google-translate",
+    modelId: null,
+    label: "Google Translate (free, unofficial endpoint) · Cloud",
+  },
+  {
+    value: "libretranslate",
+    modelId: null,
+    label: "LibreTranslate (any instance URL) · Cloud",
+  },
+  {
+    value: "mymemory",
+    modelId: null,
+    label: "MyMemory (free, daily quota) · Cloud",
+  },
+  {
+    value: "baidu-translate",
+    modelId: null,
+    label: "Baidu Translate (free, mainland China) · Cloud",
+  },
+  {
+    value: "nvidia-riva-4b",
+    modelId: null,
+    label: "NVIDIA Riva Translate 4B (NIM) · Cloud",
+  },
+  {
+    value: "custom-http",
+    modelId: null,
+    label: "Custom HTTP endpoint · Cloud",
+  },
 ];
 
 export function YouConfigDialog({
@@ -128,6 +217,33 @@ export function YouConfigDialog({
   );
   const [liveTranslationProvider, setLiveTranslationProvider] =
     useState<string>(() => loadStored(LIVE_TRANSLATION_PROVIDER_KEY) ?? "nllb");
+  // API credentials for the remote backends, persisted under the same keys
+  // the Live page uses (so the separated session reuses them and the sidecar
+  // env is pushed at start).
+  const [nvidiaApiKey, setNvidiaApiKey] = useState<string>(
+    () => loadStored(NVIDIA_API_KEY_KEY) ?? "",
+  );
+  const [groqApiKey, setGroqApiKey] = useState<string>(
+    () => loadStored(GROQ_API_KEY_KEY) ?? "",
+  );
+  const [ltEndpoint, setLtEndpoint] = useState<string>(
+    () => loadStored(LT_ENDPOINT_KEY) ?? "",
+  );
+  const [ltApiKey, setLtApiKey] = useState<string>(
+    () => loadStored(LT_API_KEY_KEY) ?? "",
+  );
+  const [baiduAppId, setBaiduAppId] = useState<string>(
+    () => loadStored(BAIDU_APPID_KEY) ?? "",
+  );
+  const [baiduSecret, setBaiduSecret] = useState<string>(
+    () => loadStored(BAIDU_SECRET_KEY) ?? "",
+  );
+  const [customTxEndpoint, setCustomTxEndpoint] = useState<string>(
+    () => loadStored(CUSTOM_TX_ENDPOINT_KEY) ?? "",
+  );
+  const [customTxApiKey, setCustomTxApiKey] = useState<string>(
+    () => loadStored(CUSTOM_TX_API_KEY_KEY) ?? "",
+  );
 
   const mics = endpoints.filter((endpoint) => endpoint.kind === "capture");
   const micOptions = mics.map((mic) => ({
@@ -170,6 +286,14 @@ export function YouConfigDialog({
           LIVE_TRANSLATION_PROVIDER_KEY,
           liveTranslationProvider,
         );
+        window.localStorage.setItem(NVIDIA_API_KEY_KEY, nvidiaApiKey);
+        window.localStorage.setItem(GROQ_API_KEY_KEY, groqApiKey);
+        window.localStorage.setItem(LT_ENDPOINT_KEY, ltEndpoint);
+        window.localStorage.setItem(LT_API_KEY_KEY, ltApiKey);
+        window.localStorage.setItem(BAIDU_APPID_KEY, baiduAppId);
+        window.localStorage.setItem(BAIDU_SECRET_KEY, baiduSecret);
+        window.localStorage.setItem(CUSTOM_TX_ENDPOINT_KEY, customTxEndpoint);
+        window.localStorage.setItem(CUSTOM_TX_API_KEY_KEY, customTxApiKey);
       } catch {
         // localStorage unavailable; the Live page keeps its own state.
       }
@@ -222,19 +346,6 @@ export function YouConfigDialog({
               }
               disabled={micOptions.length === 0}
             />
-          </label>
-
-          <label className="field">
-            <span>
-              <input
-                type="checkbox"
-                checked={config.autoReverse}
-                onChange={(event) => {
-                  setConfig({ ...config, autoReverse: event.target.checked });
-                }}
-              />
-              {t("chatConfigAuto")}
-            </span>
           </label>
 
           <div className="you-config-pair">
@@ -338,16 +449,16 @@ export function YouConfigDialog({
               onChange={(value) => {
                 setLiveAsrProvider(value);
               }}
-              options={LIVE_ASR_OPTIONS.map((option) => {
-                const notInstalled =
-                  option.modelId !== null &&
-                  !installedModelIds.has(option.modelId);
-                return {
-                  value: option.value,
-                  label: option.value,
-                  ...(notInstalled ? { group: t("liveNotInstalled") } : {}),
-                };
-              })}
+              options={LIVE_ASR_OPTIONS.filter((option) => {
+                // Only installed local models + always-visible cloud models.
+                const localModel = option.modelId;
+                return (
+                  localModel === null || installedModelIds.has(localModel)
+                );
+              }).map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
             />
           </label>
 
@@ -360,18 +471,134 @@ export function YouConfigDialog({
               onChange={(value) => {
                 setLiveTranslationProvider(value);
               }}
-              options={LIVE_TRANSLATION_OPTIONS.map((option) => {
-                const notInstalled =
-                  option.modelId !== null &&
-                  !installedModelIds.has(option.modelId);
-                return {
-                  value: option.value,
-                  label: option.value,
-                  ...(notInstalled ? { group: t("liveNotInstalled") } : {}),
-                };
-              })}
+              options={LIVE_TRANSLATION_OPTIONS.filter((option) => {
+                const localModel = option.modelId;
+                return (
+                  localModel === null || installedModelIds.has(localModel)
+                );
+              }).map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
             />
           </label>
+
+          {(liveAsrProvider.startsWith("nvidia-") ||
+            liveTranslationProvider.startsWith("nvidia-")) && (
+            <label className="field">
+              <span>{t("liveNvidiaApiKey")}</span>
+              <input
+                id="you-nvidia-api-key"
+                type="password"
+                placeholder="nvapi-… (from build.nvidia.com)"
+                value={nvidiaApiKey}
+                onChange={(event) => {
+                  setNvidiaApiKey(event.currentTarget.value);
+                }}
+              />
+            </label>
+          )}
+
+          {liveAsrProvider === "groq-whisper" && (
+            <label className="field">
+              <span>{t("liveGroqApiKey")}</span>
+              <input
+                id="you-groq-api-key"
+                type="password"
+                placeholder="gsk_… (from console.groq.com/keys)"
+                value={groqApiKey}
+                onChange={(event) => {
+                  setGroqApiKey(event.currentTarget.value);
+                }}
+              />
+            </label>
+          )}
+
+          {liveTranslationProvider === "libretranslate" && (
+            <>
+              <label className="field">
+                <span>{t("liveLibreTranslateUrl")}</span>
+                <input
+                  id="you-lt-endpoint"
+                  type="url"
+                  placeholder="https://libretranslate.com/translate"
+                  value={ltEndpoint}
+                  onChange={(event) => {
+                    setLtEndpoint(event.currentTarget.value);
+                  }}
+                />
+              </label>
+              <label className="field">
+                <span>{t("liveApiKeyOptional")}</span>
+                <input
+                  id="you-lt-api-key"
+                  type="password"
+                  placeholder="optional"
+                  value={ltApiKey}
+                  onChange={(event) => {
+                    setLtApiKey(event.currentTarget.value);
+                  }}
+                />
+              </label>
+            </>
+          )}
+
+          {liveTranslationProvider === "baidu-translate" && (
+            <>
+              <label className="field">
+                <span>{t("liveBaiduAppId")}</span>
+                <input
+                  id="you-baidu-appid"
+                  type="text"
+                  placeholder="2025..."
+                  value={baiduAppId}
+                  onChange={(event) => {
+                    setBaiduAppId(event.currentTarget.value);
+                  }}
+                />
+              </label>
+              <label className="field">
+                <span>{t("liveBaiduSecret")}</span>
+                <input
+                  id="you-baidu-secret"
+                  type="password"
+                  value={baiduSecret}
+                  onChange={(event) => {
+                    setBaiduSecret(event.currentTarget.value);
+                  }}
+                />
+              </label>
+            </>
+          )}
+
+          {liveTranslationProvider === "custom-http" && (
+            <>
+              <label className="field">
+                <span>{t("liveCustomHttp")}</span>
+                <input
+                  id="you-custom-tx-endpoint"
+                  type="url"
+                  placeholder="https://api.example.com/translate"
+                  value={customTxEndpoint}
+                  onChange={(event) => {
+                    setCustomTxEndpoint(event.currentTarget.value);
+                  }}
+                />
+              </label>
+              <label className="field">
+                <span>{t("liveApiKeyOptional")}</span>
+                <input
+                  id="you-custom-tx-api-key"
+                  type="password"
+                  placeholder="optional"
+                  value={customTxApiKey}
+                  onChange={(event) => {
+                    setCustomTxApiKey(event.currentTarget.value);
+                  }}
+                />
+              </label>
+            </>
+          )}
         </section>
 
         <p className="you-config-live-note">{t("chatConfigLiveNote")}</p>
