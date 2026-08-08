@@ -682,3 +682,38 @@ Merged onto main from `feat/general-purpose-v0.8`:
   into a fresh session at the cap, so live recording never stalls or drops.
 - **Light theme** — chat bubbles, avatars, the History toolbar, and the
   input bar are solid `#ffffff` in the light theme.
+
+## v0.9.4 — dropdown filtering, mic ownership, provider persistence
+
+- **Model dropdowns** — every model picker now shows only installed local
+  models plus always-visible cloud/API providers (NVIDIA NIM, Groq,
+  LibreTranslate, Baidu, MyMemory, custom HTTP). Uninstalled local models
+  are hidden instead of being listed as "not installed".
+- **Separated live registry timeout** — the you-source declares its own
+  target language, so the sidecar builds an NLLB provider inside the
+  source.registry handler; a cold model cache could exceed the supervisor's
+  2s read timeout and kill the session (says "live" but the mic shows
+  nothing). The registry read now uses the 3-minute live-start timeout.
+- **Chat stall** — a wedged chat sidecar held the ChatRuntime lock during a
+  5-minute read, blocking every later message ("send is stalled"). Chat
+  reads are bounded to 90s and a failed connection respawns a fresh
+  sidecar.
+- **History toolbar Start/Stop** — the separated live session is started
+  and stopped from the History page top bar (simple Start/Stop), with
+  inline errors.
+- **Mic ownership** — while the separated live session is listening it owns
+  the mic (captured as a source); the History mic toggle reports it as on.
+  Otherwise it falls back to the main Live page's mic toggle.
+- **Provider persistence** — the Live page's saved ASR/translation
+  providers (including all nvidia-* backends) are restored on remount
+  instead of reverting to the local default.
+- **Config modal API keys** — the modal's Live section now has inputs for
+  NVIDIA NIM, Groq, LibreTranslate, Baidu, and custom HTTP credentials,
+  pushed to the sidecar when the separated session starts. The auto-reverse
+  checkbox was removed (the behavior stays on).
+- **Welcome modal** — dismissal is persisted; it only appears on a fresh
+  install instead of every launch.
+- **Live card label** — the "input level / waiting for audio" text label
+  was removed (the meter bar remains).
+- **Dropdown auto-close** — the History display-options menu closes after
+  picking an option, color, or toggle.

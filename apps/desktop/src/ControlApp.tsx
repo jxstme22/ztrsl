@@ -75,7 +75,7 @@ type SectionId =
   | "sources"
   | "about";
 
-const APP_VERSION = "0.9.2";
+const APP_VERSION = "0.9.4";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;
