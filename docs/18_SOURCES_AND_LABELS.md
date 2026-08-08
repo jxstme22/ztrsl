@@ -1,6 +1,6 @@
 # 18 — Sources and Caption Labels
 
-Sources are the voice channels xTRSNLTR listens to. Each source is identified
+Sources are the voice channels yTRSL listens to. Each source is identified
 by an **immutable source id** (a random 32-char hex value) — never by its name
 or tag, so you can rename freely without interrupting capture.
 

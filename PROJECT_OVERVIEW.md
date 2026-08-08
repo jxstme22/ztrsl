@@ -1,4 +1,4 @@
-# xTRSNLTR — Project Overview
+# yTRSL — Project Overview
 
 A fully local Windows companion that translates incoming VALORANT voice chat
 (Tagalog / Filipino, Cebuano, Chinese, English) into on-screen English subtitles.

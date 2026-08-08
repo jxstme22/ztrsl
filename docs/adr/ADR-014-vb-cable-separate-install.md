@@ -14,7 +14,7 @@ not perform silently.
 
 ## Decision
 
-- xTRSNLTR NEVER bundles, downloads, or silently installs VB-CABLE (or any
+- yTRSL NEVER bundles, downloads, or silently installs VB-CABLE (or any
   driver). Installation is always a separate, explicit user action.
 - The app detects the VB-CABLE endpoints (`CABLE Input`, `CABLE Output`) via
   ordinary WASAPI enumeration and reports honestly: installed / not installed /

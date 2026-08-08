@@ -12,7 +12,7 @@ installer walkthrough is the final `[WINDOWS]` gate before tagging
 
 ## Tasks
 - [x] THIRD_PARTY_NOTICES update (VB-CABLE references, new deps)
-- [x] VB-CABLE handoff docs (install link, what xTRSNLTR does/doesn't do)
+- [x] VB-CABLE handoff docs (install link, what yTRSL does/doesn't do)
 - [x] Docs 17–23 (setup, sources, strictness, models, diagnostics, troubleshooting, FAQ)
 - [x] `docs/v0_3/RELEASE_CRITERIA.md` all ☑
 - [ ] Installer: fresh machine walkthrough, uninstall clean (`[WINDOWS]`)

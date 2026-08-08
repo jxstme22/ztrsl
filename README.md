@@ -1,10 +1,12 @@
-# yTSRL
+# yTRSL
 
 **Real-time subtitles for your VALORANT voice chat — 100% local.**
 
 Hear Tagalog, Cebuano, Chinese, Indonesian, Vietnamese, Thai, or Malay
 callouts, *read* them in English (or your chosen language) as they happen,
-and never send a second of audio to the cloud.
+and never send a second of audio to the cloud. Speak back: your own voice and
+typed messages are translated into the team's language as right-aligned
+"You" bubbles you can read aloud or copy.
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%2011%20%26%20macOS-7dd3fc" alt="Platform: Windows 11 + macOS"/>
@@ -18,8 +20,10 @@ and never send a second of audio to the cloud.
 ## What it does
 
 ```
-"Rush B!"            yTSRL               "Rush B!" → "Rush B!"
+"Rush B!"            yTRSL               "Rush B!" → "Rush B!"
 (Tagalog voice)  ─────────────►  (English subtitle on screen)
+"进攻A点"            yTRSL               "Push A site"
+(you, via mic)   ─────────────►  (English "You" bubble to read/say)
 ```
 
 - Listens to **your voice-chat mix** — through a virtual audio cable or any
@@ -28,20 +32,28 @@ and never send a second of audio to the cloud.
   Thai, Malay, and English**.
 - Translates into **English, Filipino, Chinese, Indonesian, Vietnamese, Thai,
   or Malay** — your pick, per session.
+- **Translates your own voice and typed chat** in the reverse direction (auto:
+  the opposite of the live pair) into right-aligned "You" bubbles — copy them
+  to paste into game chat, or read them aloud.
 - Shows a **transparent, click-through overlay** above your game: a live
-  caption bar, or a **chat-history panel** (newest at the bottom, capped at
-  your chosen 5/10/default rows).
-- Runs **multiple sources at once** — capture your whole team's mix as one
-  stream or several streams at the same time: `[TEAM]`, `[DISCORD]`,
-  `[PARTY]` lanes, each with its own device, language profile, and caption
-  tag, all in a single live session.
+  caption bar, or a **chat-history panel** (newest pinned to the bottom).
+- Runs **multiple sources at once** — `[TEAM]`, `[DISCORD]`, `[PARTY]` lanes,
+  each with its own device, language profile, color, and caption tag, all in a
+  single live session.
+- Records a **session-based captions history** with a chat-room layout:
+  per-caption bubbles (one bubble per finalized caption, sized to its text),
+  per-source colors, a session sidebar, and a searchable, exportable
+  transcript.
+- Runs a **separated live session** from the History page — a second,
+  independent translation of your voice with its own models, sharing the
+  loaded model cache with the main session.
 
 It never touches the game: no injection, no memory reads, no automation.
 [Why that matters ↓](#safety-first-by-design)
 
 > **Download:** get the Windows installer or macOS app from
 > [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
-> **Status:** beta (v0.7). It works end-to-end; code signing + clean-machine
+> **Status:** beta (v0.9). Works end-to-end; code signing + clean-machine
 > tests are the remaining 1.0 work.
 
 ---
@@ -64,8 +76,7 @@ It never touches the game: no injection, no memory reads, no automation.
   or have the **CUDA 12 Toolkit** already installed — the app detects both and
   won't re-download.
 - **Voice capture:** VB-CABLE routes VALORANT/Discord voice into the app. The
-  app never bundles the driver. On macOS the equivalent is **BlackHole** (see
-  below).
+  app never bundles the driver.
 
 ### macOS (Apple Silicon)
 
@@ -78,25 +89,23 @@ It never touches the game: no injection, no memory reads, no automation.
 | Virtual device | **BlackHole** (free, github.com/ExistentialAudio/BlackHole) for game-voice capture | — |
 | Permission | Microphone access (first capture) | — |
 
-- **ASR:** runs on the Metal GPU/ANE via **mlx-whisper** (~440 MB model) — no
-  CUDA needed.
-- **Translation:** NLLB runs on CPU (~340 ms/sentence on M4), well within
-  caption latency.
-- **Voice capture:** install BlackHole and route VALORANT voice-chat output to
-  it; the app captures its input (no screen-recording permission required).
+> The general (Windows) branch is the primary release; the macOS port lives on
+> its own branch with Metal ASR and native window chrome.
 
 ### Cloud API (optional, Windows + macOS)
 
-Local models are fully free and offline. If you prefer a hosted **speech
-recognition** API instead, the app supports **Groq** (free tier):
+Local models are fully free and offline. If you prefer hosted **speech
+recognition**, the app supports **Groq** (free tier) and **NVIDIA NIM**
+(Parakeet / Nemotron / Canary / Whisper). For hosted **translation**, pick
+**Google Translate**, **LibreTranslate**, **MyMemory**, **Baidu Translate**,
+or **NVIDIA Riva** — all opt-in:
 
-1. Create a free account at <https://console.groq.com>.
-2. Go to <https://console.groq.com/keys> → **Create API Key**.
-3. Copy the `gsk_…` key into the Live tab under **Groq Whisper (API)** and press
-  Start.
+1. Get an API key (e.g. <https://console.groq.com/keys> for Groq).
+2. Paste it into the Live tab under the matching provider and press Start.
 
-> While Groq is selected, recognized audio is sent to Groq's servers. Everything
-> else (local Whisper/NLLB/MLX) stays 100% on your machine.
+> While a cloud provider is selected, only that provider's requests leave your
+> machine (audio for Groq/NVIDIA ASR, text for translation). Everything else
+> stays 100% local.
 
 ---
 
@@ -108,22 +117,24 @@ flowchart TB
     V[VALORANT voice chat]
   end
 
-  subgraph yTSRL desktop
+  subgraph yTRSL desktop
     C[Audio capture<br/>WASAPI / virtual cable]
     R[16 kHz mono ring buffer]
     O[Transparent overlay window]
     S[Model manager<br/>download + verify]
+    H[Session history<br/>chat-room transcript]
   end
 
   subgraph Local inference sidecar
     VAD[VAD + utterance segmentation]
-    ASR[Whisper ASR]
-    MT[NLLB / MADLAD / opus-mt translation]
+    ASR[Whisper / NCSpeech / SenseVoice ASR]
+    MT[NLLB / MADLAD / opus-mt / cloud translation]
     SCHED[Shared priority scheduler]
   end
 
   V --> C --> R --> VAD --> ASR --> SCHED --> MT
   SCHED --> O
+  SCHED --> H
   S -. models .-> ASR & MT
 ```
 
@@ -131,41 +142,45 @@ flowchart TB
 
 1. Your voice-chat audio is captured from a Windows audio endpoint.
 2. A small **VAD** splits the stream into "someone is talking" chunks.
-3. **Speech recognition** (local Whisper) turns each chunk into text.
+3. **Speech recognition** (local Whisper or a CTC model) turns each chunk into text.
 4. **Translation** (local NLLB) turns that into English.
 5. A shared **scheduler** keeps finals ahead of drafts and everything bounded.
 6. The **overlay** shows it on screen — labeled per source.
+7. Finals land in **session history** as chat bubbles.
 
-Everything runs on your machine. No audio ever leaves it.
+Your own mic (the "You" stream) runs through the same pipeline in the reverse
+direction, and the chat box translates typed messages on demand. Everything
+runs on your machine. No audio ever leaves it.
 
 ---
 
 ## Languages
 
 The full 7×7 matrix works end to end — each **source mode** pairs with any
-**output language** (output applies to the local NLLB translator; cloud
-translators follow their own target codes):
+**output language**:
 
-| Source (recognize) | Codes | Output (translate to) |
-|---|---|---|
-| Filipino / Tagalog | `fil` | English `en` |
-| Chinese / Mandarin | `zh` | Chinese `zh` |
-| English | `en` | Filipino `fil` |
-| Indonesian | `ind` | Indonesian `ind` |
-| Vietnamese | `vie` | Vietnamese `vie` |
-| Thai | `tha` | Thai `tha` |
-| Malay | `zsm` | Malay `zsm` |
+| Source (recognize) | Output (translate to) |
+|---|---|
+| Filipino / Tagalog | English `en` |
+| Chinese / Mandarin | Chinese `zh` |
+| English | Filipino `fil` |
+| Indonesian | Indonesian `ind` |
+| Vietnamese | Vietnamese `vie` |
+| Thai | Thai `tha` |
+| Malay | Malay `zsm` |
 
 Pick a source mode per channel in **Sources**, then choose the translation
-output for the session on the **Live** tab.
+output for the session on the **Live** tab. Your own voice/chat direction
+defaults to the reverse of the live pair (live en→zh ⇒ you zh→en) and is
+configurable.
 
 ---
 
-## VB-CABLE: how voice chat reaches yTSRL
+## VB-CABLE: how voice chat reaches yTRSL
 
 A **virtual audio cable** is a free, user-installed Windows driver that acts as
 a "software wire": whatever an app plays to its **Input** can be *captured*
-from its **Output**. That's how yTSRL hears exactly the voice-chat mix — and
+from its **Output**. That's how yTRSL hears exactly the voice-chat mix — and
 nothing else.
 
 ```mermaid
@@ -173,7 +188,7 @@ flowchart TB
   subgraph Your PC
     VC[VALORANT voice chat] --> CI["CABLE Input<br/>(virtual cable)"]
     DC[Discord voice chat] --> CI
-    CO["CABLE Output"] --> APP["yTSRL audio core"]
+    CO["CABLE Output"] --> APP["yTRSL audio core"]
     APP --> HP[("Headphones")]
   end
   GAME[VALORANT game audio] --> HP
@@ -191,7 +206,7 @@ Your teammates' voices now play *into the cable only*.
 
 **3. VALORANT game audio → headphones** — in VALORANT `Settings → Audio`,
 keep **Speaker / Output Device** on your **headphones**. Game effects must
-never go to the cable, or yTSRL will hear explosions as speech.
+never go to the cable, or yTRSL will hear explosions as speech.
 
 **4. Discord voice → the same cable** (or a second one) — in Discord
 `Settings → Voice & Video`, set **Output Device** to **CABLE Input**. Route
@@ -201,13 +216,13 @@ second cable for a separate `[DISCORD]` lane.
 **5. Keep hearing your team** — because voice now plays into the cable, turn
 on **Monitor source** for the source on the **Sources** page and pick your
 **headphones** as the headphone output (blend 100%). Avoid echo by letting
-yTSRL be the *only* path replaying voice to your headset.
+yTRSL be the *only* path replaying voice to your headset.
 
 **6. Sanity check** — in **Diagnostics**, run **Isolation check**. When only
 game sounds play and nobody speaks, the voice capture meter should stay
 near-silent. If it jumps, game audio is leaking into the cable.
 
-> VB-CABLE is a **separate install** — yTSRL never bundles, installs, or
+> VB-CABLE is a **separate install** — yTRSL never bundles, installs, or
 > patches the driver; it only detects and routes to it when you choose to.
 
 > **Mainland China?** All catalog models download from pinned Hugging Face
@@ -217,12 +232,51 @@ near-silent. If it jumps, game audio is leaking into the cable.
 
 ---
 
+## Your voice & chat ("You" bubbles)
+
+The History page's input bar has three tools:
+
+- **Mic toggle** — translates your own speech in the reverse direction while a
+  live session runs. The mic opens only while the toggle is on; captions land
+  as right-aligned "You" bubbles with a solid configurable color (default
+  blue, changeable in the History settings menu).
+- **Chat box** — type a message in your language, press Enter/Send, and it is
+  translated on demand (works even without a live session). The bubble shows
+  your original line and the translation; the copy button is right beside it.
+- **Config button** — pick the microphone, your language, the translate-into
+  language (auto = reverse of the live pair), and the models used.
+
+The mic/voice stream rides the same live session and the same model cache —
+no second pipeline is spawned for it. A **separated live** button in the same
+config dialog starts a fully independent session of your voice with its own
+models, sharing the loaded model cache with the main session.
+
+---
+
+## Captions history (chat room)
+
+Every finalized caption is saved into the current session's transcript:
+
+- **Per-caption bubbles** — one bubble per finalized caption, sized to its
+  text; no speaker/avatar inside, just the caption with the copy button beside
+  it. "You" bubbles sit on the right with the picked color.
+- **Session sidebar** — a left column listing all sessions (newest on top);
+  click one to view it, and the toggle in the toolbar hides/shows the sidebar.
+- **Display options** — a Settings menu toggles the transcribed input line,
+  per-source bubble tints, profile icons, and the "You" bubble color.
+- **Search, copy, export** — filter the transcript, copy any bubble, and export
+  as TXT/JSON/SRT/VTT/Markdown.
+- **Auto-scroll** — the transcript pins to the newest bubble; scroll up to read
+  older messages.
+
+---
+
 ## Multi-source live: one session, many lanes
 
 Configure every channel you care about on the **Sources** page — each with its
 own device (cable, mic, or loopback), **caption tag** (`TEAM`, `DISCORD`, …),
 **language profile**, and color. Then on the **Live** tab switch **Capture
-mode → All sources** and start listening: yTSRL captures every configured
+mode → All sources** and start listening: yTRSL captures every configured
 source simultaneously, VADs and translates each independently, and every
 caption lands with its own tag in the overlay and History.
 
@@ -266,7 +320,8 @@ sequenceDiagram
 ```
 
 Provisionals stream **while** someone talks; the final replaces them the moment
-the utterance closes. Multiple sources each get their own lane.
+the utterance closes. Multiple sources each get their own lane, and the same
+final lands in History as a bubble.
 
 ---
 
@@ -281,10 +336,10 @@ This project deliberately stays out of the game. It never implements:
 
 It only:
 
-- enumerates ordinary **Windows audio endpoints** and processes local audio;
+- enumerates ordinary **audio endpoints** and processes local audio;
 - draws a normal **transparent top-level window**;
 - registers explicit **global hotkeys**;
-- stores **user-approved local settings**.
+- stores **user-approved local settings** and optional history.
 
 That keeps it outside Vanguard's scope and makes the privacy story simple:
 **local in, local out.**
@@ -296,16 +351,17 @@ That keeps it outside Vanguard's scope and makes the privacy story simple:
 ```text
 .
 ├── apps/desktop/           Tauri 2 app — control window + caption overlay
+│   ├── src/                React/TypeScript UI (Live, History, Sources…)
 │   └── src-tauri/          Rust host: IPC, audio, sidecar supervision
 ├── crates/
 │   ├── audio-core/         WASAPI capture/playback, resampling, routing
 │   ├── model-manager/      verified staged model installs (multi-provider)
 │   ├── ipc-protocol/       loopback WebSocket IPC schema
-│   ├── sidecar-supervisor/ Python-sidecar lifecycle + crash recovery
+│   ├── sidecar-supervisor/ Python-sidecar lifecycle + shared-process pool
 │   ├── translation-runner/ Rust (candle) MADLAD-400 runner
 │   ├── overlay-core/       caption state machine
 │   └── diagnostics/        content-free diagnostics
-├── services/inference/    Python sidecar: VAD, ASR, MT
+├── services/inference/    Python sidecar: VAD, ASR, MT, per-source direction
 ├── scripts/               model installers, build helpers, CI smoke harness
 ├── models/catalog.json    pinned, checksummed download catalog (embedded)
 └── docs/                  PRD, architecture, ADRs, phase evidence
@@ -334,7 +390,7 @@ pnpm tauri dev
 Sanity checks:
 
 ```powershell
-cargo test -p audio-core -p sidecar-supervisor -p model-manager
+cargo test -p sidecar-supervisor -p ipc-protocol -p audio-core
 cd apps/desktop && pnpm test && pnpm typecheck && pnpm lint
 .venv\Scripts\python -m pytest services\inference\tests -q
 .venv\Scripts\python -m ruff check services\inference
@@ -351,11 +407,8 @@ python scripts/install_models.py nllb --accept-license
 python scripts/install_models.py madlad --accept-license   # optional, CPU-only
 ```
 
-On macOS, also install the Apple Silicon ASR model:
-
-```bash
-python scripts/install_models.py mlx --accept-license      # Metal ASR, ~440 MB
-```
+On macOS, also install the Apple Silicon ASR model from the macOS branch's
+catalog (`mlx-whisper-large-v3-turbo-q4`).
 
 Can't reach Hugging Face? The Models tab can use `hf-mirror.com` (or
 `LST_REGION=cn`), and offline packs install with zero network.
@@ -400,16 +453,20 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## Roadmap to 1.0
 
-Current release: **v0.7.0** (beta — Windows 11 + macOS, 7-language matrix,
-chat-history overlay, full i18n, multi-source live). Working toward 1.0:
+Current release: **v0.9.2** (beta — Windows 11 + macOS, 7-language matrix,
+chat-history overlay, per-caption bubbles, session sidebar, your-voice + typed
+chat translation, separated live, full i18n, multi-source live). Working
+toward 1.0:
 
-- [x] macOS support (Apple Silicon, MLX Metal ASR)
+- [x] macOS support (Apple Silicon, MLX Metal ASR — macOS branch)
 - [x] full English/Chinese i18n
 - [x] live caption + chat-history overlay with per-source colors
 - [x] 7-language source × output matrix
 - [x] move/customize overlay controls on the Live tab
 - [x] multi-source live sessions (per-source capture + tags)
 - [x] Windows sidecar crash auto-recovery
+- [x] your-voice mic translation + typed chat translation
+- [x] per-caption chat-room history with session sidebar
 - [ ] code signing (Windows SmartScreen, macOS notarization)
 - [ ] clean-machine installer walkthrough (the last hardware gate)
 - [ ] native-speaker accuracy benchmarks (Tagalog/Cebuano)
@@ -418,7 +475,7 @@ chat-history overlay, full i18n, multi-source live). Working toward 1.0:
 
 ## License
 
-Copyright (c) 2026 the yTSRL contributors. Licensed under the
+Copyright (c) 2026 the yTRSL contributors. Licensed under the
 [Apache License 2.0](LICENSE).
 
 *VALORANT is a trademark of Riot Games, Inc. This project is not affiliated

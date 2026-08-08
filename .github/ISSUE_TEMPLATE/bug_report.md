@@ -27,7 +27,7 @@ e.g. the sidecar `CaptionPayload` validation message, if relevant).
 
 **Relevant screenshots or logs**
 Attach screenshots of the overlay/panel or the sidecar log at
-`%LOCALAPPDATA%\xTRSNLTR\sidecar.log`. Strip any personal/account identifiers
+`%LOCALAPPDATA%\yTRSL\sidecar.log`. Strip any personal/account identifiers
 before attaching.
 
 **Safety check**

@@ -13,7 +13,7 @@ Source of truth: `NEXT_BUILD_V0_3_MULTI_SOURCE_VB_CABLE.md` (v0.3.0 build specif
 - Every phase: restate acceptance criteria → smallest complete vertical slice → unit/integration tests → run formatting, linting, type checking, tests → update docs → record evidence in the phase log.
 - Never mark a phase complete from compilation alone.
 - Hard safety boundaries unchanged (no injection, hooks, memory reads, packet inspection, input automation, network audio, default content persistence).
-- VB-CABLE is always separately installed by the user; xTRSNLTR only detects and uses its endpoints.
+- VB-CABLE is always separately installed by the user; yTRSL only detects and uses its endpoints.
 - CI must stay independent of real audio hardware and large model downloads.
 - Source identity: `source_id` is immutable; `display_name` and `caption_tag` are editable presentation metadata and must never be used as queue/IPC/persistence/revision keys.
 

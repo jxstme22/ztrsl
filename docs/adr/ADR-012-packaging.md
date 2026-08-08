@@ -40,7 +40,7 @@ The NSIS installer places both next to the main `.exe`.
 workspace `services/inference/src` directory). In a packaged build the
 workspace layout does not exist, so the app falls back to resolving the
 sidecar exe from the Tauri resource directory and stores models in
-`%LOCALAPPDATA%/xTRSNLTR/models` (writable for standard users).
+`%LOCALAPPDATA%/yTRSL/models` (writable for standard users).
 
 ### What is NOT bundled
 - Model artifacts — they are downloaded on demand by the Model Manager

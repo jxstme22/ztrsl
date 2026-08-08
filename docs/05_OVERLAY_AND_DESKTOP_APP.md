@@ -50,7 +50,7 @@ True exclusive fullscreen is not required. Setup should detect or explain when t
 
 ## 4. Caption Layout
 
-Default:
+Default (live caption bar):
 
 ```text
             source transcript, smaller and dimmer
@@ -65,6 +65,21 @@ Constraints:
 - centered near lower third, not directly on crosshair;
 - background with configurable opacity;
 - no rapid animations.
+
+In multi-source sessions each source gets its own lane (tag + color). The
+overlay shell is bottom-anchored (`align-content: end`), so captions grow
+upward from the bottom like a chat.
+
+### History view
+
+Toggling the history view swaps the caption bar for the current session's
+transcript, always pinned to the bottom (newest at the bottom; scroll up for
+older messages):
+
+- per-source badges with the source color ("You" uses the picked You bubble
+  color, right-aligned);
+- capped at the configured row count (5 / 10 / auto);
+- never interactive in play mode (click-through preserved).
 
 ## 5. Caption States
 

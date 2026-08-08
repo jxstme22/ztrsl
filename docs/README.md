@@ -1,6 +1,6 @@
 # Project Documentation
 
-This is the formal documentation set for xTRSNLTR. Read it in the order below
+This is the formal documentation set for yTRSL. Read it in the order below
 for the full picture; read `15_ACCEPTANCE_CHECKLIST.md` and `01_PRD.md` as the
 source of truth when there is ambiguity.
 

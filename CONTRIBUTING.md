@@ -1,4 +1,4 @@
-# Contributing to xTRSNLTR
+# Contributing to yTRSL
 
 Thanks for your interest. This project translates game voice chat locally, so
 it carries **hard safety boundaries**. Please read them before contributing.

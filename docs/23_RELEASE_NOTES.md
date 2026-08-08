@@ -1,40 +1,59 @@
 # 23 — Release Notes
 
-## v0.7.4 — live-pipeline performance fixes (provisional throttling)
+## v0.8.1 — history sessions, CTA-styled UI (feat/general-purpose-v0.8)
 
-- **Remote ASR decodes once per utterance** — Groq/NVIDIA previously ran a
-  provisional ASR+translation job every ~600 ms of speech (~19 HTTP calls
-  per 12 s callout, ~1.1 s ASR + ~0.8 s Riva each), flooding the APIs,
-  hitting rate limits, and delaying the final caption by tens of seconds.
-  Cloud providers now mark `provisional_supported = False`; the worker
-  decodes the completed utterance once. Local ASR is unchanged.
-- **Per-utterance provisional latch for local ASR** — the 600 ms cadence
-  assumes tens-of-ms decodes; whisper-large-v3-turbo int8 on CPU takes
-  ~1 s, so phrases stacked stale provisional decodes ahead of the final
-  (captions froze mid-phrase, CPU pegged). At most one provisional per
-  utterance is now queued or decoding, so the cadence self-adapts to the
-  ASR's real cost. Finals still jump the queue.
-- Regression tests: cloud ASR never schedules provisionals; slow local
-  ASR keeps streaming but never stacks more than one decode per utterance.
+Follow-up to v0.8.0 with the history rework and the UI polish pass:
 
-## v0.7.3 — working free endpoints (Parakeet / Riva / Baidu) on main
+- **Session-scoped transcripts** — History is now grouped into sessions
+  instead of a fixed ring: a session opens when Live starts, stays open
+  when you choose "Keep open" on stop (the next Start appends to it), and
+  ends when you confirm "End session". The stop button now asks first.
+  Sessions can be picked, renamed, deleted, and cleared; the whole list
+  persists. The overlay history shows the current session's transcript.
+- **History display options** — one Settings menu on the History page
+  toggles transcribed input, speaker, timestamps, latency, and model
+  badges; per-entry copy button; search box. Latency is the sidecar's real
+  capture→caption time.
+- **Caption segmentation styles** — chunk, balanced, sentence.
+- **CTA button recipe** — primary actions (live start, end session, wizard
+  next, install, accuracy run) and the sidebar active icon wear a gradient
+  button with a soft glow, ring outline, 1px press, and a 550ms diagonal
+  shine sweep (blue in light theme, orange shading in dark). The titlebar
+  brand card uses the same recipe.
+- **Cramped selects fixed** — Clip Lab and Accuracy Lab source-speech /
+  configuration options use short labels (Tagalog-first, Filipino, Cebuano,
+  Chinese; Recommended) so the cards stop over-widening.
+- **Setup wizard page, Profile page, About page, sidebar reorder** — the
+  wizard is now a Profile page with inline live layout and a sticky history
+  toolbar; app renamed yTSRL→yTRSL.
 
-- **NVIDIA ASR trimmed to what the free tier actually serves** — the Live
-  panel now offers only **Parakeet CTC 1.1B** (en/de/es/fr). Whisper,
-  Nemotron and Canary returned HTTP 500 "inference connection error" on
-  free-tier keys and are no longer selectable (provider code remains for
-  accounts whose keys unlock them).
-- **NVIDIA Riva 4B fixed** — the gateway rejected `application/json;
-  charset=utf-8` with HTTP 415; requests now send plain `application/json`,
-  so Riva translation works. Riva 1.6B removed (404 on the chat gateway).
-- **Baidu Translate (free, mainland China)** — new cloud translation
-  provider hosted in mainland China (works where Google/MyMemory are
-  blocked). Needs a free AppID + secret from fanyi-api.baidu.com; source
-  language auto-detected, Simplified Chinese (`to=zh`) supported.
-- **Env allowlist fix** — `LST_NVIDIA_API_KEY` (and the new
-  `LST_BAIDU_APPID`/`LST_BAIDU_SECRET`) were silently dropped by the
-  `set_translation_env` gate, causing "NVIDIA API key is missing" even
-  after pasting a key. All keys now pass through.
+## v0.8.0 — general-purpose release (feat/general-purpose-v0.8)
+
+First release of the generalization train — the build plan
+(`yTRSL_DEEPSEEK_BUILD_PLAN.md`) shipped in full. Key highlights:
+
+- **Language routing** — source-language routing matrix with per-source
+  modes; unknown languages are gated honestly (DEC-001: never a silent
+  fallback to an unrelated language).
+- **Setup wizard** — capture-mode selection, VB-CABLE pairing, signal
+  test, per-use-case profiles (gaming/streaming/meetings), recovery
+  guidance.
+- **Presets & quality** — catalog presets, quality profiles
+  (Fast/Balanced/Best quality/Low memory), Advanced provider config.
+- **Audio health & VAD** — energy/silero diagnostics, VAD profiles
+  (fast callouts / natural conversation / meeting), audio normalization
+  policies.
+- **Recognition router** — hardware capability detection, per-provider
+  routing, Paraformer/SenseVoice honesty (no silent wrong-language
+  output), graceful fallbacks.
+- **Vocabulary & context** — context manager, vocabulary packs, hotwords,
+  preservation lists.
+- **History & exports** — stronger history, TXT/JSON/SRT/VTT/MD exporters.
+- **Reliability** — caption SSE stream (`LST_CAPTION_STREAM_PORT`),
+  performance budgets, release gate (`scripts/check_release_gate.py`).
+- Cloud endpoints: NVIDIA Parakeet CTC 1.1B ASR + Riva 4B + Baidu
+  Translate (working free endpoints), plus the live-pipeline provisional
+  fixes from v0.7.4.
 
 ## v0.7.2 — NVIDIA NIM cloud providers (feat/side)
 
@@ -75,8 +94,8 @@
   now download file-by-file from the official sherpa-onnx Hugging Face
   mirrors (byte-identical, checksum-verified), so the hf-mirror → modelscope
   failover chain works.
-- **Rebranded title bar** — app renamed to **yTSRL**; the title bar now
-  shows one rounded brand card — `yTSRL (BETA) v0.7` — white text on dark
+- **Rebranded title bar** — app renamed to **yTRSL**; the title bar now
+  shows one rounded brand card — `yTRSL (BETA) v0.7` — white text on dark
   mode, black text on light mode. Title bar height and sidebar icons
   tightened.
 - **Models page can no longer be blanked by a stale capability value** — a
@@ -574,3 +593,71 @@ corrections, and making Off/Balanced/Strict language handling real.
   `docs/v0_3/PHASE_11_EVIDENCE.md` (`[WINDOWS]`).
 - Deep, dense surfaces (Clip Lab, Accuracy Lab) remain English; the i18n
   framework is in place to extend.
+
+## v0.9.0 — you-voice, chat, separated live, 7-language matrix (feat/general-purpose-v0.8)
+
+The Windows general build picks up the full feature train from the macOS port,
+minus macOS-only pieces (window chrome, system-audio capture, MLX, mic TCC).
+
+- **Your voice on the same live session** — a "you" mic stream rides the live
+  pipeline: pick your mic + language pair in the history input-card config,
+  tap the mic button, and your own speech is transcribed and translated in the
+  reverse direction (default: auto-reverse of the live pair) into right-aligned
+  "you" bubbles. The mic opens/closes around the toggle — nothing is captured
+  while off.
+- **Typed chat translation** — a chat box on the History page translates typed
+  messages on demand (standalone; no live session needed) into "you" bubbles
+  you can copy and spell out. Works with the same language pair.
+- **Separated live** — a second, independent live translation started from the
+  History page with its own endpoint/models. It shares the sidecar process with
+  the main live session, so loaded models (whisper/NLLB) are reused — only
+  genuinely-different models load twice — and both sessions record into the
+  same history transcript.
+- **Chat-room history** — bubble layout with profile icons and per-source
+  colors (toggleable), same-speaker message merging, per-message copy,
+  auto-scroll to newest, a session sidebar column (latest on top), and a
+  Classic-list layout (the default) with "you" entries right-aligned.
+- **7-language matrix** — Filipino, Chinese, English, Indonesian, Vietnamese,
+  Thai, Malay sources → en/zh/fil/ind/vie/tha/zsm targets via NLLB,
+  opus-mt en↔zh, plus NVIDIA NIM ASR (Parakeet/Nemotron/Canary/Whisper) and
+  Riva translation, and Baidu Translate.
+- **Sidecar reliability** — per-utterance provisional latch (no more "stuck
+  mid-phrase"), no provisional decodes for remote ASR, crash-restart recovery,
+  and the shared-process model cache.
+- **Responsive dropdowns** — selects flip upward near the viewport bottom;
+  history menus are solid; settings menu redesigned with checkmarks and a
+  nested layout picker.
+- **Branding** — yTRSL on the Windows build.
+
+## v0.9.1 — yTRSL branding + titlebar & history polish (feat/general-purpose-v0.8)
+
+- **Branding** — the Windows build is now **yTRSL** (product name, window
+  titles, titlebar, welcome/i18n copy, bundle strings). The titlebar brand
+  card shows just the app icon and the BETA badge.
+- **Separated live button** — Start uses the CTA (btn-shine) recipe; Stop
+  turns red while the separated live is on.
+- **History input bar** — the mic button is now a pill sized like the send
+  button.
+- **Settings dropdown** — the History display-options menu is tall enough to
+  list every config row (toggles, bubble color, layout, clear) without
+  scrolling.
+
+## v0.9.2 — mic late-enable, YOU bubble color, overlay polish (feat/general-purpose-v0.8)
+
+- **Mic button fix (Windows)** — the "you" mic toggle no longer fails silently:
+  the mic source can be enabled mid-session (the live loop re-registers it),
+  and failures now surface an error message instead of doing nothing.
+- **YOU bubble** — same shape as other bubbles with a solid configurable
+  background (default blue); new "You bubble color" swatches in the History
+  settings menu.
+- **Copy buttons** — sit beside each caption on the same row (hover-reveal);
+  removed the copy-all icon.
+- **Overlay** — restored the v0.8.1 overlay (no drag/history/close control
+  cluster) while keeping "you" captions right-aligned; removed the windowed
+  overlay button from the titlebar.
+- **Live card** — removed the status pill and the metrics logs (device,
+  captions, ASR, packets, drops).
+- **History sidebar** — corners match the card.
+- **CI green** — repo-wide ruff/prettier/mypy/clippy gates fixed; the macos
+  job skips the audio-core test binary (Swift-runtime crash on the runner;
+  the crate's tests are hardware-dependent).

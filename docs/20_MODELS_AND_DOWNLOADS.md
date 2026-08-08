@@ -1,6 +1,6 @@
 # 20 — Models and Download Servers
 
-xTRSNLTR downloads model files only when you choose them, from pinned sources
+yTRSL downloads model files only when you choose them, from pinned sources
 with SHA-256 verification.
 
 ## Recommended models
