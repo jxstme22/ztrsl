@@ -177,7 +177,7 @@ describe("historyReducer sessions", () => {
     ]);
   });
 
-  it("keeps everything (no 10-entry ring); safety cap at SESSION_MAX_ENTRIES", () => {
+  it("rotates into a fresh session at the SESSION_MAX_ENTRIES cap (nothing drops)", () => {
     let state = liveState();
     for (let index = 0; index < SESSION_MAX_ENTRIES + 25; index += 1) {
       state = historyReducer(state, {
@@ -188,11 +188,19 @@ describe("historyReducer sessions", () => {
         }),
       });
     }
+    // The first session stays full with the original first entry intact.
     expect(state.sessions[0]?.entries).toHaveLength(SESSION_MAX_ENTRIES);
-    expect(state.sessions[0]?.entries[0]?.text).toBe("line 25");
-    expect(state.sessions[0]?.entries.at(-1)?.text).toBe(
+    expect(state.sessions[0]?.entries[0]?.text).toBe("line 0");
+    // The overflow continues in a brand-new session (the live never stalls).
+    expect(state.sessions).toHaveLength(2);
+    expect(state.sessions[1]?.entries).toHaveLength(25);
+    expect(state.sessions[1]?.entries[0]?.text).toBe(
+      "line " + String(SESSION_MAX_ENTRIES),
+    );
+    expect(state.sessions[1]?.entries.at(-1)?.text).toBe(
       "line " + String(SESSION_MAX_ENTRIES + 24),
     );
+    expect(state.currentSessionId).toBe(state.sessions[1]?.id);
   });
 
   it("marks uncertain finals", () => {

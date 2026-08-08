@@ -37,6 +37,11 @@ const UI_STRINGS = {
   },
   historySessions: { en: "Sessions", zh: "会话" },
   historySessionPrefix: { en: "Session", zh: "会话" },
+  historyNewSession: { en: "New session", zh: "新会话" },
+  historyNewSessionHint: {
+    en: "Open a new session; live captions and chat continue there",
+    zh: "开一个新会话；实时字幕和聊天继续写入新会话",
+  },
   historyLiveSession: { en: "Live session", zh: "当前实时会话" },
   historyRename: { en: "Rename session", zh: "重命名会话" },
   historyRenameSave: { en: "Save name", zh: "保存名称" },

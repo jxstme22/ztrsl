@@ -274,13 +274,20 @@ pub fn default_target_language() -> String {
 /// DS-201: explicit recognition language intent crossing IPC. Validated by
 /// the sidecar; `fixed`/`primary_preferred` require a primary language and
 /// `limited_auto` requires at least one allowed language.
+///
+/// Serializes snake_case: the sidecar's StrictModel validates
+/// `primary_language`/`secondary_languages`/`detection_mode` and forbids
+/// extras, so a camelCase payload would close the connection with 1008.
+/// The camelCase aliases keep deserializing the desktop's own frontend
+/// payloads (`{primaryLanguage, secondaryLanguages, detectionMode}`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct LanguageConfig {
+    #[serde(alias = "primaryLanguage")]
     pub primary_language: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "secondaryLanguages")]
     pub secondary_languages: Vec<String>,
-    #[serde(default = "default_detection_mode")]
+    #[serde(default = "default_detection_mode", alias = "detectionMode")]
     pub detection_mode: String,
 }
 
@@ -810,6 +817,38 @@ mod tests {
         let serialized = serde_json::to_value(envelope).expect("envelope should serialize");
         assert_eq!(serialized["type"], "health");
         assert!(serialized.get("message_type").is_none());
+    }
+
+    #[test]
+    fn language_config_serializes_snake_case_for_the_sidecar() {
+        // The sidecar's StrictModel validates snake_case keys and forbids
+        // extras; a camelCase payload would close the connection with 1008
+        // "invalid message" (regression: live sessions died mid-start).
+        let config = super::LanguageConfig {
+            primary_language: Some("tl".to_owned()),
+            secondary_languages: vec!["en".to_owned()],
+            detection_mode: "fixed".to_owned(),
+        };
+        let serialized = serde_json::to_value(config).expect("config should serialize");
+        assert_eq!(serialized["primary_language"], "tl");
+        assert_eq!(serialized["secondary_languages"][0], "en");
+        assert_eq!(serialized["detection_mode"], "fixed");
+        assert!(serialized.get("primaryLanguage").is_none());
+    }
+
+    #[test]
+    fn language_config_deserializes_camel_case_from_the_frontend() {
+        // The desktop frontend sends camelCase keys; the alias keeps the
+        // request parsing working end-to-end.
+        let parsed: super::LanguageConfig = serde_json::from_value(serde_json::json!({
+            "primaryLanguage": "ceb",
+            "secondaryLanguages": ["en"],
+            "detectionMode": "primary_preferred",
+        }))
+        .expect("frontend payload should parse");
+        assert_eq!(parsed.primary_language.as_deref(), Some("ceb"));
+        assert_eq!(parsed.secondary_languages, vec!["en".to_owned()]);
+        assert_eq!(parsed.detection_mode, "primary_preferred");
     }
 
     #[test]

@@ -269,6 +269,25 @@ export function ControlApp() {
     [live],
   );
 
+  // "New session": open a fresh session and make it current. Both the main
+  // live session and the separated (history) live append into the current
+  // session, so the next captions and chat bubbles land in the new one
+  // without restarting anything.
+  const newHistorySession = useCallback(() => {
+    const locale = language.language === "zh" ? "zh-CN" : "en-US";
+    const date = new Date().toLocaleString(locale, {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    historyRef.current.beginSession(
+      `sess-${String(Date.now())}`,
+      `${language.t("historySessionPrefix")} · ${date}`,
+    );
+    void emitHistoryToOverlay(historyRef.current.activeEntries);
+  }, [language]);
+
   // The "you" mic toggle: flips the shared flag the Rust live loop watches.
   // Requires a running live session with a configured mic stream.
   const toggleMic = useCallback(async (): Promise<boolean> => {
@@ -492,6 +511,7 @@ export function ControlApp() {
               <HistoryPanel
                 sessions={history.sessions}
                 currentSessionId={history.currentSessionId}
+                onNewSession={newHistorySession}
                 onRenameSession={history.renameSession}
                 onDeleteSession={history.deleteSession}
                 onClearSession={history.clearSession}

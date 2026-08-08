@@ -11,7 +11,9 @@ import type { Caption } from "../overlay/model";
  * and ends explicitly from the stop-live confirmation modal, so a stopped
  * session can be "kept open" and reused by the next start.
  */
-/** Hard safety net so a runaway session cannot exhaust localStorage (~5MB). */
+/** Hard safety net so a runaway session cannot exhaust localStorage (~5MB).
+ * When the current session reaches this cap, the reducer automatically
+ * rotates into a fresh session so live recording never stalls or drops. */
 export const SESSION_MAX_ENTRIES = 2000;
 
 /** The fixed source id of the user's own microphone stream ("you" bubbles).
@@ -236,9 +238,41 @@ function recordIntoSession(
   return { ...session, entries: entries.slice(-SESSION_MAX_ENTRIES) };
 }
 
+/**
+ * Open a fresh session (new id, current) and leave the full one untouched in
+ * History. Used when the current session hits `SESSION_MAX_ENTRIES` so the
+ * live pipeline keeps recording. Ids never collide with existing sessions.
+ */
+function rotateToFreshSession(state: HistoryState): HistoryState {
+  const now = Date.now();
+  let id = `sess-${String(now)}-auto`;
+  let guard = 0;
+  while (state.sessions.some((session) => session.id === id) && guard < 100) {
+    id = `sess-${String(now)}-auto-${String(guard)}`;
+    guard += 1;
+  }
+  const date = new Date();
+  const name = `Session · ${String(date.getMonth() + 1).padStart(2, "0")}/${String(
+    date.getDate(),
+  ).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(
+    date.getMinutes(),
+  ).padStart(2, "0")}`;
+  return {
+    ...state,
+    currentSessionId: id,
+    sessions: [
+      ...state.sessions,
+      { id, name, startedAtMs: now, endedAtMs: null, entries: [] },
+    ],
+  };
+}
+
 /** Pure reducer: finals only, in-place upsert per session, chat order.
  * Entries stay in chat order — oldest first, newest appended last — so the
- * transcript reads top-to-bottom like a chat log. */
+ * transcript reads top-to-bottom like a chat log. When the current session
+ * reaches `SESSION_MAX_ENTRIES`, a fresh session is created automatically
+ * (and becomes current) so the live pipeline keeps recording instead of
+ * stalling on a full session. */
 export function historyReducer(
   state: HistoryState,
   action: HistoryAction,
@@ -255,13 +289,29 @@ export function historyReducer(
         // No live session: captions are not recorded anywhere.
         return state;
       }
-      const sessions = state.sessions.slice();
-      const session = sessions[current];
+      let sessions = state.sessions.slice();
+      let session = sessions[current];
       if (session === undefined) {
         return state;
       }
-      sessions[current] = recordIntoSession(session, caption, context);
-      return { ...state, sessions };
+      // Cap reached: rotate into a fresh session so the live keeps running
+      // and nothing silently drops (the old session stays full in History).
+      let targetIndex = current;
+      let currentSessionId = state.currentSessionId;
+      if (session.entries.length >= SESSION_MAX_ENTRIES) {
+        const rotated = rotateToFreshSession({ ...state, sessions });
+        sessions = rotated.sessions;
+        currentSessionId = rotated.currentSessionId;
+        targetIndex = sessions.findIndex(
+          (candidate) => candidate.id === rotated.currentSessionId,
+        );
+        if (targetIndex === -1) {
+          targetIndex = current;
+        }
+        session = sessions[targetIndex] ?? session;
+      }
+      sessions[targetIndex] = recordIntoSession(session, caption, context);
+      return { ...state, currentSessionId, sessions };
     }
     case "recordChat": {
       const current = state.sessions.findIndex(
@@ -272,10 +322,26 @@ export function historyReducer(
         // nothing — the caller decides whether to open a session first.
         return state;
       }
-      const sessions = state.sessions.slice();
-      const session = sessions[current];
+      let sessions = state.sessions.slice();
+      let session = sessions[current];
       if (session === undefined) {
         return state;
+      }
+      // Cap reached: rotate like `record` so chat keeps appending into a
+      // fresh session instead of stalling on the full one.
+      let targetIndex = current;
+      let currentSessionId = state.currentSessionId;
+      if (session.entries.length >= SESSION_MAX_ENTRIES) {
+        const rotated = rotateToFreshSession({ ...state, sessions });
+        sessions = rotated.sessions;
+        currentSessionId = rotated.currentSessionId;
+        targetIndex = sessions.findIndex(
+          (candidate) => candidate.id === rotated.currentSessionId,
+        );
+        if (targetIndex === -1) {
+          targetIndex = current;
+        }
+        session = sessions[targetIndex] ?? session;
       }
       const nowMs = Date.now();
       const entry: HistoryEntry = {
@@ -303,11 +369,11 @@ export function historyReducer(
       if (entry.text === "") {
         return state;
       }
-      sessions[current] = {
+      sessions[targetIndex] = {
         ...session,
         entries: [...session.entries, entry].slice(-SESSION_MAX_ENTRIES),
       };
-      return { ...state, sessions };
+      return { ...state, currentSessionId, sessions };
     }
     case "beginSession": {
       const { id, name, startedAtMs = Date.now() } = action;

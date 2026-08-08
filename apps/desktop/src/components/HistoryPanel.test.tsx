@@ -44,6 +44,7 @@ function session(overrides: Partial<HistorySession> = {}): HistorySession {
 function renderPanel(
   sessions: HistorySession[],
   handlers: {
+    onNewSession?: () => void;
     onRenameSession?: (id: string, name: string) => void;
     onDeleteSession?: (id: string) => void;
     onClearSession?: (id: string) => void;
@@ -53,6 +54,7 @@ function renderPanel(
     <HistoryPanel
       sessions={sessions}
       currentSessionId={null}
+      onNewSession={handlers.onNewSession ?? vi.fn()}
       onRenameSession={handlers.onRenameSession ?? vi.fn()}
       onDeleteSession={handlers.onDeleteSession ?? vi.fn()}
       onClearSession={handlers.onClearSession ?? vi.fn()}
@@ -168,6 +170,7 @@ describe("HistoryPanel", () => {
           session({ id: "sess-2", name: "Session · 14:45" }),
         ]}
         currentSessionId="sess-2"
+        onNewSession={vi.fn()}
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
         onClearSession={vi.fn()}
@@ -234,6 +237,7 @@ describe("HistoryPanel chat room", () => {
     render(
       <HistoryPanel
         sessions={[session({ entries: [] })]}
+        onNewSession={vi.fn()}
         currentSessionId={null}
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
@@ -262,6 +266,7 @@ describe("HistoryPanel chat room", () => {
     render(
       <HistoryPanel
         sessions={[session({ entries: [] })]}
+        onNewSession={vi.fn()}
         currentSessionId={null}
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
@@ -287,6 +292,7 @@ describe("HistoryPanel chat room", () => {
     render(
       <HistoryPanel
         sessions={[session({ entries: [] })]}
+        onNewSession={vi.fn()}
         currentSessionId={null}
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
@@ -309,6 +315,7 @@ describe("HistoryPanel chat room", () => {
     render(
       <HistoryPanel
         sessions={[session({ entries: [] })]}
+        onNewSession={vi.fn()}
         currentSessionId={null}
         onRenameSession={vi.fn()}
         onDeleteSession={vi.fn()}
@@ -414,5 +421,112 @@ describe("HistoryPanel you bubble color", () => {
         }
       ).youColor,
     ).toBe("#ef4444");
+  });
+});
+
+describe("HistoryPanel new session button", () => {
+  it("invokes onNewSession from the toolbar", () => {
+    const onNewSession = vi.fn();
+    renderPanel([session()], { onNewSession });
+    fireEvent.click(screen.getByRole("button", { name: /new session/i }));
+    expect(onNewSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("HistoryPanel first-of-speaker log line", () => {
+  it("shows the log/data line above the first bubble of each speaker run only", () => {
+    localStorage.setItem(
+      "lst.history.options.v3",
+      JSON.stringify({
+        showSource: false,
+        showSpeaker: true,
+        showTimestamp: true,
+        showLatency: true,
+        showModels: true,
+        showAvatars: true,
+        bubbleColor: "source",
+        layout: "chat",
+        youColor: "#3b82f6",
+      }),
+    );
+    renderPanel([
+      session({
+        entries: [
+          entry({
+            id: "e1",
+            text: "First",
+            displayName: "Team",
+            provider: "whisper-turbo + nllb",
+            latencyMs: 120,
+          }),
+          entry({
+            id: "e2",
+            text: "Second",
+            displayName: "Team",
+            provider: "whisper-turbo + nllb",
+            latencyMs: 110,
+          }),
+          entry({
+            id: "e3",
+            text: "Reply",
+            displayName: "You",
+            sourceId: "00000000000000000000000000000000",
+            fromSelf: true,
+            provider: "whisper-turbo + nllb",
+            latencyMs: 95,
+          }),
+          entry({
+            id: "e4",
+            text: "Back again",
+            displayName: "Team",
+            provider: "whisper-turbo + nllb",
+            latencyMs: 130,
+          }),
+        ],
+      }),
+    ]);
+    // Speaker + time + latency + model for the first bubble of each speaker.
+    expect(screen.getAllByText("Team")).toHaveLength(1);
+    expect(screen.getByText("120 ms")).toBeInTheDocument();
+    // The later bubbles of the same speaker carry no meta line at all.
+    expect(screen.queryByText("110 ms")).toBeNull();
+    expect(screen.queryByText("130 ms")).toBeNull();
+    // "You" (self) run: one meta line, right side (renders its own label).
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByText("95 ms")).toBeInTheDocument();
+    // The model badge appears exactly twice: once per speaker (Team + You).
+    expect(screen.getAllByText("whisper-turbo + nllb")).toHaveLength(2);
+  });
+
+  it("shows no log line when every meta toggle is off", () => {
+    localStorage.setItem(
+      "lst.history.options.v3",
+      JSON.stringify({
+        showSource: false,
+        showSpeaker: false,
+        showTimestamp: false,
+        showLatency: false,
+        showModels: false,
+        showAvatars: false,
+        bubbleColor: "source",
+        layout: "chat",
+        youColor: "#3b82f6",
+      }),
+    );
+    renderPanel([
+      session({
+        entries: [
+          entry({
+            id: "e1",
+            text: "Quiet",
+            displayName: "Team",
+            provider: "whisper-turbo + nllb",
+            latencyMs: 120,
+          }),
+        ],
+      }),
+    ]);
+    expect(screen.queryByText("120 ms")).toBeNull();
+    expect(screen.queryByText("Team")).toBeNull();
   });
 });

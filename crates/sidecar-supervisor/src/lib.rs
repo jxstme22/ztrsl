@@ -1894,3 +1894,73 @@ mod chat_translate_tests {
         supervisor.stop();
     }
 }
+
+#[cfg(test)]
+mod registry_wire_tests {
+    use super::*;
+
+    /// The app-shaped registry entry (dict capture_target + snake_case
+    /// language_config) must be accepted by the sidecar's StrictModel.
+    /// Regression: `capture_target` was a plain string and `language_config`
+    /// was camelCase, both rejected with 1008 "invalid message", killing
+    /// every live session that pushed a registry (multi-source + you-mic).
+    /// Entries deliberately omit per-source `target_language`/providers so
+    /// the sidecar does not build translation models in this test.
+    #[test]
+    fn app_shaped_registry_entry_survives_the_wire() {
+        let config = SidecarConfig::for_workspace(&workspace_root_from_manifest());
+        if !config.python_executable.is_file() {
+            eprintln!("skipping: workspace venv is not installed");
+            return;
+        }
+        let mut supervisor = SidecarSupervisor::start(&config).expect("sidecar must start");
+        assert_eq!(supervisor.negotiated_version, PROTOCOL_V2);
+        supervisor
+            .push_source_registry(vec![
+                SourceRegistryEntry {
+                    source_id: TEAM_SOURCE_ID.to_owned(),
+                    display_name: "Valorant Team".to_owned(),
+                    caption_tag: "TEAM".to_owned(),
+                    capture_target: serde_json::json!({
+                        "kind": "endpoint",
+                        "endpoint_id": "team-capture",
+                        "loopback": true,
+                    }),
+                    language_profile: "tagalog".to_owned(),
+                    strictness: CaptionStrictness::Balanced,
+                    label_style: CaptionLabelStyle::Brackets,
+                    color: Some("#7dd3fc".to_owned()),
+                    priority: 200,
+                    source_origin: DEFAULT_SOURCE_ORIGIN.to_owned(),
+                    language_config: Some(ipc_protocol::LanguageConfig {
+                        primary_language: Some("tl".to_owned()),
+                        secondary_languages: vec!["en".to_owned()],
+                        detection_mode: "primary_preferred".to_owned(),
+                    }),
+                    target_language: None,
+                    translation_provider: None,
+                },
+                SourceRegistryEntry {
+                    source_id: "00000000000000000000000000000000".to_owned(),
+                    display_name: "You".to_owned(),
+                    caption_tag: "YOU".to_owned(),
+                    capture_target: serde_json::json!({
+                        "kind": "endpoint",
+                        "endpoint_id": "you-mic",
+                        "loopback": false,
+                    }),
+                    language_profile: "chinese".to_owned(),
+                    strictness: CaptionStrictness::Off,
+                    label_style: CaptionLabelStyle::Brackets,
+                    color: Some("#dc4d5e".to_owned()),
+                    priority: 100,
+                    source_origin: "physical_microphone".to_owned(),
+                    language_config: None,
+                    target_language: None,
+                    translation_provider: None,
+                },
+            ])
+            .expect("app-shaped registry must be accepted");
+        supervisor.stop();
+    }
+}
