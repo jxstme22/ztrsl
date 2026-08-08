@@ -9,7 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
-async function chooseOption(combobox: HTMLElement, optionName: string) {
+async function chooseOption(
+  combobox: HTMLElement,
+  optionName: string | RegExp,
+) {
   fireEvent.click(combobox);
   const option = await screen.findByRole("option", { name: optionName });
   fireEvent.click(option);
@@ -204,5 +207,34 @@ describe("control window", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Demo · demo-asr\+demo-mt/)).toBeInTheDocument();
+  });
+
+  it("keeps the chosen ASR/translation providers after switching sections", async () => {
+    render(<App />);
+
+    // Pick NVIDIA Parakeet ASR on the Live page (simulating a cloud provider).
+    const asr = screen.getByRole("combobox", {
+      name: "Speech recognition source",
+    });
+    await chooseOption(asr, /NVIDIA Parakeet CTC 1\.1B/);
+
+    const translation = screen.getByRole("combobox", {
+      name: "Translation source",
+    });
+    await chooseOption(translation, /NVIDIA Riva Translate 4B/);
+
+    // Switch away and back: the panel remounts and must reload the saved
+    // providers instead of falling back to the local defaults.
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+
+    const asrAfter = screen.getByRole("combobox", {
+      name: "Speech recognition source",
+    });
+    expect(asrAfter).toHaveTextContent(/NVIDIA Parakeet CTC 1\.1B/);
+    const translationAfter = screen.getByRole("combobox", {
+      name: "Translation source",
+    });
+    expect(translationAfter).toHaveTextContent(/NVIDIA Riva Translate 4B/);
   });
 });

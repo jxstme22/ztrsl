@@ -608,6 +608,7 @@ export function HistoryPanel({
                     className="history-menu-row"
                     onClick={() => {
                       toggleOption(key);
+                      setMenuOpen(null);
                     }}
                   >
                     <span className="history-menu-label">{t(label)}</span>
@@ -636,6 +637,7 @@ export function HistoryPanel({
                       saveHistoryDisplayOptions(next);
                       return next;
                     });
+                    setMenuOpen(null);
                   }}
                 >
                   <span className="history-menu-label">
@@ -673,6 +675,7 @@ export function HistoryPanel({
                             saveHistoryDisplayOptions(next);
                             return next;
                           });
+                          setMenuOpen(null);
                         }}
                       />
                     ))}

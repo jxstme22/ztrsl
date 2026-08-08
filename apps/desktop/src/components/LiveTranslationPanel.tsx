@@ -135,7 +135,11 @@ function loadAsrProvider(): AsrProvider {
     stored === "ncspeech-zh-parakeet" ||
     stored === "paraformer-zh-streaming" ||
     stored === "sensevoice-small" ||
-    stored === "groq-whisper"
+    stored === "groq-whisper" ||
+    stored === "nvidia-parakeet-1.1b" ||
+    stored === "nvidia-whisper-large-v3" ||
+    stored === "nvidia-nemotron-asr-streaming" ||
+    stored === "nvidia-canary-1b"
   ) {
     return stored;
   }
@@ -164,6 +168,9 @@ function loadTranslationProvider(): TranslationProvider {
     stored === "libretranslate" ||
     stored === "google-translate" ||
     stored === "mymemory" ||
+    stored === "baidu-translate" ||
+    stored === "nvidia-riva-4b" ||
+    stored === "nvidia-riva-1.6b" ||
     stored === "custom-http"
   ) {
     return stored;
@@ -698,11 +705,6 @@ export function LiveTranslationPanel({
                 ).concat("%"),
               }}
             />
-            <span className="live-level-label">
-              {live.snapshot.metrics.capturePeak > 0.01
-                ? "input level"
-                : "waiting for audio"}
-            </span>
           </div>
         )}
       </div>
