@@ -1261,6 +1261,8 @@ async fn request_microphone_permission(app: tauri::AppHandle) -> Result<String, 
     #[cfg(target_os = "macos")]
     {
         use block2::{Block, RcBlock};
+        use objc2::MainThreadMarker;
+        use objc2::msg_send;
         use objc2::runtime::Bool;
         use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
         // The media-type constant is an extern static backed by AVFoundation,
@@ -1299,9 +1301,16 @@ async fn request_microphone_permission(app: tauri::AppHandle) -> Result<String, 
         // Bring the control window to the front first: TCC suppresses
         // the prompt for background apps, so a request fired before the
         // window is focused silently no-ops (status stays
-        // "notDetermined" forever).
+        // "notDetermined" forever). Activating the app is required on
+        // macOS 13+: set_focus() alone does not make the app frontmost
+        // for TCC, and the prompt is silently dropped.
         let app_for_focus = app.clone();
         app.run_on_main_thread(move || {
+            // Activate the app so TCC presents the mic prompt (macOS 13+
+            // silently drops the request when the app is not frontmost).
+            let marker = unsafe { MainThreadMarker::new_unchecked() };
+            let nsapp = objc2_app_kit::NSApplication::sharedApplication(marker);
+            let _: () = unsafe { msg_send![&*nsapp, activateIgnoringOtherApps: true] };
             if let Some(window) = app_for_focus.get_webview_window("control") {
                 let _ = window.set_focus();
             }
@@ -4453,6 +4462,16 @@ pub fn run() {
             app.manage(SidecarPaths {
                 bundled: resolve_bundled_paths(app.handle()),
             });
+            // macOS: restore native window decorations (traffic lights with
+            // the yellow Minimize button). The overlay feature is not used on
+            // macOS, so the control window does not need to be frameless; the
+            // custom titlebar stays as an in-content header.
+            #[cfg(target_os = "macos")]
+            if let Some(control) = app.get_webview_window("control") {
+                use tauri::TitleBarStyle;
+                let _ = control.set_decorations(true);
+                let _ = control.set_title_bar_style(TitleBarStyle::Overlay);
+            }
             // Closing the main window must kill the whole app — sidecar,
             // overlay window, audio threads — not just hide the window and
             // leave the process running in the background.
