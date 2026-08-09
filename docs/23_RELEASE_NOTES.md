@@ -1,17 +1,18 @@
 # 23 — Release Notes
 
+## v0.9.9 — drop Default-tab monitoring output (feat/general-purpose-v0.8)
+
+- The "Monitoring output" picker added in v0.9.8 is removed from the Default
+  tab of the history settings modal: enabling it broke starting the
+  separated live session (the monitor playback device failed to open and the
+  session aborted). The You/Default config is back to mic + languages, and
+  separated live starts with monitoring disabled again. The stale
+  `playbackEndpointId` value in stored configs is ignored.
+
 ## v0.9.8 — monitoring output on the Default tab (feat/general-purpose-v0.8)
 
-- **Output for the You session** — the history settings modal's Default tab
-  now has a "Monitoring output" picker (render devices, active-only with the
-  saved-but-dead device marked), mirroring the Live page. The separated
-  (history) live session plays its captured stream back through that output,
-  so the You mic/stream can be heard on a chosen device. The picker is
-  persisted in the You config and validated up front (an unplugged output
-  shows a clear message instead of failing mid-session).
-- The monitoring path now works in multi-source sessions too: the Windows
-  capture loop plays every active lane (channels + gated mic) through the
-  selected output device with a bounded queue.
+Experimental — the Default-tab "Monitoring output" picker was added, then
+reverted in v0.9.9 after it broke starting the separated live session.
 
 ## v0.9.7 — separated live input fix, modal polish (feat/general-purpose-v0.8)
 

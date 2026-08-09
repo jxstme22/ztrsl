@@ -92,69 +92,6 @@ describe("YouConfigDialog", () => {
     expect(screen.getByText(/only apply when you press/i)).toBeInTheDocument();
   });
 
-  it("lets the Default tab pick a monitoring output and Save persists it", () => {
-    renderDialog();
-    fireEvent.click(screen.getByLabelText(/monitoring output/i));
-    fireEvent.click(screen.getByRole("option", { name: /Headphones/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-    const stored = JSON.parse(
-      window.localStorage.getItem("lst.you.config.v1") ?? "{}",
-    ) as { playbackEndpointId: string | null };
-    expect(stored.playbackEndpointId).toBe("out-1");
-  });
-
-  it("keeps a saved-but-dead output visible marked inactive", () => {
-    window.localStorage.setItem(
-      "lst.you.config.v1",
-      JSON.stringify({
-        micEndpointId: "mic-1",
-        playbackEndpointId: "out-dead",
-        autoReverse: false,
-        sourceMode: "chinese",
-        targetLanguage: "en",
-      }),
-    );
-    render(
-      <YouConfigDialog
-        endpoints={[
-          {
-            id: "mic-1",
-            friendlyName: "Built-in Microphone",
-            kind: "capture",
-            state: "active",
-            defaultRoles: {
-              console: true,
-              multimedia: true,
-              communications: true,
-            },
-            nativeFormat: { sampleRate: 48000, channels: 1 },
-            isSynthetic: false,
-          },
-          {
-            id: "out-dead",
-            friendlyName: "Headphones",
-            kind: "render",
-            state: "unplugged",
-            defaultRoles: {
-              console: true,
-              multimedia: true,
-              communications: true,
-            },
-            nativeFormat: { sampleRate: 48000, channels: 2 },
-            isSynthetic: false,
-          },
-        ]}
-        installedModelIds={new Set()}
-        onClose={vi.fn()}
-        onSaved={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByLabelText(/monitoring output/i));
-    expect(
-      screen.getByRole("option", { name: /Headphones.*inactive/i }),
-    ).toBeInTheDocument();
-  });
-
   it("hides unplugged/disabled microphones from the mic picker", () => {
     render(
       <YouConfigDialog
