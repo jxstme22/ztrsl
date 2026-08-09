@@ -2027,8 +2027,8 @@ fn resolve_mic_source(
     }
     if endpoint.state != EndpointState::Active {
         return Err(format!(
-            "mic source '{}' endpoint is not active",
-            source.display_name
+            "mic source '{}' endpoint is not active (state: {:?}) — plug it in or pick another microphone in your voice settings",
+            source.display_name, endpoint.state
         ));
     }
     Ok(LiveSource {

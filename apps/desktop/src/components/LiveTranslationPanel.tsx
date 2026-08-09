@@ -348,15 +348,26 @@ export function LiveTranslationPanel({
 
   const endpoints = audio.catalog?.endpoints ?? [];
   // Windows loopback captures a render endpoint (WASAPI loopback); capture
-  // endpoints are microphones.
+  // endpoints are microphones. Only ACTIVE endpoints are offered: dormant
+  // devices (unplugged/disabled) would otherwise fail at start with a bare
+  // backend error.
   const captureInputs = useMemo(
-    () => endpoints.filter((endpoint) => endpoint.kind === "capture"),
+    () =>
+      endpoints.filter(
+        (endpoint) =>
+          endpoint.kind === "capture" && endpoint.state === "active",
+      ),
     [endpoints],
   );
   const loopbackInputs = useMemo(
-    () => endpoints.filter((endpoint) => endpoint.kind === "render"),
+    () =>
+      endpoints.filter(
+        (endpoint) => endpoint.kind === "render" && endpoint.state === "active",
+      ),
     [endpoints],
   );
+  const selectedInput =
+    endpoints.find((endpoint) => endpoint.id === inputEndpointId) ?? null;
 
   // Installed local model ids (whisper/nllb/madlad on disk) plus the known
   // NCSpeech exports, so the provider list can honestly tag what's available
@@ -448,14 +459,37 @@ export function LiveTranslationPanel({
         })),
       );
     }
+    // A saved endpoint that is currently unplugged/disabled stays visible
+    // (marked) so the user can re-pick a live device instead of hitting a
+    // confusing capture error at start.
+    if (selectedInput !== null && selectedInput.state !== "active") {
+      options.push({
+        value: selectedInput.id,
+        label: `${selectedInput.friendlyName} · ${t("liveInputInactive")}`,
+        group:
+          selectedInput.kind === "capture"
+            ? "Microphones (your voice)"
+            : "Loopback (game / teammate mix — no mic)",
+      });
+    }
     return options;
-  }, [captureInputs, loopbackInputs]);
+  }, [captureInputs, loopbackInputs, selectedInput, t]);
 
-  const selectedInput =
-    endpoints.find((endpoint) => endpoint.id === inputEndpointId) ?? null;
   // Any selected endpoint is startable: a genuinely dead device surfaces a
   // clear capture error at start instead of hiding the option entirely.
   const inputReady = selectedInput !== null;
+
+  // The "you" mic rides the same session: if the stored mic is missing or
+  // unplugged, live translation would die with a backend error at start.
+  // Catch it up front so the user fixes the mic instead of the session.
+  const micEndpoint =
+    micSource === null
+      ? null
+      : (endpoints.find((endpoint) => endpoint.id === micSource.endpointId) ??
+        null);
+  const micReady =
+    micSource === null ||
+    (micEndpoint !== null && micEndpoint.state === "active");
 
   const playbackEndpoint =
     endpoints.find(
@@ -610,6 +644,14 @@ export function LiveTranslationPanel({
               ) {
                 void (async () => {
                   setPermissionError(null);
+                  if (!micReady) {
+                    setPermissionError(
+                      micEndpoint === null
+                        ? t("liveYouMicMissing")
+                        : t("liveYouMicInactive"),
+                    );
+                    return;
+                  }
                   await pushProviderEnv(asrProvider, translationProvider, {
                     groqApiKey,
                     nvidiaApiKey,
@@ -804,6 +846,11 @@ export function LiveTranslationPanel({
                 setInput(value || null);
               }}
             />
+            {selectedInput !== null && selectedInput.state !== "active" && (
+              <small className="field-error" role="alert">
+                {t("liveInputInactiveHint")}
+              </small>
+            )}
           </div>
         )}
 
