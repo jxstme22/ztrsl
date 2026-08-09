@@ -45,3 +45,7 @@ local-squad-sidecar.spec
 /xTRSNLTR_*_x64_en-US.msi
 models/mlx-whisper-large-v3-turbo-q4/
 services/inference/evaluation/fixtures/private/
+
+# PyInstaller artifact written at repo root by scripts/build-sidecar.mjs
+local-squad-sidecar.spec
+
