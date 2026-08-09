@@ -10,62 +10,20 @@ import type {
 /** Caption tag stamped on "you" captions by the sidecar. */
 export const YOU_CAPTION_TAG = "YOU";
 
-/** Target-language codes → ASR source modes (the app uses different token
- * sets for MT output and ASR input). */
-function targetToSourceMode(target: string): SourceMode | null {
-  switch (target) {
-    case "en":
-      return "english";
-    case "zh":
-      return "chinese";
-    case "fil":
-      return "filipino";
-    case "ind":
-      return "indonesian";
-    case "vie":
-      return "vietnamese";
-    case "tha":
-      return "thai";
-    case "zsm":
-      return "malay";
-    default:
-      return null;
-  }
-}
-
-/** ASR source modes → target-language codes. */
-function sourceModeToTarget(source: string): TargetLanguage | null {
-  switch (source) {
-    case "english":
-      return "en";
-    case "chinese":
-      return "zh";
-    case "filipino":
-      return "fil";
-    case "indonesian":
-      return "ind";
-    case "vietnamese":
-      return "vie";
-    case "thai":
-      return "tha";
-    case "malay":
-      return "zsm";
-    default:
-      return null;
-  }
-}
-
 /**
  * The user's voice & chat config. The YOU stream rides the SAME live
  * session — same ASR model, same translation model, same provider — so the
  * only thing the user picks here is the language pair (and which mic).
- * `autoReverse` mirrors the live pair reversed (live en→zh ⇒ you zh→en);
- * when no live session is running the explicit pair is used instead.
+ * The explicitly chosen pair is always honored: there is no auto-reverse.
+ * `autoReverse` is tolerated in stored configs for backwards compatibility
+ * but is ignored (it was removed from the UI because it silently overrode
+ * the user's explicit pair).
  */
 export const youStreamConfigSchema = z.object({
   /** Mic endpoint id; null until the user picks one. */
   micEndpointId: z.string().nullable(),
-  autoReverse: z.boolean().default(true),
+  /** Kept only so older stored configs still parse; no longer used. */
+  autoReverse: z.boolean().default(false),
   sourceMode: z
     .enum([
       "filipino",
@@ -88,7 +46,7 @@ const YOU_CONFIG_KEY = "lst.you.config.v1";
 
 export const DEFAULT_YOU_CONFIG: YouStreamConfig = {
   micEndpointId: null,
-  autoReverse: true,
+  autoReverse: false,
   sourceMode: "chinese",
   targetLanguage: "en",
 };
@@ -118,31 +76,15 @@ export function saveYouConfig(
 }
 
 /**
- * Resolve the effective voice/chat direction for the "you" stream. With
- * auto-reverse and a live session, the pair mirrors the live one (source =
- * live target, target = live source); otherwise the configured pair wins.
+ * Resolve the effective voice/chat direction for the "you" stream. The
+ * explicitly configured pair always wins — auto-reverse was removed from the
+ * UI because it silently overrode the user's choice (an en→zh mic was flipped
+ * to zh→en whenever a live session ran, which English-only ASR providers
+ * reject).
  */
 export function resolveYouDirection(
   config: YouStreamConfig,
-  live: {
-    sourceMode: string | null;
-    targetLanguage: string | null;
-  },
 ): { sourceMode: SourceMode; targetLanguage: TargetLanguage } {
-  if (
-    config.autoReverse &&
-    live.sourceMode !== null &&
-    live.targetLanguage !== null
-  ) {
-    const reversedTarget = sourceModeToTarget(live.sourceMode);
-    const reversedSource = targetToSourceMode(live.targetLanguage);
-    if (reversedTarget !== null && reversedSource !== null) {
-      return {
-        sourceMode: reversedSource,
-        targetLanguage: reversedTarget,
-      };
-    }
-  }
   return {
     sourceMode: config.sourceMode,
     targetLanguage: config.targetLanguage,
@@ -157,16 +99,12 @@ export function resolveYouDirection(
  */
 export function buildYouSourceRequest(
   config: YouStreamConfig,
-  live: {
-    sourceMode: string | null;
-    targetLanguage: string | null;
-  },
   liveTranslationProvider = "nllb",
 ): LiveSourceRequest | null {
   if (config.micEndpointId === null) {
     return null;
   }
-  const { sourceMode, targetLanguage } = resolveYouDirection(config, live);
+  const { sourceMode, targetLanguage } = resolveYouDirection(config);
   return {
     sourceId: YOU_SOURCE_ID,
     endpointId: config.micEndpointId,

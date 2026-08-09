@@ -1269,6 +1269,32 @@ export function LiveTranslationPanel({
               <p className="readout-english">{live.lastCaption.english_text}</p>
             </>
           )}
+          <dl className="metrics">
+            <div>
+              <dt>{t("liveDevice")}</dt>
+              <dd>{live.snapshot.asrRuntime ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>{t("liveCaptions")}</dt>
+              <dd>{live.snapshot.metrics.captionsReceived}</dd>
+            </div>
+            <div>
+              <dt>{t("liveAsrLabel")}</dt>
+              <dd>
+                {live.lastCaption === null
+                  ? "—"
+                  : `${String(Math.round(live.lastCaption.asr_ms))} ms`}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("livePackets")}</dt>
+              <dd>{live.snapshot.metrics.audioPacketsSent}</dd>
+            </div>
+            <div>
+              <dt>{t("liveDrops")}</dt>
+              <dd>{live.snapshot.metrics.captureDrops}</dd>
+            </div>
+          </dl>
         </div>
       )}
     </section>
