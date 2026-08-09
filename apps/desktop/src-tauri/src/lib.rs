@@ -1266,21 +1266,58 @@ async fn request_microphone_permission(app: tauri::AppHandle) -> Result<String, 
         let media_type = unsafe { AVMediaTypeAudio.as_ref() }
             .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
         let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
-        eprintln!(
-            "[ytrsl] mic status before request: {}",
+        mic_diag_log(&format!(
+            "status before request: {}",
             auth_status_label(status)
-        );
+        ));
         if status != objc2_av_foundation::AVAuthorizationStatus::NotDetermined {
             return Ok(auth_status_label(status));
         }
         let granted = request_mic_permission_on_main(app).await?;
-        eprintln!("[ytrsl] mic request result: granted={granted}");
+        mic_diag_log(&format!("request result: granted={granted}"));
         Ok(if granted { "authorized" } else { "denied" }.to_owned())
     }
     #[cfg(not(target_os = "macos"))]
     {
         Ok("unsupported".to_owned())
     }
+}
+
+/// macOS: append a line to `~/Library/Logs/yTRSL/mic-permission.log` so
+/// TCC behavior is diagnosable from Finder launches (no console to see
+/// stderr from). No sensitive data is written — status labels only.
+#[cfg(target_os = "macos")]
+fn mic_diag_log(line: &str) {
+    use std::io::Write;
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    let log_dir = std::path::Path::new(&home).join("Library/Logs/yTRSL");
+    let _ = std::fs::create_dir_all(&log_dir);
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("mic-permission.log"))
+    {
+        let _ = writeln!(
+            file,
+            "{} pid={} {}",
+            chrono_now(),
+            std::process::id(),
+            line
+        );
+    }
+}
+
+/// Compact UTC timestamp for the mic diagnostics log.
+#[cfg(target_os = "macos")]
+fn chrono_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("t={secs}")
 }
 
 /// macOS: fire the AVFoundation mic-permission request on the main thread
@@ -1326,6 +1363,10 @@ async fn request_mic_permission_on_main(app: tauri::AppHandle) -> Result<bool, S
         // Activate the app so TCC presents the mic prompt.
         let marker = unsafe { MainThreadMarker::new_unchecked() };
         let nsapp = objc2_app_kit::NSApplication::sharedApplication(marker);
+        let is_active: bool = unsafe { msg_send![&*nsapp, isActive] };
+        mic_diag_log(&format!(
+            "firing AVFoundation mic request (isActive={is_active})"
+        ));
         let _: () = unsafe { msg_send![&*nsapp, activateIgnoringOtherApps: true] };
         if let Some(window) = app_for_focus.get_webview_window("control") {
             let _ = window.set_focus();
@@ -1333,12 +1374,11 @@ async fn request_mic_permission_on_main(app: tauri::AppHandle) -> Result<bool, S
         unsafe {
             let media_type = &*(media_type_ptr as *const objc2_foundation::NSString);
             let block = &*(block_ptr as *const Block<dyn Fn(Bool)>);
-            eprintln!("[ytrsl] firing AVFoundation mic request");
             AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, block);
         }
     })
     .map_err(|error| error.to_string())?;
-    eprintln!("[ytrsl] awaiting mic completion");
+    mic_diag_log("awaiting mic completion");
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
         .map_err(|_| "timed out waiting for microphone permission".to_owned())?
