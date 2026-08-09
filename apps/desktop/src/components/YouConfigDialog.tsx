@@ -287,6 +287,21 @@ export function YouConfigDialog({
     }));
   const micUnavailable =
     config.micEndpointId !== null && !activeMicIds.has(config.micEndpointId);
+  // Monitoring output (render endpoints) for the You session, mirroring the
+  // Live page: active devices plus the saved-but-dead one, marked.
+  const outputs = endpoints.filter((endpoint) => endpoint.kind === "render");
+  const outputOptions = outputs
+    .filter(
+      (endpoint) =>
+        endpoint.state === "active" || endpoint.id === config.playbackEndpointId,
+    )
+    .map((endpoint) => ({
+      value: endpoint.id,
+      label:
+        endpoint.state === "active"
+          ? endpoint.friendlyName
+          : `${endpoint.friendlyName} (${t("liveInputInactive")})`,
+    }));
   const liveEndpointOptions = endpoints
     .filter((endpoint) => endpoint.state === "active")
     .map((endpoint) => ({
@@ -421,6 +436,26 @@ export function YouConfigDialog({
                 {t("chatConfigMicUnavailableHint")}
               </p>
             )}
+          </label>
+
+          <label className="field">
+            <span>{t("liveMonitoringOutput")}</span>
+            <Select
+              id="you-output"
+              label={t("liveMonitoringOutput")}
+              value={config.playbackEndpointId ?? ""}
+              onChange={(value) => {
+                setConfig({
+                  ...config,
+                  playbackEndpointId: value || null,
+                });
+              }}
+              options={
+                outputOptions.length > 0
+                  ? outputOptions
+                  : [{ value: "", label: t("chatConfigNoOutput") }]
+              }
+            />
           </label>
 
           <div className="you-config-pair">

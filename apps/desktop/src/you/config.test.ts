@@ -83,12 +83,33 @@ describe("you config persistence", () => {
     const config = {
       ...DEFAULT_YOU_CONFIG,
       micEndpointId: "mic-9",
+      playbackEndpointId: "out-9",
       autoReverse: false,
       sourceMode: "thai" as const,
       targetLanguage: "en" as const,
     };
     saveYouConfig(config, fakeStorage);
     expect(loadYouConfig(fakeStorage)).toEqual(config);
+  });
+
+  it("defaults playbackEndpointId to null for legacy stored configs", () => {
+    const storage = new Map<string, string>();
+    storage.set(
+      "lst.you.config.v1",
+      JSON.stringify({
+        micEndpointId: "mic-1",
+        autoReverse: false,
+        sourceMode: "chinese",
+        targetLanguage: "en",
+      }),
+    );
+    const fakeStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    };
+    expect(loadYouConfig(fakeStorage).playbackEndpointId).toBeNull();
   });
 
   it("returns defaults when storage is empty or corrupted", () => {

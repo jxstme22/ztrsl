@@ -424,6 +424,19 @@ export function ControlApp() {
     if (catalogEndpoint !== undefined && catalogEndpoint.state !== "active") {
       return "The input device picked in settings is currently unplugged or disabled — pick another one.";
     }
+    // The Default tab's monitoring output: when set, the captured stream is
+    // played back through that device (mirrors the Live page's output).
+    const monitorOutput = youConfig.playbackEndpointId ?? null;
+    const catalogOutput = audio.catalog?.endpoints.find(
+      (endpoint) => endpoint.id === monitorOutput,
+    );
+    if (
+      monitorOutput !== null &&
+      catalogOutput !== undefined &&
+      catalogOutput.state !== "active"
+    ) {
+      return "The output device picked in settings is currently unplugged or disabled — pick another one.";
+    }
     const direction = resolveYouDirection(youConfig);
     const translationProvider =
       (window.localStorage.getItem(
@@ -504,7 +517,7 @@ export function ControlApp() {
     }
     const error = await separatedLive.start(
       inputEndpointId,
-      null,
+      monitorOutput,
       asrProvider !== "groq-whisper" &&
         (translationProvider === "madlad" ||
           translationProvider === "nllb" ||
@@ -512,7 +525,7 @@ export function ControlApp() {
           translationProvider === "opus-mt-zh-en")
         ? "local"
         : "http",
-      false,
+      monitorOutput !== null,
       direction.sourceMode,
       direction.targetLanguage,
       asrProvider,

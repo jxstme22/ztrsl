@@ -3278,6 +3278,8 @@ fn run_windows_live_loop(
             mic_source,
             mic_enabled,
             mic_registry_pushed,
+            monitor_enabled,
+            playback_endpoint_name,
             stop,
             events,
             supervisor,
@@ -3402,6 +3404,8 @@ fn run_windows_multi_source_loop(
     mic_source: &Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: &Arc<AtomicBool>,
     mic_registry_pushed: &mut bool,
+    monitor_enabled: bool,
+    playback_endpoint_name: Option<String>,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -3440,6 +3444,28 @@ fn run_windows_multi_source_loop(
     // `mic_enabled`, and this loop opens/closes the device around it so no
     // audio is captured while the mic is off.
     let mut mic_capture: Option<(audio_core::WindowsAudioCapture, StreamingLinearResampler)> = None;
+    // Optional monitoring output: every active lane (channels + the gated
+    // mic) is played back through the picked render device, mirroring the
+    // single-channel loop's monitor path. The playback queue is bounded, so
+    // a slow device drops frames instead of stalling the capture loop.
+    let mut monitor: Option<(
+        audio_core::WindowsAudioPlayback,
+        StreamingLinearResampler,
+    )> = if monitor_enabled {
+        let Some(name) = playback_endpoint_name.as_deref() else {
+            return Err(LiveLoopError::Endpoint(
+                "monitoring output endpoint is missing".to_owned(),
+            ));
+        };
+        let device = audio_core::WindowsAudioPlayback::start(name, 32)
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+        let resampler =
+            StreamingLinearResampler::new(16_000, device.format().sample_rate)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+        Some((device, resampler))
+    } else {
+        None
+    };
     let mut metrics = LiveMetrics::default();
     let mut last_metrics = Instant::now();
     let mut last_frame_at: Option<Instant> = None;
@@ -3505,6 +3531,12 @@ fn run_windows_multi_source_loop(
                 metrics.capture_drops = active.capture.dropped_frames();
                 let samples = active.resampler.process(&frame.samples);
                 if !samples.is_empty() {
+                    if let Some((playback, resampler)) = monitor.as_mut() {
+                        let monitor_samples = resampler.process(&samples);
+                        if !monitor_samples.is_empty() {
+                            playback.try_write(monitor_samples);
+                        }
+                    }
                     supervisor
                         .send_live_audio_for_source(
                             frame.capture_monotonic_ns,
@@ -3516,6 +3548,10 @@ fn run_windows_multi_source_loop(
                 }
             }
         }
+        if let Some((playback, _resampler)) = monitor.as_mut() {
+            metrics.monitor_drops = playback.dropped_frames();
+            metrics.monitor_underrun_samples = playback.underrun_samples();
+        }
         if let Some((capture, resampler)) = mic_capture.as_mut() {
             if let Some(mic) = &current_mic {
                 if let Some(frame) = capture
@@ -3526,6 +3562,12 @@ fn run_windows_multi_source_loop(
                     metrics.captured_frames = metrics.captured_frames.saturating_add(1);
                     let samples = resampler.process(&frame.samples);
                     if !samples.is_empty() {
+                        if let Some((playback, resampler)) = monitor.as_mut() {
+                            let monitor_samples = resampler.process(&samples);
+                            if !monitor_samples.is_empty() {
+                                playback.try_write(monitor_samples);
+                            }
+                        }
                         supervisor
                             .send_live_audio_for_source(
                                 frame.capture_monotonic_ns,

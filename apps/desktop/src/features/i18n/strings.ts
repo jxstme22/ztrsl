@@ -109,6 +109,10 @@ const UI_STRINGS = {
   chatConfigTabSeparate: { en: "Separate live", zh: "独立实时" },
   chatConfigMic: { en: "Microphone", zh: "麦克风" },
   chatConfigNoMic: { en: "No microphone available", zh: "没有可用的麦克风" },
+  chatConfigNoOutput: {
+    en: "No output device available",
+    zh: "没有可用的输出设备",
+  },
   chatConfigMicInactive: { en: "inactive", zh: "不可用" },
   chatConfigMicUnavailableHint: {
     en: "This microphone is currently unplugged or disabled — reconnect it or choose another, or live translation cannot start.",

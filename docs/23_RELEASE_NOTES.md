@@ -1,5 +1,18 @@
 # 23 — Release Notes
 
+## v0.9.8 — monitoring output on the Default tab (feat/general-purpose-v0.8)
+
+- **Output for the You session** — the history settings modal's Default tab
+  now has a "Monitoring output" picker (render devices, active-only with the
+  saved-but-dead device marked), mirroring the Live page. The separated
+  (history) live session plays its captured stream back through that output,
+  so the You mic/stream can be heard on a chosen device. The picker is
+  persisted in the You config and validated up front (an unplugged output
+  shows a clear message instead of failing mid-session).
+- The monitoring path now works in multi-source sessions too: the Windows
+  capture loop plays every active lane (channels + gated mic) through the
+  selected output device with a bounded queue.
+
 ## v0.9.7 — separated live input fix, modal polish (feat/general-purpose-v0.8)
 
 - **Separated live (history) captures the right device** — the "Separate live"

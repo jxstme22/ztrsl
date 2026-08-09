@@ -22,6 +22,9 @@ export const YOU_CAPTION_TAG = "YOU";
 export const youStreamConfigSchema = z.object({
   /** Mic endpoint id; null until the user picks one. */
   micEndpointId: z.string().nullable(),
+  /** Monitoring output (render) endpoint id; null disables live playback
+   * of the captured stream. Mirrors the Live page's "Monitoring output". */
+  playbackEndpointId: z.string().nullable().default(null),
   /** Kept only so older stored configs still parse; no longer used. */
   autoReverse: z.boolean().default(false),
   sourceMode: z
@@ -46,6 +49,7 @@ const YOU_CONFIG_KEY = "lst.you.config.v1";
 
 export const DEFAULT_YOU_CONFIG: YouStreamConfig = {
   micEndpointId: null,
+  playbackEndpointId: null,
   autoReverse: false,
   sourceMode: "chinese",
   targetLanguage: "en",
