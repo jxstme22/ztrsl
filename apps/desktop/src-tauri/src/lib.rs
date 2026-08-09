@@ -2431,6 +2431,40 @@ fn set_live_mic_enabled(
     Ok(enabled)
 }
 
+/// Separated (history) live variant of `set_live_mic_enabled`: flips the
+/// mic capture on the separated session so the History page's mic button
+/// genuinely toggles it instead of silently reporting the main live's state.
+#[tauri::command]
+fn set_separated_live_mic_enabled(
+    enabled: bool,
+    mic_source: Option<LiveSourceRequest>,
+    audio: tauri::State<'_, AudioRuntime>,
+    live: tauri::State<'_, SeparateLiveRuntime>,
+) -> Result<bool, String> {
+    let state = live.state.lock().map_err(lock_error)?;
+    if state.worker.is_none() || state.stopped {
+        return Err("a separated live session must be running to use your mic".to_owned());
+    }
+    if enabled {
+        let mut slot = state
+            .mic_source
+            .lock()
+            .map_err(|error| format!("mic source lock poisoned: {error}"))?;
+        if slot.is_none() {
+            let Some(source) = mic_source else {
+                return Err(
+                    "pick a microphone in the config dialog first, then toggle your voice"
+                        .to_owned(),
+                );
+            };
+            let endpoints = platform_endpoints(&audio)?;
+            *slot = Some(resolve_mic_source(&endpoints, &source)?);
+        }
+    }
+    state.mic_enabled.store(enabled, Ordering::Relaxed);
+    Ok(enabled)
+}
+
 #[tauri::command]
 async fn stop_live_translation(
     live: tauri::State<'_, LiveRuntime>,
@@ -3478,9 +3512,14 @@ fn run_windows_live_loop(
     // through the multi-source loop (with the classic endpoint synthesized as
     // a team source) so both captures share one loop and one sequence.
     let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    // A mic-only session (the separated/history live): the gated mic capture
+    // below is the only stream, so do NOT synthesize a fake TEAM source —
+    // otherwise the same device is captured twice (once unconditionally as
+    // TEAM, once gated as YOU) and the mic toggle would not control it.
+    let mic_only = config_sources.is_empty() && mic_present && !loopback;
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
-    } else if mic_present {
+    } else if mic_present && !mic_only {
         vec![LiveSource {
             source_id: "00000000000000000000000000000001".to_owned(),
             endpoint_name: endpoint_name.clone(),
@@ -3500,7 +3539,11 @@ fn run_windows_live_loop(
     } else {
         Vec::new()
     };
-    if !effective_sources.is_empty() {
+    // Mic-only sessions (separated live) still use the multi-source loop:
+    // its gated `mic_capture` slot is the only capture, opened dynamically by
+    // the mic button. `run_windows_live_loop`'s single-channel path below
+    // would open the same device unconditionally.
+    if !effective_sources.is_empty() || mic_only {
         return run_windows_multi_source_loop(
             &effective_sources,
             mic_source,
@@ -3636,6 +3679,14 @@ fn run_windows_multi_source_loop(
     }
     let mut sources = Vec::with_capacity(config_sources.len());
     for source in config_sources {
+        // The you-mic source is gated by `mic_enabled`: it only opens when
+        // the History/Live mic button is on, so a same-device session (e.g.
+        // the main live also capturing the mic) does not double-capture and
+        // the toggle genuinely controls the stream.
+        let is_you_source = source.source_id == ipc_protocol::YOU_SOURCE_ID;
+        if is_you_source && !mic_enabled.load(Ordering::Relaxed) {
+            continue;
+        }
         let capture = if source.loopback {
             audio_core::WindowsAudioCapture::start_loopback(&source.endpoint_name, 32)
                 .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
@@ -3681,21 +3732,30 @@ fn run_windows_multi_source_loop(
             *mic_registry_pushed = true;
         }
         if mic_enabled.load(Ordering::Relaxed) && mic_capture.is_none() {
-            if let Some(mic) = &current_mic {
-                match audio_core::WindowsAudioCapture::start(&mic.endpoint_name, 32) {
-                    Ok(capture) => {
-                        let resampler = StreamingLinearResampler::new(
-                            capture.format().sample_rate,
-                            16_000,
-                        )
-                        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
-                        mic_capture = Some((capture, resampler));
-                    }
-                    Err(error) => {
-                        let _ = events.try_send(LiveWorkerEvent::Warning(format!(
-                            "could not open the microphone: {}",
-                            audio_error_to_string(error)
-                        )));
+            // When the you-source is already among the active sources (the
+            // separated/history session passes it as its only source), the
+            // gated `sources` entry captures it — the `mic_capture` slot
+            // would open the same device a second time.
+            let you_in_sources = sources
+                .iter()
+                .any(|active| active.source.source_id == ipc_protocol::YOU_SOURCE_ID);
+            if !you_in_sources {
+                if let Some(mic) = &current_mic {
+                    match audio_core::WindowsAudioCapture::start(&mic.endpoint_name, 32) {
+                        Ok(capture) => {
+                            let resampler = StreamingLinearResampler::new(
+                                capture.format().sample_rate,
+                                16_000,
+                            )
+                            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+                            mic_capture = Some((capture, resampler));
+                        }
+                        Err(error) => {
+                            let _ = events.try_send(LiveWorkerEvent::Warning(format!(
+                                "could not open the microphone: {}",
+                                audio_error_to_string(error)
+                            )));
+                        }
                     }
                 }
             }
@@ -3833,9 +3893,14 @@ fn run_macos_live_loop(
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), LiveLoopError> {
     let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    // A mic-only session (the separated/history live): the gated mic capture
+    // below is the only stream, so do NOT synthesize a fake TEAM source —
+    // otherwise the same device is captured twice (once unconditionally as
+    // TEAM, once gated as YOU) and the mic toggle would not control it.
+    let mic_only = config_sources.is_empty() && mic_present && !loopback;
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
-    } else if mic_present {
+    } else if mic_present && !mic_only {
         vec![LiveSource {
             source_id: "00000000000000000000000000000001".to_owned(),
             endpoint_name: endpoint_name.clone(),
@@ -3855,7 +3920,10 @@ fn run_macos_live_loop(
     } else {
         Vec::new()
     };
-    if !effective_sources.is_empty() {
+    // Mic-only sessions (separated live) still use the multi-source loop:
+    // its gated mic capture is the only stream (the single-channel path below
+    // would open the same device unconditionally).
+    if !effective_sources.is_empty() || mic_only {
         return run_macos_multi_source_loop(
             &effective_sources,
             mic_source,
@@ -4004,6 +4072,14 @@ fn run_macos_multi_source_loop(
     }
     let mut sources = Vec::with_capacity(config_sources.len());
     for source in config_sources {
+        // The you-mic source is gated by `mic_enabled`: it only opens when
+        // the History/Live mic button is on, so a same-device session (e.g.
+        // the main live also capturing the mic) does not double-capture and
+        // the toggle genuinely controls the stream.
+        let is_you_source = source.source_id == ipc_protocol::YOU_SOURCE_ID;
+        if is_you_source && !mic_enabled.load(Ordering::Relaxed) {
+            continue;
+        }
         let capture = if source.loopback {
             audio_core::MacosAudioCapture::start_loopback(&source.endpoint_name, 32)
                 .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
@@ -4045,21 +4121,30 @@ fn run_macos_multi_source_loop(
             *mic_registry_pushed = true;
         }
         if mic_enabled.load(Ordering::Relaxed) && mic_capture.is_none() {
-            if let Some(mic) = &current_mic {
-                match audio_core::MacosAudioCapture::start(&mic.endpoint_name, 32) {
-                    Ok(capture) => {
-                        let resampler = StreamingLinearResampler::new(
-                            capture.format().sample_rate,
-                            16_000,
-                        )
-                        .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
-                        mic_capture = Some((capture, resampler));
-                    }
-                    Err(error) => {
-                        let _ = events.try_send(LiveWorkerEvent::Warning(format!(
-                            "could not open the microphone: {}",
-                            audio_error_to_string(error)
-                        )));
+            // When the you-source is already among the active sources (the
+            // separated/history session passes it as its only source), the
+            // gated `sources` entry captures it — the `mic_capture` slot
+            // would open the same device a second time.
+            let you_in_sources = sources
+                .iter()
+                .any(|active| active.source.source_id == ipc_protocol::YOU_SOURCE_ID);
+            if !you_in_sources {
+                if let Some(mic) = &current_mic {
+                    match audio_core::MacosAudioCapture::start(&mic.endpoint_name, 32) {
+                        Ok(capture) => {
+                            let resampler = StreamingLinearResampler::new(
+                                capture.format().sample_rate,
+                                16_000,
+                            )
+                            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+                            mic_capture = Some((capture, resampler));
+                        }
+                        Err(error) => {
+                            let _ = events.try_send(LiveWorkerEvent::Warning(format!(
+                                "could not open the microphone: {}",
+                                audio_error_to_string(error)
+                            )));
+                        }
                     }
                 }
             }
@@ -4390,6 +4475,7 @@ pub fn run() {
             live_translation_snapshot,
             separated_live_translation_snapshot,
             set_live_mic_enabled,
+            set_separated_live_mic_enabled,
             stop_live_translation,
             stop_separated_live_translation,
             set_translation_env,

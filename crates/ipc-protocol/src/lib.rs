@@ -19,6 +19,10 @@ const AUDIO_MAGIC: [u8; 4] = *b"LSTA";
 pub const CAPABILITY_IPC_V2: &str = "ipc_v2";
 pub const CAPABILITY_MULTI_SOURCE: &str = "multi_source";
 
+/// Immutable source id of the user's own microphone stream ("you" bubbles).
+/// Never collides with user-configured source ids.
+pub const YOU_SOURCE_ID: &str = "00000000000000000000000000000000";
+
 /// Highest protocol version both peers propose, or `None` when they share
 /// none. Proposals are ordered most-preferred first.
 pub fn negotiate_protocol_version(proposed: &[u16], supported: &[u16]) -> Option<u16> {

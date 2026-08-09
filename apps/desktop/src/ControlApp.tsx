@@ -49,7 +49,7 @@ import { useT } from "./features/i18n/store";
 import { setAppTheme, useAppThemeValue } from "./features/theme/store";
 import { useLiveTranslation } from "./live/useLiveTranslation";
 import { useSeparatedLiveTranslation } from "./live/useSeparatedLiveTranslation";
-import { setTranslationEnv } from "./live/bridge";
+import { setTranslationEnv, setSeparatedLiveMicEnabled } from "./live/bridge";
 import type {
   AsrProvider,
   LiveSourceRequest,
@@ -341,17 +341,21 @@ export function ControlApp() {
   }, [audio.catalog?.platform, live, youSource]);
 
   // History-page mic: when the separated (history) live session is running it
-  // owns the mic (it captures the configured mic as a source), so the toggle
-  // reports it as on and does nothing extra; otherwise it falls back to the
-  // main live page's mic toggle.
+  // owns the mic — the toggle flips the separated session's own mic capture.
+  // When no separated session runs, it falls back to the main live page's
+  // mic toggle.
   const historyMicEnabled =
-    separatedLive.state === "listening" || live.snapshot.micEnabled;
+    separatedLive.state === "listening"
+      ? separatedLive.snapshot.micEnabled
+      : live.snapshot.micEnabled;
   const toggleHistoryMic = useCallback(async (): Promise<boolean> => {
     if (separatedLive.state === "listening") {
-      return true;
+      const next = !separatedLive.snapshot.micEnabled;
+      const applied = await setSeparatedLiveMicEnabled(next, youSource);
+      return applied === next;
     }
     return toggleMic();
-  }, [separatedLive.state, toggleMic]);
+  }, [separatedLive, toggleMic, youSource]);
 
   // Typed-chat translation: translate on demand (standalone sidecar), then
   // record the "you" bubble. When no session is open (e.g. chat before any
@@ -511,8 +515,18 @@ export function ControlApp() {
       translationProvider,
       50,
       "balanced",
-      [youSource],
+      [],
+      youSource,
     );
+    // The separated session is "your voice": the mic starts enabled so
+    // captions flow immediately, and the History mic button toggles it.
+    if (error === null) {
+      try {
+        await setSeparatedLiveMicEnabled(true, youSource);
+      } catch (cause) {
+        console.error("failed to enable separated-live mic:", cause);
+      }
+    }
     return error;
   }, [language, livePair, separatedLive, youConfig, youSource]);
 
