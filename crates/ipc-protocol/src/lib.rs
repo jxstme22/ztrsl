@@ -186,6 +186,10 @@ pub enum SourceMode {
     English,
     Chinese,
     Mixed,
+    Indonesian,
+    Vietnamese,
+    Thai,
+    Malay,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -1095,6 +1099,40 @@ mod tests {
         }"#;
         let decoded: CaptionPayload = serde_json::from_str(json).expect("v1 caption decodes");
         assert!(decoded.source_id.is_none());
+    }
+
+    #[test]
+    fn all_nine_source_modes_deserialize() {
+        // Regression: the sidecar emits every 7-language-matrix mode, but the
+        // Rust enum used to stop at `mixed` — an `indonesian` caption then
+        // failed serde ("unknown variant `indonesian`...") and the supervisor
+        // tore the live session down with a transport failure.
+        for mode in [
+            "filipino",
+            "cebuano",
+            "english",
+            "chinese",
+            "mixed",
+            "indonesian",
+            "vietnamese",
+            "thai",
+            "malay",
+        ] {
+            let json = format!(
+                r#"{{
+                    "caption_id": "c-1", "utterance_id": "u-1", "revision": 1,
+                    "status": "final", "source_mode": "{mode}",
+                    "source_text": "a", "english_text": "b",
+                    "started_monotonic_ns": 1, "ended_monotonic_ns": 2,
+                    "capture_to_caption_ms": 1.0, "asr_ms": 1.0,
+                    "translation_ms": 1.0, "confidence": 0.5, "warnings": []
+                }}"#
+            );
+            let decoded: CaptionPayload =
+                serde_json::from_str(&json).unwrap_or_else(|error| panic!("{mode}: {error}"));
+            let serialized = serde_json::to_value(&decoded).expect("caption serializes");
+            assert_eq!(serialized["source_mode"], mode);
+        }
     }
 
     #[test]
