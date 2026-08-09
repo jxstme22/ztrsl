@@ -15,6 +15,10 @@ typed messages are translated into the team's language as right-aligned
   <img src="https://img.shields.io/badge/license-Apache--2.0-dc4d5e" alt="Apache 2.0"/>
 </p>
 
+> **🙏 Thanks to YuLee** — contributor and early tester, who helped build and
+> debug this across many nights and kept the momentum going. This project
+> wouldn't be here without you!
+
 ---
 
 ## What it does
