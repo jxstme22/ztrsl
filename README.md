@@ -36,9 +36,9 @@ typed messages are translated into the team's language as right-aligned
   Thai, Malay, and English**.
 - Translates into **English, Filipino, Chinese, Indonesian, Vietnamese, Thai,
   or Malay** — your pick, per session.
-- **Translates your own voice and typed chat** in the reverse direction (auto:
-  the opposite of the live pair) into right-aligned "You" bubbles — copy them
-  to paste into game chat, or read them aloud.
+- **Translates your own voice and typed chat** into right-aligned "You"
+  bubbles — copy them to paste into game chat, or read them aloud. Your
+  source → target pair is chosen in the settings and always honored.
 - Shows a **transparent, click-through overlay** above your game: a live
   caption bar, or a **chat-history panel** (newest pinned to the bottom).
 - Runs **multiple sources at once** — `[TEAM]`, `[DISCORD]`, `[PARTY]` lanes,
@@ -64,7 +64,7 @@ It never touches the game: no injection, no memory reads, no automation.
 
 > **Download:** get the Windows installer or macOS app from
 > [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
-> **Status:** beta (v0.9.5). Works end-to-end; code signing + clean-machine
+> **Status:** beta (v0.9.10). Works end-to-end; code signing + clean-machine
 > tests are the remaining 1.0 work.
 
 ---
@@ -100,8 +100,8 @@ It never touches the game: no injection, no memory reads, no automation.
 | Virtual device | **BlackHole** (free, github.com/ExistentialAudio/BlackHole) for game-voice capture | — |
 | Permission | Microphone access (first capture) | — |
 
-> The general (Windows) branch is the primary release; the macOS port lives on
-> its own branch with Metal ASR and native window chrome.
+> Branch layout: `main` (release line), `windows`, `macos` (Apple Silicon,
+> MLX Metal ASR, native window chrome).
 
 ### Cloud API (optional, Windows + macOS)
 
@@ -123,40 +123,56 @@ or **NVIDIA Riva** — all opt-in:
 ## How it works (in one picture)
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {
+  "background": "#0e1117", "primaryColor": "#161a22", "primaryTextColor": "#e8eaed",
+  "primaryBorderColor": "#2c3340", "lineColor": "#7dd3fc", "textColor": "#e8eaed",
+  "secondaryColor": "#1c2230", "tertiaryColor": "#232a38", "fontSize": "13px",
+  "clusterBkg": "#12161e", "clusterBorder": "#2c3340"
+}}}%%
 flowchart TB
-  subgraph Game
-    V[VALORANT voice chat]
+  subgraph GAME["Game"]
+    V["VALORANT voice chat"]
   end
 
-  subgraph yTRSL desktop
-    C[Audio capture<br/>WASAPI / virtual cable]
-    R[16 kHz mono ring buffer]
-    O[Transparent overlay window]
-    S[Model manager<br/>download + verify]
-    H[Session history<br/>chat-room transcript]
-    CHAT[Chat sidecar<br/>typed-chat translation]
-    MIC[Your microphone<br/>YOU stream]
+  subgraph APP["yTRSL desktop"]
+    CAP["Audio capture<br/>WASAPI · CoreAudio · ScreenCaptureKit"]
+    BUF["16 kHz ring buffer"]
+    OV["Overlay<br/>click-through window · windowed strip"]
+    S["Model manager<br/>pinned + checksummed"]
+    H["Session history<br/>chat-room transcript"]
+    CHAT["Chat sidecar<br/>typed translation"]
+    YOU["Your mic · YOU stream"]
+    SEP["Separated live<br/>your voice, own models"]
   end
 
-  subgraph Local inference sidecar
-    VAD[VAD + utterance segmentation]
-    ASR[Whisper / NCSpeech / SenseVoice ASR]
-    MT[NLLB / MADLAD / opus-mt / cloud translation]
-    SCHED[Shared priority scheduler]
+  subgraph SIDE["Local inference sidecar"]
+    VAD["VAD + segmentation"]
+    ASR["Whisper · MLX (Apple Silicon)<br/>NCSpeech · SenseVoice · cloud ASR"]
+    MT["NLLB · MADLAD · opus-mt<br/>Google · LibreTranslate · Baidu · Riva"]
+    SCH["Shared priority scheduler"]
   end
 
-  V --> C --> R --> VAD --> ASR --> SCHED --> MT
-  SCHED --> O
-  SCHED --> H
-  MIC --> C
+  V --> CAP --> BUF --> VAD --> ASR --> SCH --> MT
+  SCH --> OV
+  SCH --> H
+  YOU --> CAP
   CHAT --> MT
+  SEP --> ASR & MT
   S -. models .-> ASR & MT
-  H -. auto-rotate at 2 000 entries .-> H2[Fresh session<br/>live never stalls]
+  H -. auto-rotate at 2 000 entries .-> H2["Fresh session<br/>live never stalls"]
+
+  classDef game fill:#3a1d24,stroke:#dc4d5e,color:#ffe3e6;
+  classDef app fill:#16202e,stroke:#7dd3fc,color:#dff1ff;
+  classDef side fill:#14241a,stroke:#4ade80,color:#d9f5e4;
+  class GAME,V game;
+  class APP,CAP,BUF,OV,S,H,CHAT,YOU,SEP app;
+  class SIDE,VAD,ASR,MT,SCH side;
 ```
 
 **The 30-second version:**
 
-1. Your voice-chat audio is captured from a Windows audio endpoint.
+1. Your voice-chat audio is captured from the audio endpoint you picked
+   (virtual cable on Windows, BlackHole or system audio on macOS).
 2. A small **VAD** splits the stream into "someone is talking" chunks.
 3. **Speech recognition** (local Whisper or a CTC model) turns each chunk into text.
 4. **Translation** (local NLLB) turns that into English.
@@ -188,28 +204,46 @@ The full 7×7 matrix works end to end — each **source mode** pairs with any
 | Malay | Malay `zsm` |
 
 Pick a source mode per channel in **Sources**, then choose the translation
-output for the session on the **Live** tab. Your own voice/chat direction
-defaults to the reverse of the live pair (live en→zh ⇒ you zh→en) and is
-configurable.
+output for the session on the **Live** tab. Your own voice/chat direction is
+fully configurable in the settings (source + target chosen explicitly).
 
 ---
 
-## VB-CABLE: how voice chat reaches yTRSL
+## Audio routing: how voice chat reaches yTRSL
 
-A **virtual audio cable** is a free, user-installed Windows driver that acts as
-a "software wire": whatever an app plays to its **Input** can be *captured*
-from its **Output**. That's how yTRSL hears exactly the voice-chat mix — and
+A **virtual audio device** is a free, user-installed driver that acts as a
+"software wire": whatever an app plays to its **Input** can be *captured* from
+its **Output**. That's how yTRSL hears exactly the voice-chat mix — and
 nothing else.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {
+  "background": "#0e1117", "primaryColor": "#161a22", "primaryTextColor": "#e8eaed",
+  "primaryBorderColor": "#2c3340", "lineColor": "#7dd3fc", "textColor": "#e8eaed",
+  "secondaryColor": "#1c2230", "tertiaryColor": "#232a38", "fontSize": "13px",
+  "clusterBkg": "#12161e", "clusterBorder": "#2c3340"
+}}}%%
 flowchart TB
-  subgraph Your PC
-    VC[VALORANT voice chat] --> CI["CABLE Input<br/>(virtual cable)"]
-    DC[Discord voice chat] --> CI
-    CO["CABLE Output"] --> APP["yTRSL audio core"]
-    APP --> HP[("Headphones")]
+  subgraph WIN["Windows · VB-CABLE"]
+    direction TB
+    VC["VALORANT voice"] --> CI["CABLE Input"]
+    DC["Discord voice"] --> CI
+    CI --> CO["CABLE Output"] --> WC["yTRSL audio core"]
+    WC --> HP[("Headphones")]
   end
-  GAME[VALORANT game audio] --> HP
+
+  subgraph MAC["macOS · BlackHole"]
+    direction TB
+    VM["VALORANT voice"] --> BI["BlackHole 2ch"]
+    DM["Discord voice"] --> BI
+    BI --> BO["BlackHole loopback"] --> MC["yTRSL audio core"]
+    MC --> MH[("Headphones")]
+  end
+
+  classDef win fill:#1c2230,stroke:#7dd3fc,color:#dff1ff;
+  classDef mac fill:#1c2230,stroke:#4ade80,color:#d9f5e4;
+  class WIN,VC,CI,DC,CO,WC,HP win;
+  class MAC,VM,BI,DM,BO,MC,MH mac;
 ```
 
 ### Set it up (5 minutes)
@@ -262,7 +296,7 @@ The History page's input bar has three tools:
   translated on demand (works even without a live session). The bubble shows
   your original line and the translation; the copy button is right beside it.
 - **Config button** — pick the microphone, your language, the translate-into
-  language (auto = reverse of the live pair), and the models used.
+  language, and the models used (tabbed settings: Default vs Separate live).
 
 The mic/voice stream rides the same live session and the same model cache —
 no second pipeline is spawned for it. A **separated live** button in the same
@@ -299,10 +333,15 @@ source simultaneously, VADs and translates each independently, and every
 caption lands with its own tag in the overlay and History.
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {
+  "background": "#0e1117", "primaryColor": "#161a22", "primaryTextColor": "#e8eaed",
+  "primaryBorderColor": "#2c3340", "lineColor": "#7dd3fc", "textColor": "#e8eaed",
+  "secondaryColor": "#1c2230", "tertiaryColor": "#232a38", "fontSize": "13px"
+}}}%%
 flowchart LR
-  A[TEAM channel] --> P1[Tagalog profile] --> O[(Overlay lane 1)]
-  B[DISCORD channel] --> P2[Cebuano profile] --> O2[(Overlay lane 2)]
-  C[Party channel] --> P3[Mandarin profile] --> O3[(Overlay lane 3)]
+  A["TEAM channel"] --> P1["Tagalog profile"] --> O1[("Overlay lane 1")]
+  B["DISCORD channel"] --> P2["Cebuano profile"] --> O2[("Overlay lane 2")]
+  C["Party channel"] --> P3["Mandarin profile"] --> O3[("Overlay lane 3")]
 ```
 
 Each source picks a **language profile** and a **strictness**:
@@ -323,11 +362,17 @@ Each source picks a **language profile** and a **strictness**:
 ## Caption lifecycle
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {
+  "background": "#0e1117", "primaryColor": "#161a22", "primaryTextColor": "#e8eaed",
+  "primaryBorderColor": "#2c3340", "lineColor": "#7dd3fc", "textColor": "#e8eaed",
+  "secondaryColor": "#1c2230", "tertiaryColor": "#232a38", "fontSize": "13px"
+}}}%%
 sequenceDiagram
   participant G as Game voice
   participant S as Sidecar
   participant O as Overlay
 
+  Note over G,S: utterance starts
   G->>S: audio chunk (16 kHz)
   S->>S: VAD detects speech
   S-->>O: provisional "Listening…" (fast draft)
@@ -335,6 +380,7 @@ sequenceDiagram
   S-->>O: provisional revision ↑ (draft improves)
   G->>S: silence / utterance ends
   S->>O: final caption (stable, replaces draft)
+  Note over S,O: final lands in History as a bubble
 ```
 
 Provisionals stream **while** someone talks; the final replaces them the moment
@@ -425,7 +471,7 @@ python scripts/install_models.py nllb --accept-license
 python scripts/install_models.py madlad --accept-license   # optional, CPU-only
 ```
 
-On macOS, also install the Apple Silicon ASR model from the macOS branch's
+On macOS, also install the Apple Silicon ASR model from the macos branch's
 catalog (`mlx-whisper-large-v3-turbo-q4`).
 
 Can't reach Hugging Face? The Models tab can use `hf-mirror.com` (or
@@ -471,7 +517,7 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## Roadmap to 1.0
 
-Current release: **v0.9.5** (beta — Windows 11 + macOS, 7-language matrix,
+Current release: **v0.9.10** (beta — Windows 11 + macOS, 7-language matrix,
 chat-history overlay, per-caption bubbles, session sidebar, your-voice + typed
 chat translation, separated live, new-session rotation, full i18n,
 multi-source live). Working toward 1.0:
