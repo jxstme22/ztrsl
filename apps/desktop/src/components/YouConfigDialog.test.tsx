@@ -54,6 +54,11 @@ function renderDialog(
   );
 }
 
+/** Activate the "Separate live" tab of the config dialog. */
+function openSeparateTab() {
+  fireEvent.click(screen.getByRole("tab", { name: /separate live/i }));
+}
+
 describe("YouConfigDialog", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -90,6 +95,105 @@ describe("YouConfigDialog", () => {
     renderDialog();
     openSeparateTab();
     expect(screen.getByText(/only apply when you press/i)).toBeInTheDocument();
+  });
+
+  it("hides unplugged/disabled microphones from the mic picker", () => {
+    render(
+      <YouConfigDialog
+        endpoints={[
+          {
+            id: "mic-1",
+            friendlyName: "Built-in Microphone",
+            kind: "capture",
+            state: "active",
+            defaultRoles: {
+              console: true,
+              multimedia: true,
+              communications: true,
+            },
+            nativeFormat: { sampleRate: 48000, channels: 1 },
+            isSynthetic: false,
+          },
+          {
+            id: "mic-dead",
+            friendlyName: "Headset Microphone",
+            kind: "capture",
+            state: "unplugged",
+            defaultRoles: {
+              console: true,
+              multimedia: true,
+              communications: true,
+            },
+            nativeFormat: { sampleRate: 48000, channels: 1 },
+            isSynthetic: false,
+          },
+        ]}
+        installedModelIds={new Set()}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(/^microphone$/i));
+    expect(
+      screen.getByRole("option", { name: /Built-in Microphone/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /Headset Microphone/i }),
+    ).toBeNull();
+  });
+
+  it("marks a saved-but-inactive mic and explains why live cannot start", () => {
+    window.localStorage.setItem(
+      "lst.you.config.v1",
+      JSON.stringify({
+        micEndpointId: "mic-dead",
+        autoReverse: false,
+        sourceMode: "filipino",
+        targetLanguage: "en",
+      }),
+    );
+    render(
+      <YouConfigDialog
+        endpoints={[
+          {
+            id: "mic-1",
+            friendlyName: "Built-in Microphone",
+            kind: "capture",
+            state: "active",
+            defaultRoles: {
+              console: true,
+              multimedia: true,
+              communications: true,
+            },
+            nativeFormat: { sampleRate: 48000, channels: 1 },
+            isSynthetic: false,
+          },
+          {
+            id: "mic-dead",
+            friendlyName: "Headset Microphone",
+            kind: "capture",
+            state: "disabled",
+            defaultRoles: {
+              console: true,
+              multimedia: true,
+              communications: true,
+            },
+            nativeFormat: { sampleRate: 48000, channels: 1 },
+            isSynthetic: false,
+          },
+        ]}
+        installedModelIds={new Set()}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(/currently unplugged or disabled/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/^microphone$/i));
+    expect(
+      screen.getByRole("option", { name: /Headset Microphone.*inactive/i }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -142,6 +246,21 @@ describe("YouConfigDialog API credentials", () => {
     renderDialog();
     openSeparateTab();
     expect(screen.queryByLabelText(/nvidia api key/i)).toBeNull();
+  });
+
+  it("hides the separate-live settings behind its tab", () => {
+    renderDialog();
+    expect(screen.queryByLabelText(/translation model/i)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^save$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /save & use separate live config/i,
+      }),
+    ).toBeInTheDocument();
+    openSeparateTab();
+    expect(screen.getByLabelText(/translation model/i)).toBeInTheDocument();
   });
 
   it("no longer offers the auto-reverse checkbox", () => {

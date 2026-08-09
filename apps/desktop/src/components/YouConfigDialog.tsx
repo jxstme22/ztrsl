@@ -269,10 +269,24 @@ export function YouConfigDialog({
   );
 
   const mics = endpoints.filter((endpoint) => endpoint.kind === "capture");
-  const micOptions = mics.map((mic) => ({
-    value: mic.id,
-    label: mic.friendlyName,
-  }));
+  const activeMicIds = new Set(
+    mics.filter((mic) => mic.state === "active").map((mic) => mic.id),
+  );
+  // Only ACTIVE mics can be captured: unplugged/disabled devices silently
+  // break the whole live session at start ("mic source 'You' endpoint is
+  // not active"). Keep a saved-but-inactive mic visible (marked) so the
+  // user understands why, instead of it vanishing from the list.
+  const micOptions = mics
+    .filter((mic) => mic.state === "active" || mic.id === config.micEndpointId)
+    .map((mic) => ({
+      value: mic.id,
+      label:
+        mic.state === "active"
+          ? mic.friendlyName
+          : `${mic.friendlyName} (${t("chatConfigMicInactive")})`,
+    }));
+  const micUnavailable =
+    config.micEndpointId !== null && !activeMicIds.has(config.micEndpointId);
   const liveEndpointOptions = endpoints
     .filter((endpoint) => endpoint.state === "active")
     .map((endpoint) => ({
@@ -402,6 +416,11 @@ export function YouConfigDialog({
               }
               disabled={micOptions.length === 0}
             />
+            {micUnavailable && (
+              <p className="field-error" role="alert">
+                {t("chatConfigMicUnavailableHint")}
+              </p>
+            )}
           </label>
 
           <div className="you-config-pair">
@@ -499,6 +518,7 @@ export function YouConfigDialog({
             </label>
           </div>
 
+          <div className="you-config-pair">
           <label className="field">
             <span>{t("chatConfigAsr")}</span>
             <Select
@@ -541,7 +561,9 @@ export function YouConfigDialog({
               }))}
             />
           </label>
+          </div>
 
+          <div className="you-config-pair">
           <label className="field">
             <span>{t("liveQuality")}</span>
             <Select
@@ -575,7 +597,9 @@ export function YouConfigDialog({
               }}
             />
           </label>
+          </div>
 
+          <div className="you-config-pair">
           <label className="field">
             <span>{t("liveCaptionMode")}</span>
             <Select
@@ -617,6 +641,7 @@ export function YouConfigDialog({
               {t(("liveSegmentationNote" + liveSegmentation) as UIKey)}
             </small>
           </label>
+          </div>
 
           {liveTranslationProvider === "opus-mt-en-zh" &&
             (liveSourceMode !== "english" ||
@@ -667,7 +692,7 @@ export function YouConfigDialog({
           )}
 
           {liveTranslationProvider === "libretranslate" && (
-            <>
+            <div className="you-config-pair">
               <label className="field">
                 <span>{t("liveLibreTranslateUrl")}</span>
                 <input
@@ -692,11 +717,11 @@ export function YouConfigDialog({
                   }}
                 />
               </label>
-            </>
+            </div>
           )}
 
           {liveTranslationProvider === "baidu-translate" && (
-            <>
+            <div className="you-config-pair">
               <label className="field">
                 <span>{t("liveBaiduAppId")}</span>
                 <input
@@ -720,11 +745,11 @@ export function YouConfigDialog({
                   }}
                 />
               </label>
-            </>
+            </div>
           )}
 
           {liveTranslationProvider === "custom-http" && (
-            <>
+            <div className="you-config-pair">
               <label className="field">
                 <span>{t("liveCustomHttp")}</span>
                 <input
@@ -749,7 +774,7 @@ export function YouConfigDialog({
                   }}
                 />
               </label>
-            </>
+            </div>
           )}
         </section>
 

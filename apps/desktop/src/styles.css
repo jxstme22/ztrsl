@@ -3921,6 +3921,38 @@ input[type="range"]::-moz-range-thumb {
      open dropdowns that must escape the dialog, so let them overflow. */
   overflow: visible;
   max-height: none;
+  gap: 10px;
+}
+
+.you-config-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 3px;
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.you-config-tab {
+  flex: 1 1 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.you-config-tab:hover {
+  color: var(--fg-strong);
+}
+
+.you-config-tab.on {
+  background: var(--fg-strong);
+  color: var(--button-primary-fg, #0b0b0d);
 }
 
 .you-config-tabs {
@@ -3961,8 +3993,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .you-config-section-title {
-  margin: 0 0 12px;
-  font-size: 12.5px;
+  margin: 0 0 8px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.03em;
   color: var(--muted);
@@ -3970,13 +4002,13 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .you-config-dialog .field {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .you-config-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .you-config-dialog .field > span {
@@ -3999,13 +4031,13 @@ input[type="range"]::-moz-range-thumb {
 
 .you-config-live-note {
   margin: 0 0 4px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 1px solid var(--stroke);
   border-radius: 8px;
   background: var(--glass);
   color: var(--muted);
   font-size: 11.5px;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .you-config-actions {
@@ -4641,4 +4673,95 @@ input[type="range"]::-moz-range-thumb {
 
 .about-table td {
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- */
+/* Motion                                                             */
+/* ---------------------------------------------------------------- */
+
+@keyframes lst-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes lst-drop-in {
+  from { opacity: 0; transform: translateY(-5px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes lst-modal-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes lst-rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.lst-modal-backdrop {
+  animation: lst-fade-in 160ms ease-out both;
+}
+
+.lst-modal {
+  animation: lst-modal-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.lst-select-listbox,
+.lst-color-listbox,
+.history-menu {
+  animation: lst-drop-in 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top center;
+}
+
+.lst-select-listbox.up {
+  transform-origin: bottom center;
+}
+
+.history-sessions {
+  animation: lst-drop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top right;
+}
+
+.content > * {
+  animation: lst-rise-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nav-button {
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-button:hover {
+  transform: translateY(-1px);
+}
+
+.nav-button:active {
+  transform: scale(0.96);
+}
+
+.lst-select-chevron {
+  transition: transform 160ms ease;
+}
+
+.lst-select-button {
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lst-modal-backdrop,
+  .lst-modal,
+  .lst-select-listbox,
+  .lst-color-listbox,
+  .history-menu,
+  .history-sessions,
+  .content > * {
+    animation: none;
+  }
 }

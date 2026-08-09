@@ -105,8 +105,28 @@ const UI_STRINGS = {
     zh: "请先在设置中选择麦克风和语言",
   },
   chatConfig: { en: "Your voice & chat settings", zh: "语音与聊天设置" },
+  chatConfigTabDefault: { en: "Default", zh: "默认" },
+  chatConfigTabSeparate: { en: "Separate live", zh: "独立实时" },
   chatConfigMic: { en: "Microphone", zh: "麦克风" },
   chatConfigNoMic: { en: "No microphone available", zh: "没有可用的麦克风" },
+  chatConfigMicInactive: { en: "inactive", zh: "不可用" },
+  chatConfigMicUnavailableHint: {
+    en: "This microphone is currently unplugged or disabled — reconnect it or choose another, or live translation cannot start.",
+    zh: "此麦克风当前未连接或已禁用 — 请重新连接或选择其他麦克风，否则无法启动实时翻译。",
+  },
+  liveInputInactive: { en: "inactive", zh: "不可用" },
+  liveInputInactiveHint: {
+    en: "This device is currently unplugged or disabled — live translation cannot capture it until it is active again.",
+    zh: "此设备当前未连接或已禁用 — 恢复连接后才能用于实时翻译。",
+  },
+  liveYouMicMissing: {
+    en: "Your voice mic is not found — open your voice settings and pick a microphone.",
+    zh: "未找到你的语音麦克风 — 请在语音设置中选择一个麦克风。",
+  },
+  liveYouMicInactive: {
+    en: "Your voice mic is currently unplugged or disabled — open your voice settings and pick a working one, then start again.",
+    zh: "你的语音麦克风当前未连接或已禁用 — 请在语音设置中选择可用麦克风后重试。",
+  },
   chatConfigYouSection: { en: "Your voice & chat", zh: "你的语音与聊天" },
   chatConfigLiveSection: {
     en: "Live translation",
