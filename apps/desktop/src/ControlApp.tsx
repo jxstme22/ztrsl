@@ -398,23 +398,16 @@ export function ControlApp() {
     [language, livePair, youConfig],
   );
 
-  // Start the separated live session from the history page. It uses the
-  // modal's "Live translation" section (the same lst.live.* keys the Live
-  // page reads) and shares the sidecar process — so loaded models are
-  // reused, only genuinely-different ones load a second time.
+  // Start the separated live session from the history page: the user's own
+  // voice only. It captures the Default tab's microphone with the Default
+  // tab's language pair (mic-only session — every caption is tagged YOU) and
+  // shares the sidecar process with the Live page, so loaded models are
+  // reused and only genuinely-different ones load a second time. The
+  // "Separate live" tab's input endpoint is deliberately not used here.
   const startSeparatedLive = useCallback(async (): Promise<string | null> => {
-    // The separated session captures the "Separate live" tab's input
-    // endpoint (shared with the Live page through lst.live.input-endpoint)
-    // when one is chosen; otherwise it falls back to the "you" mic. Without
-    // either there is nothing to capture.
-    const storedInput =
-      window.localStorage.getItem("lst.live.input-endpoint") ?? "";
-    const inputEndpointId =
-      storedInput.trim() !== ""
-        ? storedInput
-        : (youSource?.endpointId ?? "");
+    const inputEndpointId = youSource?.endpointId ?? "";
     if (inputEndpointId === "") {
-      return "Pick a microphone or an input endpoint in the config dialog first.";
+      return "Pick a microphone in the config dialog first.";
     }
     // Fail up front (with a clear message) instead of letting the backend
     // abort the session over a currently unplugged/disabled device.
@@ -422,7 +415,7 @@ export function ControlApp() {
       (endpoint) => endpoint.id === inputEndpointId,
     );
     if (catalogEndpoint !== undefined && catalogEndpoint.state !== "active") {
-      return "The input device picked in settings is currently unplugged or disabled — pick another one.";
+      return "The microphone picked in settings is currently unplugged or disabled — pick another one.";
     }
     const direction = resolveYouDirection(youConfig);
     const translationProvider =

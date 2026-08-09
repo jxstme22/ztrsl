@@ -1,5 +1,14 @@
 # 23 — Release Notes
 
+## v0.9.10 — separated live is a You-only session (feat/general-purpose-v0.8)
+
+- The History "Separated live" button now always captures the Default tab's
+  microphone with the Default tab's language pair — a mic-only session where
+  every caption is tagged YOU. The "Separate live" tab's Input endpoint is no
+  longer used for this button (that input remains available for the Live
+  page). Starting without a configured mic returns a clear message, and the
+  mic must be active before the session begins.
+
 ## v0.9.9 — drop Default-tab monitoring output (feat/general-purpose-v0.8)
 
 - The "Monitoring output" picker added in v0.9.8 is removed from the Default
