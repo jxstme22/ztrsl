@@ -1836,6 +1836,12 @@ struct LiveWorkerConfig {
     /// this session). Shared with the runtime so the "you" mic button can
     /// add it mid-session; the capture is gated by `mic_enabled`.
     mic_source: Arc<Mutex<Option<LiveSource>>>,
+    /// True only for the separated (History) session, whose ONLY stream is
+    /// the gated "you" mic. The main live session always captures its chosen
+    /// endpoint even when a you-mic is configured; without this flag the
+    /// mic-only shortcut would skip the main endpoint and the live page
+    /// would silently send zero audio.
+    mic_only_session: bool,
     /// Shared flag toggled by the "you" mic button. The live loop opens and
     /// closes the mic capture around this flag.
     mic_enabled: Arc<AtomicBool>,
@@ -1957,6 +1963,7 @@ async fn launch_live_translation(
     pool: Arc<Mutex<Option<Weak<SidecarProcess>>>>,
     translation_api: Arc<Mutex<Vec<(String, String)>>>,
     live_models: Arc<Mutex<ModelRuntimeState>>,
+    mic_only_session: bool,
 ) -> Result<LiveSnapshot, String> {
     let LiveStartRequest {
         endpoint_id,
@@ -2213,6 +2220,7 @@ async fn launch_live_translation(
         sources,
         mic_source,
         mic_enabled,
+        mic_only_session,
     };
     tauri::async_runtime::spawn_blocking(move || {
         start_live_translation_blocking(
@@ -2249,6 +2257,7 @@ async fn start_live_translation(
         Arc::clone(&pool.inner),
         Arc::clone(&translation_api.env),
         Arc::clone(&models.state),
+        false,
     )
     .await
 }
@@ -2274,6 +2283,7 @@ async fn start_separated_live_translation(
         Arc::clone(&pool.inner),
         Arc::clone(&translation_api.env),
         Arc::clone(&models.state),
+        true,
     )
     .await
 }
@@ -3259,6 +3269,7 @@ fn run_live_worker(
         sources: config_sources,
         mic_source: config_mic_source,
         mic_enabled: config_mic_enabled,
+        mic_only_session: config_mic_only_session,
     } = config;
     let sidecar_config = worker_sidecar_config(&translation_env, bundled.as_ref());
     // Attach to an already-running live sidecar when one exists (separated
@@ -3373,6 +3384,7 @@ fn run_live_worker(
                     &config_mic_source,
                     &config_mic_enabled,
                     &mut mic_registry_pushed,
+                    config_mic_only_session,
                     &stop,
                     &events,
                     &mut supervisor,
@@ -3390,6 +3402,7 @@ fn run_live_worker(
                     &config_mic_source,
                     &config_mic_enabled,
                     &mut mic_registry_pushed,
+                    config_mic_only_session,
                     &stop,
                     &events,
                     &mut supervisor,
@@ -3522,6 +3535,7 @@ fn run_windows_live_loop(
     mic_source: &Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: &Arc<AtomicBool>,
     mic_registry_pushed: &mut bool,
+    mic_only_session: bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -3537,7 +3551,9 @@ fn run_windows_live_loop(
     // below is the only stream, so do NOT synthesize a fake TEAM source —
     // otherwise the same device is captured twice (once unconditionally as
     // TEAM, once gated as YOU) and the mic toggle would not control it.
-    let mic_only = config_sources.is_empty() && mic_present && !loopback;
+    // Only the separated session sets this flag: the main live page always
+    // captures its chosen endpoint even when a you-mic is configured.
+    let mic_only = config_sources.is_empty() && mic_present && !loopback && mic_only_session;
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
     } else if mic_present && !mic_only {
@@ -3911,6 +3927,7 @@ fn run_macos_live_loop(
     mic_source: &Arc<Mutex<Option<LiveSource>>>,
     mic_enabled: &Arc<AtomicBool>,
     mic_registry_pushed: &mut bool,
+    mic_only_session: bool,
     stop: &Receiver<()>,
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
@@ -3923,7 +3940,9 @@ fn run_macos_live_loop(
     // below is the only stream, so do NOT synthesize a fake TEAM source —
     // otherwise the same device is captured twice (once unconditionally as
     // TEAM, once gated as YOU) and the mic toggle would not control it.
-    let mic_only = config_sources.is_empty() && mic_present && !loopback;
+    // Only the separated session sets this flag: the main live page always
+    // captures its chosen endpoint even when a you-mic is configured.
+    let mic_only = config_sources.is_empty() && mic_present && !loopback && mic_only_session;
     let effective_sources: Vec<LiveSource> = if !config_sources.is_empty() {
         config_sources.to_vec()
     } else if mic_present && !mic_only {
