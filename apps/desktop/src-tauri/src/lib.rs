@@ -2,8 +2,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -391,8 +391,11 @@ fn provider_model_ids(asr_provider: &str, translation_provider: &str) -> Vec<&'s
         "paraformer-zh-streaming" => ids.push("paraformer-zh-streaming"),
         "sensevoice-small" | "sense-voice" => ids.push("sensevoice-small"),
         // Cloud ASR (Groq / NVIDIA NIM): no local model to check.
-        "groq-whisper" | "nvidia-whisper-large-v3" | "nvidia-nemotron-asr-streaming"
-        | "nvidia-parakeet-1.1b" | "nvidia-canary-1b" => {}
+        "groq-whisper"
+        | "nvidia-whisper-large-v3"
+        | "nvidia-nemotron-asr-streaming"
+        | "nvidia-parakeet-1.1b"
+        | "nvidia-canary-1b" => {}
         _ => {}
     }
     match translation_provider {
@@ -1259,14 +1262,13 @@ async fn request_microphone_permission(app: tauri::AppHandle) -> Result<String, 
     {
         use block2::{Block, RcBlock};
         use objc2::runtime::Bool;
-        use objc2_av_foundation::{AVCaptureDevice, AVAuthorizationStatus, AVMediaTypeAudio};
+        use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
         // The media-type constant is an extern static backed by AVFoundation,
         // which the app links; dereferencing the static is unsafe.
         let media_type_ptr = {
             let media_type = unsafe { AVMediaTypeAudio.as_ref() }
                 .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
-            let status =
-                unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+            let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
             if status != AVAuthorizationStatus::NotDetermined {
                 return Ok(auth_status_label(status));
             }
@@ -2515,11 +2517,9 @@ async fn stop_separated_live_translation(
 ) -> Result<LiveSnapshot, String> {
     let state = Arc::clone(&live.state);
     let live_models = Arc::clone(&models.state);
-    tauri::async_runtime::spawn_blocking(move || {
-        stop_live_translation_blocking(state, live_models)
-    })
-    .await
-    .map_err(|error| format!("separated live stop worker failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || stop_live_translation_blocking(state, live_models))
+        .await
+        .map_err(|error| format!("separated live stop worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -3210,12 +3210,7 @@ fn push_live_registry(
     supervisor: &mut SidecarSupervisor,
     sources: &[LiveSource],
 ) -> Result<(), SupervisorError> {
-    supervisor.push_source_registry(
-        sources
-            .iter()
-            .map(LiveSource::to_registry_entry)
-            .collect(),
-    )
+    supervisor.push_source_registry(sources.iter().map(LiveSource::to_registry_entry).collect())
 }
 
 fn run_live_worker(
@@ -3402,7 +3397,10 @@ fn run_live_worker(
                 } else {
                     format!(
                         " Sidecar stderr:\n{}",
-                        tail.iter().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n")
+                        tail.iter()
+                            .map(|line| format!("  {line}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
                     )
                 };
                 let _ = events.try_send(LiveWorkerEvent::Warning(format!(
@@ -3511,7 +3509,10 @@ fn run_windows_live_loop(
     // The user's mic stream lives on the same session: when configured, route
     // through the multi-source loop (with the classic endpoint synthesized as
     // a team source) so both captures share one loop and one sequence.
-    let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    let mic_present = mic_source
+        .lock()
+        .map(|slot| slot.is_some())
+        .unwrap_or(false);
     // A mic-only session (the separated/history live): the gated mic capture
     // below is the only stream, so do NOT synthesize a fake TEAM source —
     // otherwise the same device is captured twice (once unconditionally as
@@ -3567,8 +3568,10 @@ fn run_windows_live_loop(
                 "monitoring output endpoint is missing".to_owned(),
             ));
         };
-        Some(audio_core::WindowsAudioPlayback::start(name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
+        Some(
+            audio_core::WindowsAudioPlayback::start(name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
     } else {
         None
     };
@@ -3595,7 +3598,10 @@ fn run_windows_live_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
+        match capture
+            .try_next()
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+        {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
@@ -3717,10 +3723,7 @@ fn run_windows_multi_source_loop(
         // Read the shared mic slot: the "you" button may add the source
         // mid-session. When it appears for the first time, re-push the
         // sidecar registry so captions carry the mic's tag/color.
-        let current_mic = mic_source
-            .lock()
-            .map(|slot| slot.clone())
-            .unwrap_or(None);
+        let current_mic = mic_source.lock().map(|slot| slot.clone()).unwrap_or(None);
         if current_mic.is_some() && !*mic_registry_pushed {
             let mut all = config_sources.to_vec();
             if let Some(mic) = &current_mic {
@@ -3743,11 +3746,11 @@ fn run_windows_multi_source_loop(
                 if let Some(mic) = &current_mic {
                     match audio_core::WindowsAudioCapture::start(&mic.endpoint_name, 32) {
                         Ok(capture) => {
-                            let resampler = StreamingLinearResampler::new(
-                                capture.format().sample_rate,
-                                16_000,
-                            )
-                            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+                            let resampler =
+                                StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
+                                    .map_err(|error| {
+                                        LiveLoopError::Audio(audio_error_to_string(error))
+                                    })?;
                             mic_capture = Some((capture, resampler));
                         }
                         Err(error) => {
@@ -3892,7 +3895,10 @@ fn run_macos_live_loop(
     events: &SyncSender<LiveWorkerEvent>,
     supervisor: &mut SidecarSupervisor,
 ) -> Result<(), LiveLoopError> {
-    let mic_present = mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false);
+    let mic_present = mic_source
+        .lock()
+        .map(|slot| slot.is_some())
+        .unwrap_or(false);
     // A mic-only session (the separated/history live): the gated mic capture
     // below is the only stream, so do NOT synthesize a fake TEAM source —
     // otherwise the same device is captured twice (once unconditionally as
@@ -3956,8 +3962,10 @@ fn run_macos_live_loop(
                 "monitoring output endpoint is missing".to_owned(),
             ));
         };
-        Some(audio_core::MacosAudioPlayback::start(name, 32)
-            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?)
+        Some(
+            audio_core::MacosAudioPlayback::start(name, 32)
+                .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?,
+        )
     } else {
         None
     };
@@ -4002,7 +4010,10 @@ fn run_macos_live_loop(
                     .to_owned(),
             ));
         }
-        match capture.try_next().map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))? {
+        match capture
+            .try_next()
+            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?
+        {
             Some(frame) => {
                 last_frame_at = Some(Instant::now());
                 stall_warned = false;
@@ -4106,10 +4117,7 @@ fn run_macos_multi_source_loop(
         if stop.try_recv().is_ok() {
             return Ok(());
         }
-        let current_mic = mic_source
-            .lock()
-            .map(|slot| slot.clone())
-            .unwrap_or(None);
+        let current_mic = mic_source.lock().map(|slot| slot.clone()).unwrap_or(None);
         if current_mic.is_some() && !*mic_registry_pushed {
             let mut all = config_sources.to_vec();
             if let Some(mic) = &current_mic {
@@ -4132,11 +4140,11 @@ fn run_macos_multi_source_loop(
                 if let Some(mic) = &current_mic {
                     match audio_core::MacosAudioCapture::start(&mic.endpoint_name, 32) {
                         Ok(capture) => {
-                            let resampler = StreamingLinearResampler::new(
-                                capture.format().sample_rate,
-                                16_000,
-                            )
-                            .map_err(|error| LiveLoopError::Audio(audio_error_to_string(error)))?;
+                            let resampler =
+                                StreamingLinearResampler::new(capture.format().sample_rate, 16_000)
+                                    .map_err(|error| {
+                                        LiveLoopError::Audio(audio_error_to_string(error))
+                                    })?;
                             mic_capture = Some((capture, resampler));
                         }
                         Err(error) => {
@@ -4338,7 +4346,11 @@ fn live_snapshot(state: &mut LiveRuntimeState) -> LiveSnapshot {
         captions,
         error: state.error.clone(),
         warning: state.warning.clone(),
-        mic_enabled: state.mic_source.lock().map(|slot| slot.is_some()).unwrap_or(false)
+        mic_enabled: state
+            .mic_source
+            .lock()
+            .map(|slot| slot.is_some())
+            .unwrap_or(false)
             && state.mic_enabled.load(Ordering::Relaxed),
     }
 }

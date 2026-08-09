@@ -593,3 +593,23 @@ corrections, and making Off/Balanced/Strict language handling real.
   `docs/v0_3/PHASE_11_EVIDENCE.md` (`[WINDOWS]`).
 - Deep, dense surfaces (Clip Lab, Accuracy Lab) remain English; the i18n
   framework is in place to extend.
+
+## v0.9.5 — macOS branch synced to general (v0.9.5)
+
+The macOS branch (`feat/macos-v0.8.1`) now carries everything the general
+(Windows) branch built since v0.8.1, while keeping macOS-only features
+(TCC mic/screen permissions, MLX Whisper ASR, vibrancy, ScreenCaptureKit,
+`16_MACOS_PORT.md`, ADR-008):
+
+- you-voice mic + typed chat on the same live session, separated live
+- chat sidecar isolation, per-caption bubbles, YOU color, overlay bottom-pin
+- mic late-enable, solid YOU bubble, copy-beside-caption
+- source.registry 1008 wire fix, speaker log lines, new-session + cap
+  rotation (2000)
+- separated-live registry timeout, chat stall fix, History Start/Stop
+  toolbar, NVIDIA/Groq/Baidu/LT/custom API keys, welcome persistence
+- dropdown auto-close, mic ownership, provider persistence, live label
+  removed, model dropdowns show installed + cloud only
+- separated mic toggle genuinely controls the session; same-source
+  sessions safe — the mic-only gating is applied to the macOS live loops
+  as well as Windows

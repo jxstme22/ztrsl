@@ -57,7 +57,7 @@ import type {
 } from "./live/bridge";
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
-import { isDesktopRuntime, emitHistoryToOverlay, beginOverlayDrag } from "./overlay/bridge";
+import { isDesktopRuntime, emitHistoryToOverlay } from "./overlay/bridge";
 import type { Caption, OverlaySettings } from "./overlay/model";
 import {
   buildYouSourceRequest,
@@ -80,7 +80,7 @@ type SectionId =
   | "sources"
   | "about";
 
-const APP_VERSION = "0.8.0";
+const APP_VERSION = "0.9.5";
 
 type Controller = ReturnType<typeof useOverlayController>;
 type AudioController = ReturnType<typeof useAudioMeter>;

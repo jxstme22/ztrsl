@@ -41,7 +41,7 @@ It never touches the game: no injection, no memory reads, no automation.
 
 > **Download:** get the Windows installer or macOS app from
 > [GitHub Releases](https://github.com/jxstme22/ztrsl/releases/latest).
-> **Status:** beta (v0.7). It works end-to-end; code signing + clean-machine
+> **Status:** beta (v0.9.5). It works end-to-end; code signing + clean-machine
 > tests are the remaining 1.0 work.
 
 ---
@@ -400,7 +400,7 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## Roadmap to 1.0
 
-Current release: **v0.7.0** (beta — Windows 11 + macOS, 7-language matrix,
+Current release: **v0.9.5** (beta — Windows 11 + macOS, 7-language matrix,
 chat-history overlay, full i18n, multi-source live). Working toward 1.0:
 
 - [x] macOS support (Apple Silicon, MLX Metal ASR)
