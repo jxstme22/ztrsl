@@ -1266,10 +1266,15 @@ async fn request_microphone_permission(app: tauri::AppHandle) -> Result<String, 
         let media_type = unsafe { AVMediaTypeAudio.as_ref() }
             .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
         let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+        eprintln!(
+            "[ytrsl] mic status before request: {}",
+            auth_status_label(status)
+        );
         if status != objc2_av_foundation::AVAuthorizationStatus::NotDetermined {
             return Ok(auth_status_label(status));
         }
         let granted = request_mic_permission_on_main(app).await?;
+        eprintln!("[ytrsl] mic request result: granted={granted}");
         Ok(if granted { "authorized" } else { "denied" }.to_owned())
     }
     #[cfg(not(target_os = "macos"))]
@@ -1328,10 +1333,12 @@ async fn request_mic_permission_on_main(app: tauri::AppHandle) -> Result<bool, S
         unsafe {
             let media_type = &*(media_type_ptr as *const objc2_foundation::NSString);
             let block = &*(block_ptr as *const Block<dyn Fn(Bool)>);
+            eprintln!("[ytrsl] firing AVFoundation mic request");
             AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, block);
         }
     })
     .map_err(|error| error.to_string())?;
+    eprintln!("[ytrsl] awaiting mic completion");
     tokio::time::timeout(Duration::from_secs(30), receiver)
         .await
         .map_err(|_| "timed out waiting for microphone permission".to_owned())?
@@ -4466,16 +4473,11 @@ pub fn run() {
             app.manage(SidecarPaths {
                 bundled: resolve_bundled_paths(app.handle()),
             });
-            // macOS: restore native window decorations (traffic lights with
-            // the yellow Minimize button). The overlay feature is not used on
-            // macOS, so the control window does not need to be frameless; the
-            // custom titlebar stays as an in-content header.
-            #[cfg(target_os = "macos")]
-            if let Some(control) = app.get_webview_window("control") {
-                use tauri::TitleBarStyle;
-                let _ = control.set_decorations(true);
-                let _ = control.set_title_bar_style(TitleBarStyle::Overlay);
-            }
+            // macOS: the control window stays frameless — the app draws its
+            // own titlebar (drag strip + minimize/overlay/close buttons) so
+            // there is exactly one top bar. The separate overlay window is
+            // not used on macOS; the windowed translation overlay morphs this
+            // same window instead.
             // Closing the main window must kill the whole app — sidecar,
             // overlay window, audio threads — not just hide the window and
             // leave the process running in the background.

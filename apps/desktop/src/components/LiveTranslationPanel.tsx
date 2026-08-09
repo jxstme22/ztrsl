@@ -2,7 +2,7 @@ import { LoaderCircle, Play, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { useAudioMeter } from "../audio/useAudioMeter";
-import { requestMicrophonePermission } from "../audio/bridge";
+import { requestMicrophonePermission, openMicrophoneSettings } from "../audio/bridge";
 import { useLiveTranslation } from "../live/useLiveTranslation";
 import { setTranslationEnv } from "../live/bridge";
 import { loadSourceConfigs } from "../sources/storage";
@@ -632,9 +632,20 @@ export function LiveTranslationPanel({
                   // macOS delivers silent zeros (or hangs) on input without
                   // it. Ask while the app is frontmost, and abort with a
                   // clear message when the grant is missing or denied.
-                  const permissionStatus = await requestMicrophonePermission().catch(
+                  // `notDetermined` means the prompt is pending or was
+                  // suppressed — retry once (activation + focus) before
+                  // giving up, so a prompt that needed a beat still shows.
+                  let permissionStatus = await requestMicrophonePermission().catch(
                     () => "notDetermined" as const,
                   );
+                  if (permissionStatus === "notDetermined") {
+                    await new Promise((resolve) => {
+                      window.setTimeout(resolve, 500);
+                    });
+                    permissionStatus = await requestMicrophonePermission().catch(
+                      () => "notDetermined" as const,
+                    );
+                  }
                   if (
                     permissionStatus === "denied" ||
                     permissionStatus === "restricted" ||
@@ -754,6 +765,17 @@ export function LiveTranslationPanel({
           <div>
             <strong>Microphone permission needed</strong>
             <p>{permissionError}</p>
+            {audio.catalog?.platform === "macos" && (
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  void openMicrophoneSettings();
+                }}
+              >
+                Open mic settings
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1315,6 +1337,32 @@ export function LiveTranslationPanel({
               <p className="readout-english">{live.lastCaption.english_text}</p>
             </>
           )}
+          <dl className="metrics">
+            <div>
+              <dt>{t("liveDevice")}</dt>
+              <dd>{live.snapshot.asrRuntime ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>{t("liveCaptions")}</dt>
+              <dd>{live.snapshot.metrics.captionsReceived}</dd>
+            </div>
+            <div>
+              <dt>{t("liveAsrLabel")}</dt>
+              <dd>
+                {live.lastCaption === null
+                  ? "—"
+                  : `${String(Math.round(live.lastCaption.asr_ms))} ms`}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("livePackets")}</dt>
+              <dd>{live.snapshot.metrics.audioPacketsSent}</dd>
+            </div>
+            <div>
+              <dt>{t("liveDrops")}</dt>
+              <dd>{live.snapshot.metrics.captureDrops}</dd>
+            </div>
+          </dl>
         </div>
       )}
     </section>

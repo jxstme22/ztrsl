@@ -176,10 +176,9 @@ export function ControlApp() {
     () =>
       buildYouSourceRequest(
         youConfig,
-        livePair,
         window.localStorage.getItem("lst.live.translation-provider") ?? "nllb",
       ),
-    [livePair, youConfig],
+    [youConfig],
   );
   const models = useModels();
   const gpuRuntime = useGpuRuntime();
@@ -365,7 +364,7 @@ export function ControlApp() {
   // live run), open a "Chat" session first so the bubble is saved.
   const sendChat = useCallback(
     async (text: string): Promise<string | null> => {
-      const direction = resolveYouDirection(youConfig, livePair);
+      const direction = resolveYouDirection(youConfig);
       const liveTranslationProvider =
         window.localStorage.getItem("lst.live.translation-provider") ?? "nllb";
       let result;
@@ -423,7 +422,7 @@ export function ControlApp() {
     if (youSource === null) {
       return "Pick a microphone in the config dialog first.";
     }
-    const direction = resolveYouDirection(youConfig, livePair);
+    const direction = resolveYouDirection(youConfig);
     const translationProvider =
       (window.localStorage.getItem(
         "lst.live.translation-provider",
