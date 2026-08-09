@@ -8,5 +8,11 @@
        sidecar spawn, and model-store writes with EPERM ("Operation not
        permitted"). No sandbox keys are set: the app reads/writes the real
        home directory like any regular app. -->
+  <!-- REQUIRED on macOS 26+: without this entitlement, TCC auto-denies
+       microphone requests (silently, no prompt) for ad-hoc-signed apps
+       launched via LaunchServices (Finder/double-click). Direct-exec from a
+       terminal still worked because access came from the parent chain. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
 </dict>
 </plist>

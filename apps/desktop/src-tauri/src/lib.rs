@@ -4555,6 +4555,19 @@ pub fn run() {
             // they run `tccutil reset`. Requests happen only on explicit
             // user action (the Start button, "Ask for permission", or the
             // mic toggle), when the app is guaranteed frontmost.
+            //
+            // Diagnostic hook: `LST_MIC_DIAG=1` fires the request a few
+            // seconds after launch so TCC prompt behavior can be compared
+            // across launch modes (LaunchServices vs direct exec) without
+            // GUI interaction. Never set in normal use.
+            #[cfg(target_os = "macos")]
+            if std::env::var("LST_MIC_DIAG").as_deref() == Ok("1") {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = tokio::time::sleep(Duration::from_secs(3)).await;
+                    let _ = request_microphone_permission(handle).await;
+                });
+            }
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
