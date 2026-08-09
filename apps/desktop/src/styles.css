@@ -2562,18 +2562,21 @@ input[type="range"]::-moz-range-thumb {
 /* History page in the control window. */
 /* Chat-room layout: the panel is a flex column that fills the content area —
    toolbar stays put, the message list scrolls internally (auto-bottom), and
-   the input card is pinned at the bottom. */
+   the input card is pinned at the bottom. The card keeps a fixed minimum
+   size so a transcript with a single bubble still fills the same area. */
 .history-page-stack {
   align-self: stretch;
   height: 100%;
-  min-height: 0;
+  min-height: 480px;
+  min-width: min(100%, 720px);
 }
 
 .history-panel.history-chat {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 0;
+  min-height: 480px;
+  min-width: min(100%, 720px);
   padding-bottom: 14px;
 }
 
@@ -4609,4 +4612,66 @@ input[type="range"]::-moz-range-thumb {
 
 .about-table td {
   color: var(--muted);
+}
+
+/* Windowed overlay mode (macOS): the control window morphs into a compact
+   always-on-top caption strip. The container is a dark translucent strip
+   with a control row; history swaps in a taller layout. */
+.windowed-overlay {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 8px 10px 10px;
+  gap: 8px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(12, 14, 20, 0.82);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  color: var(--fg);
+}
+
+.windowed-overlay-controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.windowed-overlay-button {
+  display: grid;
+  width: 26px;
+  height: 24px;
+  place-items: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.windowed-overlay-button:hover {
+  background: var(--glass-hover);
+  color: var(--fg-strong);
+}
+
+.windowed-overlay-button.on {
+  color: var(--accent);
+}
+
+.windowed-overlay .windowed-history {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.windowed-overlay .caption-stack {
+  flex: 1 1 auto;
+  min-height: 0;
 }

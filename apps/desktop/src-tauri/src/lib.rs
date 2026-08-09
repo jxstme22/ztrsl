@@ -1260,78 +1260,82 @@ fn open_microphone_settings() -> Result<(), String> {
 async fn request_microphone_permission(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
-        use block2::{Block, RcBlock};
-        use objc2::MainThreadMarker;
-        use objc2::msg_send;
-        use objc2::runtime::Bool;
-        use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
-        // The media-type constant is an extern static backed by AVFoundation,
-        // which the app links; dereferencing the static is unsafe.
-        let media_type_ptr = {
-            let media_type = unsafe { AVMediaTypeAudio.as_ref() }
-                .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
-            let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
-            if status != AVAuthorizationStatus::NotDetermined {
-                return Ok(auth_status_label(status));
-            }
-            *media_type as *const objc2_foundation::NSString as usize
-        };
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
-        // Leak the block: AVFoundation copies it when the request runs, and
-        // the main-thread closure needs it alive beyond this function's
-        // frame. A few dozen bytes per permission request.
-        let block: &'static RcBlock<dyn Fn(Bool)> =
-            Box::leak(Box::new(RcBlock::new(move |granted: Bool| {
-                // The block is `Fn` and may be invoked once; take the channel
-                // sender so a second invocation (never expected) no-ops.
-                if let Ok(mut slot) = sender.lock() {
-                    if let Some(sender) = slot.take() {
-                        let _ = sender.send(granted.as_bool());
-                    }
-                }
-            })));
-        let block_ptr = &**block as *const Block<dyn Fn(Bool)> as usize;
-        // The TCC permission prompt only presents when the request
-        // originates on the main thread — background-thread requests
-        // silently no-op on modern macOS (status stays "notDetermined",
-        // no prompt, completion never fires). Dispatch the request onto the
-        // main thread and await the completion. objc2 objects are !Send, so
-        // the closure carries raw pointers only.
-        // Bring the control window to the front first: TCC suppresses
-        // the prompt for background apps, so a request fired before the
-        // window is focused silently no-ops (status stays
-        // "notDetermined" forever). Activating the app is required on
-        // macOS 13+: set_focus() alone does not make the app frontmost
-        // for TCC, and the prompt is silently dropped.
-        let app_for_focus = app.clone();
-        app.run_on_main_thread(move || {
-            // Activate the app so TCC presents the mic prompt (macOS 13+
-            // silently drops the request when the app is not frontmost).
-            let marker = unsafe { MainThreadMarker::new_unchecked() };
-            let nsapp = objc2_app_kit::NSApplication::sharedApplication(marker);
-            let _: () = unsafe { msg_send![&*nsapp, activateIgnoringOtherApps: true] };
-            if let Some(window) = app_for_focus.get_webview_window("control") {
-                let _ = window.set_focus();
-            }
-            unsafe {
-                let media_type = &*(media_type_ptr as *const objc2_foundation::NSString);
-                let block = &*(block_ptr as *const Block<dyn Fn(Bool)>);
-                AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, block);
-            }
-        })
-        .map_err(|error| error.to_string())?;
-        match tokio::time::timeout(Duration::from_secs(30), receiver).await {
-            Ok(Ok(true)) => Ok("authorized".to_owned()),
-            Ok(Ok(false)) => Ok("denied".to_owned()),
-            Ok(Err(_)) => Err("microphone permission request failed".to_owned()),
-            Err(_) => Err("timed out waiting for microphone permission".to_owned()),
+        // If the status is already determined (granted/denied/restricted),
+        // report it without prompting again.
+        use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio};
+        let media_type = unsafe { AVMediaTypeAudio.as_ref() }
+            .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
+        let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
+        if status != objc2_av_foundation::AVAuthorizationStatus::NotDetermined {
+            return Ok(auth_status_label(status));
         }
+        let granted = request_mic_permission_on_main(app).await?;
+        Ok(if granted { "authorized" } else { "denied" }.to_owned())
     }
     #[cfg(not(target_os = "macos"))]
     {
         Ok("unsupported".to_owned())
     }
+}
+
+/// macOS: fire the AVFoundation mic-permission request on the main thread
+/// with the app activated (TCC suppresses the prompt for background apps),
+/// and await the completion. Returns true when the user granted access.
+#[cfg(target_os = "macos")]
+async fn request_mic_permission_on_main(app: tauri::AppHandle) -> Result<bool, String> {
+    use block2::{Block, RcBlock};
+    use objc2::MainThreadMarker;
+    use objc2::msg_send;
+    use objc2::runtime::Bool;
+    use objc2_av_foundation::{AVCaptureDevice, AVMediaTypeAudio};
+    // The media-type constant is an extern static backed by AVFoundation,
+    // which the app links; dereferencing the static is unsafe.
+    let media_type_ptr = {
+        let media_type = unsafe { AVMediaTypeAudio.as_ref() }
+            .ok_or_else(|| "AVMediaTypeAudio is unavailable".to_owned())?;
+        *media_type as *const objc2_foundation::NSString as usize
+    };
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let sender = std::sync::Arc::new(std::sync::Mutex::new(Some(sender)));
+    // Leak the block: AVFoundation copies it when the request runs, and
+    // the main-thread closure needs it alive beyond this function's frame.
+    let block: &'static RcBlock<dyn Fn(Bool)> =
+        Box::leak(Box::new(RcBlock::new(move |granted: Bool| {
+            // The block is `Fn` and may be invoked once; take the channel
+            // sender so a second invocation (never expected) no-ops.
+            if let Ok(mut slot) = sender.lock() {
+                if let Some(sender) = slot.take() {
+                    let _ = sender.send(granted.as_bool());
+                }
+            }
+        })));
+    let block_ptr = &**block as *const Block<dyn Fn(Bool)> as usize;
+    // The TCC permission prompt only presents when the request originates
+    // on the main thread — background-thread requests silently no-op on
+    // modern macOS. Dispatch onto the main thread and await the completion.
+    // Activating the app is required on macOS 13+: set_focus() alone does
+    // not make the app frontmost for TCC, and the prompt is silently
+    // dropped (status stays "notDetermined" forever).
+    let app_for_focus = app.clone();
+    app.run_on_main_thread(move || {
+        // Activate the app so TCC presents the mic prompt.
+        let marker = unsafe { MainThreadMarker::new_unchecked() };
+        let nsapp = objc2_app_kit::NSApplication::sharedApplication(marker);
+        let _: () = unsafe { msg_send![&*nsapp, activateIgnoringOtherApps: true] };
+        if let Some(window) = app_for_focus.get_webview_window("control") {
+            let _ = window.set_focus();
+        }
+        unsafe {
+            let media_type = &*(media_type_ptr as *const objc2_foundation::NSString);
+            let block = &*(block_ptr as *const Block<dyn Fn(Bool)>);
+            AVCaptureDevice::requestAccessForMediaType_completionHandler(media_type, block);
+        }
+    })
+    .map_err(|error| error.to_string())?;
+    tokio::time::timeout(Duration::from_secs(30), receiver)
+        .await
+        .map_err(|_| "timed out waiting for microphone permission".to_owned())?
+        .map_err(|_| "microphone permission request failed".to_owned())
 }
 
 /// Map an `AVAuthorizationStatus` to the wire label.
@@ -4480,6 +4484,32 @@ pub fn run() {
                 control.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { .. } = event {
                         handle.exit(0);
+                    }
+                });
+            }
+            // macOS: proactively ask for microphone access on first launch.
+            // TCC only shows the prompt while the app is frontmost AND the
+            // request comes from a visible window; deferring it until the
+            // user reaches the Start button can silently no-op (the earlier
+            // 'never asks' report). Requesting at startup, right after the
+            // window is shown, is the reliable moment. If the user already
+            // granted or denied, this is a no-op. Retry once after a longer
+            // delay: on first launch the window can still be settling when
+            // the first request fires, and TCC drops it without a prompt.
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // Give the window a beat to become frontmost after
+                    // launch, then request. Best-effort: failures here are
+                    // non-fatal (the Start button still asks).
+                    let _ = tokio::time::sleep(Duration::from_millis(1200)).await;
+                    if request_mic_permission_on_main(handle.clone())
+                        .await
+                        .is_err()
+                    {
+                        let _ = tokio::time::sleep(Duration::from_millis(1500)).await;
+                        let _ = request_mic_permission_on_main(handle).await;
                     }
                 });
             }

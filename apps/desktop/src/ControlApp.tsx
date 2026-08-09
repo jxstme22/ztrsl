@@ -2,10 +2,12 @@ import {
   Activity,
   Boxes,
   Gauge,
+  GripHorizontal,
   Info,
   MessageSquareText,
   Mic,
   Minus,
+  Pin,
   Rocket,
   ScrollText,
   Settings,
@@ -14,7 +16,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
 
 import { HistoryPanel } from "./captions/HistoryPanel";
 import { useCaptionHistory } from "./captions/useCaptionHistory";
@@ -58,6 +60,7 @@ import type {
 import { useGpuRuntime } from "./models/useGpuRuntime";
 import { useModels } from "./models/useModels";
 import { isDesktopRuntime, emitHistoryToOverlay } from "./overlay/bridge";
+import { beginOverlayDrag } from "./windowEffects";
 import type { Caption, OverlaySettings } from "./overlay/model";
 import {
   buildYouSourceRequest,
@@ -551,6 +554,98 @@ export function ControlApp() {
       });
   };
 
+  // Windowed overlay mode (macOS): the control window morphs into a compact
+  // always-on-top caption strip. The separate overlay window is disabled on
+  // macOS (a transparent webview renders black without the app's vibrancy
+  // layer), so this is how translations stay visible over the game.
+  if (controller.windowedMode) {
+    const historyView = controller.snapshot.historyView;
+    const maxRows = controller.snapshot.settings.historyMaxRows;
+    const shownHistory =
+      maxRows === "auto"
+        ? history.activeEntries
+        : history.activeEntries.slice(-maxRows);
+    const reversedHistory = [...shownHistory].reverse();
+
+    // Mini history needs a taller window than the caption strip (150px).
+    const toggleWindowedHistory = (): void => {
+      controller.toggleHistoryView();
+      void getCurrentWindow()
+        .setSize(new PhysicalSize(900, historyView ? 150 : 420))
+        .catch(() => undefined);
+    };
+    return (
+      <main
+        className="windowed-overlay"
+        data-history={historyView || undefined}
+      >
+        <div className="windowed-overlay-controls">
+          <button
+            type="button"
+            className="windowed-overlay-button"
+            aria-label={language.t("overlayDragLabel")}
+            title={language.t("overlayDragLabel")}
+            onPointerDown={() => {
+              void beginOverlayDrag();
+            }}
+          >
+            <GripHorizontal aria-hidden="true" size={14} />
+          </button>
+          <button
+            type="button"
+            className="windowed-overlay-button"
+            aria-label={language.t("overlayToggleHistory")}
+            title={language.t("overlayToggleHistory")}
+            onClick={toggleWindowedHistory}
+          >
+            <ScrollText aria-hidden="true" size={14} />
+          </button>
+          <button
+            type="button"
+            className={`windowed-overlay-button${controller.snapshot.settings.pinned ? " on" : ""}`}
+            aria-label={language.t("overlayPinLabel")}
+            title={language.t("overlayPinLabel")}
+            onClick={controller.pin}
+          >
+            <Pin aria-hidden="true" size={14} />
+          </button>
+          <button
+            type="button"
+            className="windowed-overlay-button"
+            aria-label={language.t("overlayExitWindowed")}
+            title={language.t("overlayExitWindowed")}
+            onClick={controller.toggleWindowedMode}
+          >
+            <X aria-hidden="true" size={14} />
+          </button>
+        </div>
+        {historyView ? (
+          <div className="overlay-history windowed-history">
+            {history.activeEntries.length === 0 ? (
+              <p className="overlay-history-empty">
+                {language.t("overlayHistoryEmpty")}
+              </p>
+            ) : (
+              <ol className="overlay-history-list">
+                {reversedHistory.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className={`overlay-history-entry ${entry.fromSelf ? "self" : ""}`}
+                    data-uncertain={entry.uncertain || undefined}
+                  >
+                    <span className="overlay-history-text">{entry.text}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        ) : (
+          <CaptionStack snapshot={controller.snapshot} mode="mini" />
+        )}
+      </main>
+    );
+  }
+
   return (
     <main className="app-frame">
       <div className="titlebar" data-tauri-drag-region>
@@ -576,6 +671,14 @@ export function ControlApp() {
               onClick={controller.toggleHistoryView}
             >
               <ScrollText aria-hidden="true" size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label={language.t("overlayEnterWindowed")}
+              title={language.t("overlayEnterWindowed")}
+              onClick={controller.toggleWindowedMode}
+            >
+              <Boxes aria-hidden="true" size={15} />
             </button>
             <button type="button" aria-label="Minimize" onClick={minimize}>
               <Minus aria-hidden="true" size={15} />

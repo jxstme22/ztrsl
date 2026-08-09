@@ -1,9 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export function isMacos(): boolean {
   return navigator.userAgent.includes("Mac");
+}
+
+/** Start a window drag from a pointer-down on a drag handle. */
+export function beginOverlayDrag(): Promise<void> {
+  if (!isTauri()) {
+    return Promise.resolve();
+  }
+  return getCurrentWindow().startDragging();
 }
 
 // Native window look for the control window. The window is transparent

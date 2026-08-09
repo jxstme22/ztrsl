@@ -193,6 +193,44 @@ describe("HistoryPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
     expect(screen.getAllByLabelText(/live session/i)).toHaveLength(1);
   });
+
+  it("opens an old session from the sidebar while a live session runs", () => {
+    render(
+      <HistoryPanel
+        sessions={[
+          session({
+            id: "sess-old",
+            name: "Session · 09:00",
+            entries: [entry({ id: "old-1", text: "Old message" })],
+          }),
+          session({
+            id: "sess-live",
+            name: "Session · 14:30",
+            entries: [entry({ id: "live-1", text: "Live message" })],
+          }),
+        ]}
+        currentSessionId="sess-live"
+        onNewSession={vi.fn()}
+        onRenameSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        onClearSession={vi.fn()}
+        micEnabled={false}
+        micConfigured={true}
+        liveRunning={true}
+        onToggleMic={vi.fn()}
+        onSendChat={vi.fn()}
+        onOpenYouConfig={vi.fn()}
+      />,
+    );
+    // The live session is shown by default.
+    expect(screen.getByText("Live message")).toBeInTheDocument();
+    // Pick the old session from the sidebar: its entries must replace the
+    // live ones even though a live session is still current.
+    fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Session · 09:00/i }));
+    expect(screen.getByText("Old message")).toBeInTheDocument();
+    expect(screen.queryByText("Live message")).toBeNull();
+  });
 });
 
 describe("HistoryPanel chat room", () => {

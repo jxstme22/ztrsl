@@ -162,19 +162,25 @@ export function HistoryPanel({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
-  // Default view: the live session, else the most recently started one.
+  // Default view: the live session unless the user explicitly picked another
+  // one from the sidebar — an explicit selection always wins so old sessions
+  // stay reachable while a live session is running.
   const selected = useMemo(() => {
     if (sessions.length === 0) {
       return null;
+    }
+    if (selectedId !== null) {
+      const picked = sessions.find((s) => s.id === selectedId);
+      if (picked !== undefined) {
+        return picked;
+      }
     }
     const live = sessions.find((s) => s.id === currentSessionId);
     if (live !== undefined) {
       return live;
     }
     return (
-      sessions.find((s) => s.id === selectedId) ??
-      [...sessions].sort((a, b) => b.startedAtMs - a.startedAtMs)[0] ??
-      null
+      [...sessions].sort((a, b) => b.startedAtMs - a.startedAtMs)[0] ?? null
     );
   }, [currentSessionId, selectedId, sessions]);
 
