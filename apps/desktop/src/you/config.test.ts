@@ -11,30 +11,29 @@ import {
 
 describe("resolveYouDirection", () => {
   it("always honors the configured pair, even while a live session runs", () => {
-    const direction = resolveYouDirection(
-      { ...DEFAULT_YOU_CONFIG, sourceMode: "english", targetLanguage: "zh" },
-      { sourceMode: "english", targetLanguage: "zh" },
-    );
+    const direction = resolveYouDirection({
+      ...DEFAULT_YOU_CONFIG,
+      sourceMode: "english",
+      targetLanguage: "zh",
+    });
     expect(direction).toEqual({ sourceMode: "english", targetLanguage: "zh" });
   });
 
   it("does not mirror the live pair (auto-reverse was removed)", () => {
-    const direction = resolveYouDirection(
-      { ...DEFAULT_YOU_CONFIG, sourceMode: "english", targetLanguage: "zh" },
-      { sourceMode: "english", targetLanguage: "zh" },
-    );
+    const direction = resolveYouDirection({
+      ...DEFAULT_YOU_CONFIG,
+      sourceMode: "english",
+      targetLanguage: "zh",
+    });
     expect(direction).toEqual({ sourceMode: "english", targetLanguage: "zh" });
   });
 
   it("honors an explicit pair", () => {
-    const direction = resolveYouDirection(
-      {
-        ...DEFAULT_YOU_CONFIG,
-        sourceMode: "filipino",
-        targetLanguage: "en",
-      },
-      { sourceMode: "english", targetLanguage: "zh" },
-    );
+    const direction = resolveYouDirection({
+      ...DEFAULT_YOU_CONFIG,
+      sourceMode: "filipino",
+      targetLanguage: "en",
+    });
     expect(direction).toEqual({ sourceMode: "filipino", targetLanguage: "en" });
   });
 });
