@@ -1,5 +1,28 @@
 # 23 — Release Notes
 
+## v0.9.7 — separated live input fix, modal polish (feat/general-purpose-v0.8)
+
+- **Separated live (history) captures the right device** — the "Separate live"
+  tab's Input endpoint is now honored (previously the session always listened
+  to the "you" mic, so an input routed through a headphone/loopback device
+  showed "live but silent"). Falls back to the "you" mic only when no input
+  endpoint is picked, and fails up front with a clear message when the chosen
+  device is unplugged or disabled.
+- **Settings modal tabs** — the live-config dialog now has Default vs
+  Separate live tabs (ported from the macOS branch), with the separate-live
+  fields paired up in compact two-column rows so the modal stays short.
+- **Cleaner device lists** — the You-mic and live input dropdowns only offer
+  active endpoints; a saved-but-dead device stays visible but marked
+  "inactive". The backend rejection message now says why.
+- **Clearer pre-start checks** — starting Live with a missing or inactive
+  mic (and starting separated live without an active input) shows an
+  explanatory message instead of a confusing failure.
+- **Smooth motion** — dropdown listboxes, the history menu/sidebar, modals,
+  sidebar nav buttons, and page transitions share light, consistent
+  animations; `prefers-reduced-motion` disables them.
+- **Dropdown auto-close** — verified every custom dropdown closes after a
+  selection (Native `<select>` elements did already).
+
 ## v0.8.1 — history sessions, CTA-styled UI (feat/general-purpose-v0.8)
 
 Follow-up to v0.8.0 with the history rework and the UI polish pass:
