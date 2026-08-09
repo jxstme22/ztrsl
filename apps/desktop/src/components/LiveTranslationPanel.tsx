@@ -256,6 +256,7 @@ export function LiveTranslationPanel({
   );
   const [captionMode, setCaptionMode] = useState<CaptionMode>(loadCaptionMode);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [askingPermission, setAskingPermission] = useState(false);
   const [segmentation, setSegmentation] = useState<Segmentation>(
     loadSegmentation,
   );
@@ -586,6 +587,37 @@ export function LiveTranslationPanel({
     }
   };
 
+  // Re-fire the microphone TCC request from the permission-error banner. On
+  // macOS this shows the real system prompt when the status is notDetermined
+  // (e.g. the first prompt was suppressed); when TCC already cached a denial
+  // the OS will not re-prompt, so fall back to the System Settings path.
+  const askForPermission = async (): Promise<void> => {
+    setAskingPermission(true);
+    try {
+      let status = await requestMicrophonePermission().catch(
+        () => "notDetermined" as const,
+      );
+      if (status === "notDetermined") {
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 500);
+        });
+        status = await requestMicrophonePermission().catch(
+          () => "notDetermined" as const,
+        );
+      }
+      if (status === "authorized") {
+        setPermissionError(null);
+      } else if (status === "denied" || status === "restricted") {
+        setPermissionError(
+          "yTSRL was denied Microphone permission. macOS will not ask again — " +
+            "enable yTSRL in System Settings → Privacy & Security → Microphone, then retry.",
+        );
+      }
+    } finally {
+      setAskingPermission(false);
+    }
+  };
+
   return (
     <section className="card" id="live" aria-labelledby="live-title">
       <div className="card-head">
@@ -766,15 +798,29 @@ export function LiveTranslationPanel({
             <strong>Microphone permission needed</strong>
             <p>{permissionError}</p>
             {audio.catalog?.platform === "macos" && (
-              <button
-                type="button"
-                className="button secondary"
-                onClick={() => {
-                  void openMicrophoneSettings();
-                }}
-              >
-                Open mic settings
-              </button>
+              <div className="permission-actions">
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={askingPermission}
+                  onClick={() => {
+                    void askForPermission();
+                  }}
+                >
+                  {askingPermission
+                    ? "Requesting…"
+                    : "Ask for permission"}
+                </button>
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={() => {
+                    void openMicrophoneSettings();
+                  }}
+                >
+                  Open mic settings
+                </button>
+              </div>
             )}
           </div>
         </div>

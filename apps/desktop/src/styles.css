@@ -1461,6 +1461,16 @@ input[type="range"]::-moz-range-thumb {
   flex: 0 0 auto;
 }
 
+.inline-alert .permission-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inline-alert .permission-actions .button {
+  margin-left: 0;
+}
+
 .inline-alert.error {
   border-color: rgba(255, 157, 157, 0.3);
   background: rgba(255, 157, 157, 0.07);
