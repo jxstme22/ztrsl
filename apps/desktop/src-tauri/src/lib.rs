@@ -1455,6 +1455,46 @@ fn clear_webview_background(window: &tauri::Window) {
     }
 }
 
+/// macOS: round the OS window itself so the frameless transparent window
+/// matches the CSS radius — without this the window is a square with rounded
+/// content floating inside it. Applies three complementary techniques:
+/// - clear window background + non-opaque (the window frame itself becomes
+///   invisible, only the rounded content layer draws);
+/// - `contentView.layer.cornerRadius` + `masksToBounds` clips whatever the
+///   window hosts (webview, vibrancy material) to the radius;
+/// - `NSWindow setCornerRadius:` (macOS 15+) rounds the window's own shadow
+///   geometry, probed first since it is not a public API on every release.
+#[cfg(target_os = "macos")]
+fn round_macos_window(window: &tauri::Window, radius: f64) {
+    use objc2::msg_send;
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2::sel;
+    use objc2_app_kit::NSColor;
+    let Ok(raw) = window.ns_window() else {
+        return;
+    };
+    unsafe {
+        let ns_window = raw as *mut AnyObject;
+        let clear = NSColor::clearColor();
+        let _: () = msg_send![ns_window, setBackgroundColor: &*clear];
+        let _: () = msg_send![ns_window, setOpaque: Bool::NO];
+        let content_view: *mut AnyObject = msg_send![ns_window, contentView];
+        if !content_view.is_null() {
+            let _: () = msg_send![content_view, setWantsLayer: Bool::YES];
+            let layer: *mut AnyObject = msg_send![content_view, layer];
+            if !layer.is_null() {
+                let _: () = msg_send![layer, setCornerRadius: radius];
+                let _: () = msg_send![layer, setMasksToBounds: Bool::YES];
+            }
+        }
+        let responds: bool =
+            msg_send![ns_window, respondsToSelector: sel!(setCornerRadius:)];
+        if responds {
+            let _: () = msg_send![ns_window, setCornerRadius: radius];
+        }
+    }
+}
+
 /// Remembers the normal-mode window geometry while the mini (windowed)
 /// overlay is active, so leaving mini mode returns the app window to exactly
 /// where it was instead of leaving a tiny strip at the bottom of the screen.
@@ -1488,23 +1528,9 @@ fn set_overlay_mode(active: bool, window: tauri::Window) -> Result<(), String> {
         // instance, which makes the mini window's corners truly see-through.
         let _ = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
         clear_webview_background(&window);
-        // Round the OS window itself (NSWindow.cornerRadius, macOS 15+):
-        // 18px in mini mode (matching the CSS radius) and 10px for the
-        // normal app frame. Falls back to a no-op on older macOS.
-        unsafe {
-            use objc2::msg_send;
-            use objc2::runtime::AnyObject;
-            use objc2::sel;
-            if let Ok(raw) = window.ns_window() {
-                let ns_window = raw as *mut AnyObject;
-                let responds: bool =
-                    msg_send![ns_window, respondsToSelector: sel!(setCornerRadius:)];
-                if responds {
-                    let radius: f64 = if active { 18.0 } else { 10.0 };
-                    let _: () = msg_send![ns_window, setCornerRadius: radius];
-                }
-            }
-        }
+        // Round the OS window itself (shadow + content layer): 18px in mini
+        // mode (matching the CSS radius) and 12px for the normal app frame.
+        round_macos_window(&window, if active { 18.0 } else { 12.0 });
     }
     if active {
         // Remember where the normal app window is before shrinking into the
@@ -3247,7 +3273,12 @@ fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
 fn apply_window_shell(window: tauri::Window) -> Result<(), String> {
     use window_vibrancy::{NSVisualEffectMaterial, apply_vibrancy};
     apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None)
-        .map_err(|error| format!("apply_vibrancy failed: {error}"))
+        .map_err(|error| format!("apply_vibrancy failed: {error}"))?;
+    // Round the OS window (shadow + content) so the normal frame matches
+    // the CSS radius instead of showing a square window with rounded
+    // content floating inside it.
+    round_macos_window(&window, 12.0);
+    Ok(())
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]

@@ -4677,17 +4677,23 @@ input[type="range"]::-moz-range-thumb {
 .windowed-overlay-controls {
   display: flex;
   flex: 0 0 auto;
-  gap: 6px;
+  gap: 4px;
   justify-content: flex-end;
+  align-items: center;
+  align-self: flex-end;
+  padding: 3px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
 }
 
 .windowed-overlay-button {
   display: grid;
-  width: 26px;
-  height: 24px;
+  width: 28px;
+  height: 26px;
   place-items: center;
   border: none;
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -4713,7 +4719,27 @@ input[type="range"]::-moz-range-thumb {
   -webkit-backdrop-filter: none;
 }
 
+.windowed-overlay .windowed-history .overlay-history-list {
+  gap: 8px;
+}
+
+.windowed-overlay .windowed-history .overlay-history-text {
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
 .windowed-overlay .caption-stack {
   flex: 1 1 auto;
   min-height: 0;
+  justify-content: center;
+  gap: 6px;
+}
+
+.windowed-overlay .caption-stack .caption-entry {
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+
+.windowed-overlay .caption-stack .caption-english {
+  font-size: 14px;
 }

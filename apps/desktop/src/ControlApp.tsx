@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
 
 import { HistoryPanel } from "./captions/HistoryPanel";
+import { loadHistoryDisplayOptions } from "./captions/history";
 import { useCaptionHistory } from "./captions/useCaptionHistory";
 import { translateText } from "./chat/bridge";
 import { YouConfigDialog } from "./components/YouConfigDialog";
@@ -584,6 +585,19 @@ export function ControlApp() {
         .setSize(new PhysicalSize(900, historyView ? 150 : 420))
         .catch(() => undefined);
     };
+    // Per-source accent for the speaker badge (same treatment as the real
+    // overlay window): tinted background + colored text for valid hex colors.
+    const youBubbleColor = loadHistoryDisplayOptions().youColor;
+    const badgeStyle = (color: string): { color?: string; backgroundColor?: string } =>
+      /^#[0-9a-fA-F]{6}$/.test(color)
+        ? { backgroundColor: `${color}26`, color }
+        : {};
+    const historyBadge = (entry: (typeof history.activeEntries)[number]): string => {
+      if (entry.fromSelf) {
+        return language.t("historyYou");
+      }
+      return entry.displayName !== "" ? entry.displayName : entry.sourceLabel;
+    };
     return (
       <main
         className="windowed-overlay"
@@ -643,6 +657,16 @@ export function ControlApp() {
                     className={`overlay-history-entry ${entry.fromSelf ? "self" : ""}`}
                     data-uncertain={entry.uncertain || undefined}
                   >
+                    {(entry.displayName !== "" || entry.sourceLabel !== "") && (
+                      <span
+                        className="overlay-history-source"
+                        style={badgeStyle(
+                          entry.fromSelf ? youBubbleColor : entry.color,
+                        )}
+                      >
+                        {historyBadge(entry)}
+                      </span>
+                    )}
                     <span className="overlay-history-text">{entry.text}</span>
                   </li>
                 ))}
