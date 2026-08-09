@@ -4660,6 +4660,24 @@ input[type="range"]::-moz-range-thumb {
    always-on-top caption strip. The container is a dark translucent strip
    with a control row; history swaps in a taller layout. */
 .windowed-overlay {
+  /* Always dark, even when the app is in light mode: the mini overlay sits
+     over the game and must stay readable. Re-declare the dark palette here
+     (custom properties cascade) so descendants ignore the app theme. */
+  color-scheme: dark;
+  --fg: rgba(255, 255, 255, 0.92);
+  --fg-strong: #ffffff;
+  --fg-muted: rgba(255, 255, 255, 0.6);
+  --muted: rgba(255, 255, 255, 0.55);
+  --faint: rgba(255, 255, 255, 0.34);
+  --text-dim: #9aa3b2;
+  --stroke: rgba(255, 255, 255, 0.1);
+  --stroke-strong: rgba(255, 255, 255, 0.18);
+  --glass-hover: rgba(255, 255, 255, 0.14);
+  --accent: #7dd3fc;
+  --danger: #ff9d9d;
+  --warn: #ffd28a;
+  --ok: #4ade80;
+  --primary: #dc4d5e;
   display: flex;
   flex-direction: column;
   width: 100%;
