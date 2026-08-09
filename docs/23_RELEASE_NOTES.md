@@ -717,3 +717,18 @@ Merged onto main from `feat/general-purpose-v0.8`:
   was removed (the meter bar remains).
 - **Dropdown auto-close** — the History display-options menu closes after
   picking an option, color, or toggle.
+
+## v0.9.5 — History mic toggle actually works; same-source sessions are safe
+
+- **History mic button now genuinely toggles the separated live's mic.**
+  Previously it was a silent no-op while the separated session listened
+  (it just echoed the main live's state), so "turn on the mic but send
+  nothing". The separated session now owns a real gated mic capture: the
+  button flips it on/off via a dedicated command, and the mic starts
+  enabled when the separated session starts.
+- **Same audio source on both pages is safe.** When the main live and the
+  separated live use the same mic, the device is no longer opened twice:
+  mic-only sessions route through the gated mic capture instead of a
+  synthetic TEAM source, and the you-mic source only opens while its
+  toggle is on (WASAPI shared mode still allows both sessions to capture
+  the same device independently).
