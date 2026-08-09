@@ -201,6 +201,9 @@ export function YouConfigDialog({
 }) {
   const t = useT();
   const [config, setConfig] = useState<YouStreamConfig>(loadYouConfig);
+  const [activeTab, setActiveTab] = useState<"default" | "separate">(
+    "default",
+  );
 
   // Live section state, seeded from the same keys the Live page uses.
   const [liveEndpointId, setLiveEndpointId] = useState<string>(
@@ -346,8 +349,30 @@ export function YouConfigDialog({
           <h3>{t("chatConfig")}</h3>
         </div>
 
-        {/* ── You: the mic stream rides the live session; only the language
-             pair (and which mic) differs from the live page. ── */}
+        <div className="you-config-tabs" role="tablist" aria-label={t("chatConfig")}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "default"}
+            className={`you-config-tab${activeTab === "default" ? " on" : ""}`}
+            onClick={() => { setActiveTab("default"); }}
+          >
+            {t("chatConfigTabDefault")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "separate"}
+            className={`you-config-tab${activeTab === "separate" ? " on" : ""}`}
+            onClick={() => { setActiveTab("separate"); }}
+          >
+            {t("chatConfigTabSeparate")}
+          </button>
+        </div>
+
+        {activeTab === "default" && (
+        /* ── You: the mic stream rides the live session; only the language
+             pair (and which mic) differs from the live page. ── */
         <section className="you-config-section" aria-labelledby="you-section-title">
           <h4 id="you-section-title" className="you-config-section-title">
             {t("chatConfigYouSection")}
@@ -406,7 +431,10 @@ export function YouConfigDialog({
             </label>
           </div>
         </section>
+        )}
 
+        {activeTab === "separate" && (
+          <>
         {/* ── Live translation: mirrors the Live page so users who want
              different models for the team stream can set them here. ── */}
         <section className="you-config-section" aria-labelledby="live-section-title">
@@ -712,6 +740,8 @@ export function YouConfigDialog({
         </section>
 
         <p className="you-config-live-note">{t("chatConfigLiveNote")}</p>
+          </>
+        )}
 
         <div className="lst-modal-actions you-config-actions">
           <button type="button" className="button quiet" onClick={onClose}>

@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { YouConfigDialog } from "./YouConfigDialog";
 
+/** Switch the modal to the "Separate live" tab (live-section fields live
+ * there; the Default tab only holds the you-voice config). */
+function openSeparateTab() {
+  fireEvent.click(screen.getByRole("tab", { name: /separate live/i }));
+}
+
 function renderDialog(overrides: {
   onSaved?: (config: unknown) => void;
   onClose?: () => void;
@@ -56,6 +62,7 @@ describe("YouConfigDialog", () => {
   it("Save & use separate live config applies the live section", () => {
     window.localStorage.setItem("lst.live.translation-provider", "madlad");
     renderDialog();
+    openSeparateTab();
     // Pick a different translation model in the Live section.
     fireEvent.click(
       screen.getByLabelText(/translation model/i),
@@ -71,6 +78,7 @@ describe("YouConfigDialog", () => {
 
   it("shows the live-section note so users know it is separate", () => {
     renderDialog();
+    openSeparateTab();
     expect(
       screen.getByText(/only apply when you press/i),
     ).toBeInTheDocument();
@@ -84,6 +92,7 @@ describe("YouConfigDialog API credentials", () => {
 
   it("shows only installed local models plus cloud models", () => {
     renderDialog();
+    openSeparateTab();
     // Installed local model is listed.
     fireEvent.click(screen.getByLabelText(/voice recognition model/i));
     expect(
@@ -108,6 +117,7 @@ describe("YouConfigDialog API credentials", () => {
   it("shows the NVIDIA API key input when an NVIDIA provider is selected", () => {
     window.localStorage.setItem("lst.live.asr-provider", "nvidia-parakeet-1.1b");
     renderDialog();
+    openSeparateTab();
     const input = screen.getByLabelText(/nvidia api key/i);
     fireEvent.change(input, { target: { value: "nvapi-test" } });
     fireEvent.click(
@@ -122,6 +132,7 @@ describe("YouConfigDialog API credentials", () => {
     window.localStorage.setItem("lst.live.asr-provider", "whisper-turbo");
     window.localStorage.setItem("lst.live.translation-provider", "nllb");
     renderDialog();
+    openSeparateTab();
     expect(screen.queryByLabelText(/nvidia api key/i)).toBeNull();
   });
 
@@ -140,6 +151,7 @@ describe("YouConfigDialog API credentials", () => {
 
   it("shows the full live-page settings: quality, VAD, caption mode, segmentation", () => {
     renderDialog();
+    openSeparateTab();
     expect(screen.getByLabelText(/microphone sensitivity/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/quality/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^translation mode$/i)).toBeInTheDocument();
@@ -148,6 +160,7 @@ describe("YouConfigDialog API credentials", () => {
 
   it("persists VAD, caption mode, segmentation and quality on the separate-save path", () => {
     renderDialog();
+    openSeparateTab();
     const vad = screen.getByLabelText(/microphone sensitivity/i);
     fireEvent.change(vad, { target: { value: "70" } });
     fireEvent.click(
