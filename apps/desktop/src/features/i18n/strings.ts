@@ -153,8 +153,6 @@ const UI_STRINGS = {
   chatConfigAsr: { en: "Voice recognition model", zh: "语音识别模型" },
   chatConfigTranslate: { en: "Translation model", zh: "翻译模型" },
   chatConfigSave: { en: "Save", zh: "保存" },
-  chatConfigTabDefault: { en: "Default", zh: "默认" },
-  chatConfigTabSeparate: { en: "Separate live", zh: "独立实时" },
   chatConfigSaveSeparate: {
     en: "Save & use separate live config",
     zh: "保存并使用独立实时配置",

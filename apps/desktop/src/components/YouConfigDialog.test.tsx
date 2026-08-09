@@ -54,11 +54,6 @@ function renderDialog(
   );
 }
 
-/** Activate the "Separate live" tab of the config dialog. */
-function openSeparateTab() {
-  fireEvent.click(screen.getByRole("tab", { name: /separate live/i }));
-}
-
 describe("YouConfigDialog", () => {
   beforeEach(() => {
     window.localStorage.clear();
