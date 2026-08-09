@@ -403,11 +403,26 @@ export function ControlApp() {
   // page reads) and shares the sidecar process — so loaded models are
   // reused, only genuinely-different ones load a second time.
   const startSeparatedLive = useCallback(async (): Promise<string | null> => {
-    // History live = YOUR voice: capture the configured mic and stamp the
-    // captions as "you" (right-aligned YOU bubbles), using the modal's
-    // models for the direction.
-    if (youSource === null) {
-      return "Pick a microphone in the config dialog first.";
+    // The separated session captures the "Separate live" tab's input
+    // endpoint (shared with the Live page through lst.live.input-endpoint)
+    // when one is chosen; otherwise it falls back to the "you" mic. Without
+    // either there is nothing to capture.
+    const storedInput =
+      window.localStorage.getItem("lst.live.input-endpoint") ?? "";
+    const inputEndpointId =
+      storedInput.trim() !== ""
+        ? storedInput
+        : (youSource?.endpointId ?? "");
+    if (inputEndpointId === "") {
+      return "Pick a microphone or an input endpoint in the config dialog first.";
+    }
+    // Fail up front (with a clear message) instead of letting the backend
+    // abort the session over a currently unplugged/disabled device.
+    const catalogEndpoint = audio.catalog?.endpoints.find(
+      (endpoint) => endpoint.id === inputEndpointId,
+    );
+    if (catalogEndpoint !== undefined && catalogEndpoint.state !== "active") {
+      return "The input device picked in settings is currently unplugged or disabled — pick another one.";
     }
     const direction = resolveYouDirection(youConfig);
     const translationProvider =
@@ -488,7 +503,7 @@ export function ControlApp() {
       void emitHistoryToOverlay(historyRef.current.activeEntries);
     }
     const error = await separatedLive.start(
-      youSource.endpointId,
+      inputEndpointId,
       null,
       asrProvider !== "groq-whisper" &&
         (translationProvider === "madlad" ||
@@ -509,7 +524,7 @@ export function ControlApp() {
     );
     // The separated session is "your voice": the mic starts enabled so
     // captions flow immediately, and the History mic button toggles it.
-    if (error === null) {
+    if (error === null && youSource !== null) {
       try {
         await setSeparatedLiveMicEnabled(true, youSource);
       } catch (cause) {
@@ -517,7 +532,7 @@ export function ControlApp() {
       }
     }
     return error;
-  }, [language, livePair, separatedLive, youConfig, youSource]);
+  }, [audio.catalog, language, livePair, separatedLive, youConfig, youSource]);
 
   const stopSeparatedLive = useCallback(async () => {
     await separatedLive.stop();
