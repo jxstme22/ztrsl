@@ -1,12 +1,13 @@
 # yTRSL
 
-**Real-time subtitles for your VALORANT voice chat — 100% local.**
+**Real-time subtitles for your game & voice chat — 100% local.**
 
 Hear Tagalog, Cebuano, Chinese, Indonesian, Vietnamese, Thai, or Malay
 callouts, *read* them in English (or your chosen language) as they happen,
-and never send a second of audio to the cloud. Speak back: your own voice and
-typed messages are translated into the team's language as right-aligned
-"You" bubbles you can read aloud or copy.
+and never send a second of audio to the cloud. Built for VALORANT voice chat
+first — and it works for any game, Discord, or meeting call too. Speak back:
+your own voice and typed messages are translated into the team's language as
+right-aligned "You" bubbles you can read aloud or copy.
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-Windows%2011%20%26%20macOS-7dd3fc" alt="Platform: Windows 11 + macOS"/>
@@ -30,8 +31,9 @@ typed messages are translated into the team's language as right-aligned
 (you, via mic)   ─────────────►  (English "You" bubble to read/say)
 ```
 
-- Listens to **your voice-chat mix** — through a virtual audio cable or any
-  audio endpoint you pick.
+- Listens to **any voice-chat mix** — VALORANT voice, Discord, other games,
+  or a meeting — through a virtual audio cable, BlackHole, or any audio
+  endpoint you pick.
 - Recognizes **Tagalog / Filipino, Cebuano, Chinese, Indonesian, Vietnamese,
   Thai, Malay, and English**.
 - Translates into **English, Filipino, Chinese, Indonesian, Vietnamese, Thai,
@@ -130,8 +132,8 @@ or **NVIDIA Riva** — all opt-in:
   "clusterBkg": "#12161e", "clusterBorder": "#2c3340"
 }}}%%
 flowchart TB
-  subgraph GAME["Game"]
-    V["VALORANT voice chat"]
+  subgraph GAME["Game voice chat"]
+    V["VALORANT · Discord · any game"]
   end
 
   subgraph APP["yTRSL desktop"]
@@ -226,7 +228,7 @@ nothing else.
 flowchart TB
   subgraph WIN["Windows · VB-CABLE"]
     direction TB
-    VC["VALORANT voice"] --> CI["CABLE Input"]
+    VC["VALORANT / game voice"] --> CI["CABLE Input"]
     DC["Discord voice"] --> CI
     CI --> CO["CABLE Output"] --> WC["yTRSL audio core"]
     WC --> HP[("Headphones")]
@@ -234,7 +236,7 @@ flowchart TB
 
   subgraph MAC["macOS · BlackHole"]
     direction TB
-    VM["VALORANT voice"] --> BI["BlackHole 2ch"]
+    VM["VALORANT / game voice"] --> BI["BlackHole 2ch"]
     DM["Discord voice"] --> BI
     BI --> BO["BlackHole loopback"] --> MC["yTRSL audio core"]
     MC --> MH[("Headphones")]
@@ -246,7 +248,7 @@ flowchart TB
   class MAC,VM,BI,DM,BO,MC,MH mac;
 ```
 
-### Set it up (5 minutes)
+### Set it up (5 minutes, VALORANT example)
 
 **1. Install the cable** — download **VB-CABLE** (free) from
 <https://vb-audio.com/Cable/>. Windows will now show a **CABLE Input**
@@ -264,6 +266,10 @@ never go to the cable, or yTRSL will hear explosions as speech.
 `Settings → Voice & Video`, set **Output Device** to **CABLE Input**. Route
 Discord and VALORANT into the same cable to treat them as one source, or use a
 second cable for a separate `[DISCORD]` lane.
+
+> **Any other game?** Same idea: point that game's voice-chat output at the
+> cable (or at BlackHole on macOS) and yTRSL will subtitle it. The app doesn't
+> care which game produces the audio.
 
 **5. Keep hearing your team** — because voice now plays into the cable, turn
 on **Monitor source** for the source on the **Sources** page and pick your
@@ -288,10 +294,10 @@ near-silent. If it jumps, game audio is leaking into the cable.
 
 The History page's input bar has three tools:
 
-- **Mic toggle** — translates your own speech in the reverse direction while a
-  live session runs. The mic opens only while the toggle is on; captions land
-  as right-aligned "You" bubbles with a solid configurable color (default
-  blue, changeable in the History settings menu).
+- **Mic toggle** — translates your own speech while a live session runs. The
+  mic opens only while the toggle is on; captions land as right-aligned "You"
+  bubbles with a solid configurable color (default blue, changeable in the
+  History settings menu).
 - **Chat box** — type a message in your language, press Enter/Send, and it is
   translated on demand (works even without a live session). The bubble shows
   your original line and the translation; the copy button is right beside it.
@@ -508,8 +514,8 @@ Models keep their **own** licenses, separate from the project's Apache-2.0 code:
 
 ## For contributors
 
-- [Contributing](CONTRIBUTING.md) — including the hard safety boundary list
-- [Security policy](SECURITY.md)
+- [Contributing](docs/CONTRIBUTING.md) — including the hard safety boundary list
+- [Security policy](.github/SECURITY.md)
 - Formal design docs in [`docs/`](docs/README.md) — PRD, architecture, ADRs,
   and per-phase evidence.
 
@@ -522,7 +528,7 @@ chat-history overlay, per-caption bubbles, session sidebar, your-voice + typed
 chat translation, separated live, new-session rotation, full i18n,
 multi-source live). Working toward 1.0:
 
-- [x] macOS support (Apple Silicon, MLX Metal ASR — macOS branch)
+- [x] macOS support (Apple Silicon, MLX Metal ASR — macos branch)
 - [x] full English/Chinese i18n
 - [x] live caption + chat-history overlay with per-source colors
 - [x] 7-language source × output matrix
