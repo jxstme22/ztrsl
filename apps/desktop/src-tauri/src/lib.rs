@@ -4489,32 +4489,13 @@ pub fn run() {
                     }
                 });
             }
-            // macOS: proactively ask for microphone access on first launch.
-            // TCC only shows the prompt while the app is frontmost AND the
-            // request comes from a visible window; deferring it until the
-            // user reaches the Start button can silently no-op (the earlier
-            // 'never asks' report). Requesting at startup, right after the
-            // window is shown, is the reliable moment. If the user already
-            // granted or denied, this is a no-op. Retry once after a longer
-            // delay: on first launch the window can still be settling when
-            // the first request fires, and TCC drops it without a prompt.
-            #[cfg(target_os = "macos")]
-            {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    // Give the window a beat to become frontmost after
-                    // launch, then request. Best-effort: failures here are
-                    // non-fatal (the Start button still asks).
-                    let _ = tokio::time::sleep(Duration::from_millis(1200)).await;
-                    if request_mic_permission_on_main(handle.clone())
-                        .await
-                        .is_err()
-                    {
-                        let _ = tokio::time::sleep(Duration::from_millis(1500)).await;
-                        let _ = request_mic_permission_on_main(handle).await;
-                    }
-                });
-            }
+            // No microphone request at startup: macOS only presents the TCC
+            // prompt for a request fired while the app is frontmost, and a
+            // suppressed launch-time request is silently answered "denied"
+            // AND cached — which would lock the user out of the prompt until
+            // they run `tccutil reset`. Requests happen only on explicit
+            // user action (the Start button, "Ask for permission", or the
+            // mic toggle), when the app is guaranteed frontmost.
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())

@@ -230,24 +230,6 @@ export function ControlApp() {
   });
   separatedLiveRef.current = separatedLive;
 
-  // On macOS, ask for microphone access once per launch (only while the
-  // status is still undetermined — a denied grant must go through System
-  // Settings, not a re-prompt). Without a granted TCC entry, cpal opens the
-  // mic but CoreAudio delivers silence (no error, no prompt). wry's webview
-  // delegate auto-grants the getUserMedia request, so this is what surfaces
-  // the real macOS permission prompt.
-  useEffect(() => {
-    if (audio.catalog?.platform !== "macos") {
-      return;
-    }
-    void (async () => {
-      const status = await microphoneAuthStatus();
-      if (status === "notDetermined") {
-        await requestMicrophonePermission().catch(() => undefined);
-      }
-    })();
-  }, [audio.catalog?.platform]);
-
   // Keep the overlay window's history view in sync (it also boots from the
   // same localStorage, so this only needs to run when entries change).
   useEffect(() => {
