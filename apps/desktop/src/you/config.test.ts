@@ -10,45 +10,40 @@ import {
 } from "./config";
 
 describe("resolveYouDirection", () => {
-  it("auto-reverses the live pair when a live session runs", () => {
-    const direction = resolveYouDirection(
-      { ...DEFAULT_YOU_CONFIG, autoReverse: true },
-      { sourceMode: "english", targetLanguage: "zh" },
-    );
-    expect(direction).toEqual({ sourceMode: "chinese", targetLanguage: "en" });
-  });
-
-  it("falls back to the configured pair when no live session runs", () => {
-    const direction = resolveYouDirection(
-      { ...DEFAULT_YOU_CONFIG, autoReverse: true },
-      { sourceMode: null, targetLanguage: null },
-    );
-    expect(direction).toEqual({
-      sourceMode: DEFAULT_YOU_CONFIG.sourceMode,
-      targetLanguage: DEFAULT_YOU_CONFIG.targetLanguage,
+  it("always honors the configured pair, even while a live session runs", () => {
+    const direction = resolveYouDirection({
+      ...DEFAULT_YOU_CONFIG,
+      sourceMode: "english",
+      targetLanguage: "zh",
     });
+    expect(direction).toEqual({ sourceMode: "english", targetLanguage: "zh" });
   });
 
-  it("honors an explicit pair when auto is off", () => {
-    const direction = resolveYouDirection(
-      {
-        ...DEFAULT_YOU_CONFIG,
-        autoReverse: false,
-        sourceMode: "filipino",
-        targetLanguage: "en",
-      },
-      { sourceMode: "english", targetLanguage: "zh" },
-    );
+  it("does not mirror the live pair (auto-reverse was removed)", () => {
+    const direction = resolveYouDirection({
+      ...DEFAULT_YOU_CONFIG,
+      sourceMode: "english",
+      targetLanguage: "zh",
+    });
+    expect(direction).toEqual({ sourceMode: "english", targetLanguage: "zh" });
+  });
+
+  it("honors an explicit pair", () => {
+    const direction = resolveYouDirection({
+      ...DEFAULT_YOU_CONFIG,
+      sourceMode: "filipino",
+      targetLanguage: "en",
+    });
     expect(direction).toEqual({ sourceMode: "filipino", targetLanguage: "en" });
   });
 });
 
 describe("buildYouSourceRequest", () => {
   it("returns null until a mic endpoint is configured", () => {
-    const source = buildYouSourceRequest(
-      { ...DEFAULT_YOU_CONFIG, micEndpointId: null },
-      { sourceMode: "english", targetLanguage: "zh" },
-    );
+    const source = buildYouSourceRequest({
+      ...DEFAULT_YOU_CONFIG,
+      micEndpointId: null,
+    });
     expect(source).toBeNull();
   });
 
@@ -57,8 +52,9 @@ describe("buildYouSourceRequest", () => {
       {
         ...DEFAULT_YOU_CONFIG,
         micEndpointId: "mic-1",
+        sourceMode: "english",
+        targetLanguage: "zh",
       },
-      { sourceMode: "english", targetLanguage: "zh" },
       "nllb",
     );
     expect(source).not.toBeNull();
@@ -68,9 +64,9 @@ describe("buildYouSourceRequest", () => {
     expect(source?.captionTag).toBe("YOU");
     expect(source?.color).toBe(YOU_ACCENT_COLOR);
     expect(source?.sourceOrigin).toBe("physical_microphone");
-    // auto-reverse of live (en→zh) ⇒ you chinese→en
-    expect(source?.languageProfile).toBe("chinese");
-    expect(source?.targetLanguage).toBe("en");
+    // the explicitly chosen pair is always honored (no auto-reverse)
+    expect(source?.languageProfile).toBe("english");
+    expect(source?.targetLanguage).toBe("zh");
     expect(source?.translationProvider).toBe("nllb");
   });
 });
