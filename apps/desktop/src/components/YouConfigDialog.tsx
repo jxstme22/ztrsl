@@ -6,6 +6,12 @@ import {
   loadYouConfig,
   saveYouConfig,
 } from "../you/config";
+import {
+  QUALITY_PROFILE_IDS,
+  type QualityProfileId,
+  loadQualityProfileId,
+  saveQualityProfileId,
+} from "../presets/quality";
 import { useT } from "../features/i18n/store";
 import type { SourceMode, TargetLanguage } from "../live/bridge";
 import { Select } from "./Select";
@@ -39,6 +45,9 @@ const LIVE_SOURCE_MODE_KEY = "lst.live.source-mode";
 const LIVE_TARGET_LANGUAGE_KEY = "lst.live.target-language";
 const LIVE_ASR_PROVIDER_KEY = "lst.live.asr-provider";
 const LIVE_TRANSLATION_PROVIDER_KEY = "lst.live.translation-provider";
+const LIVE_VAD_SENSITIVITY_KEY = "lst.live.vad-sensitivity";
+const LIVE_CAPTION_MODE_KEY = "lst.live.caption-mode";
+const LIVE_SEGMENTATION_KEY = "lst.live.segmentation";
 const GROQ_API_KEY_KEY = "lst.live.groq-api-key";
 const NVIDIA_API_KEY_KEY = "lst.live.nvidia-api-key";
 const LT_ENDPOINT_KEY = "lst.live.lt-endpoint";
@@ -47,6 +56,13 @@ const BAIDU_APPID_KEY = "lst.live.baidu-appid";
 const BAIDU_SECRET_KEY = "lst.live.baidu-secret";
 const CUSTOM_TX_ENDPOINT_KEY = "lst.live.custom-tx-endpoint";
 const CUSTOM_TX_API_KEY_KEY = "lst.live.custom-tx-api-key";
+
+/** Caption segmentation style: short chunks, balanced, or full sentences. */
+type Segmentation = "chunk" | "balanced" | "sentence";
+
+const SEGMENTATIONS: readonly Segmentation[] = ["chunk", "balanced", "sentence"];
+
+type CaptionMode = "streaming" | "final-only";
 
 function loadStored(key: string): string | null {
   try {
@@ -177,27 +193,14 @@ export function YouConfigDialog({
   installedModelIds,
   onClose,
   onSaved,
-  separatedState = "idle",
-  separatedError = null,
-  onStartSeparatedLive,
-  onStopSeparatedLive,
 }: {
   endpoints: AudioEndpoint[];
   installedModelIds: ReadonlySet<string>;
   onClose: () => void;
   onSaved: (config: YouStreamConfig) => void;
-  /** Separated (history) live session status. */
-  separatedState?: "idle" | "starting" | "listening" | "stopping" | "error";
-  separatedError?: string | null;
-  onStartSeparatedLive: () => Promise<string | null>;
-  onStopSeparatedLive: () => Promise<void>;
 }) {
   const t = useT();
   const [config, setConfig] = useState<YouStreamConfig>(loadYouConfig);
-  const [separatedBusy, setSeparatedBusy] = useState(false);
-  const [separatedLocalError, setSeparatedLocalError] = useState<string | null>(
-    null,
-  );
 
   // Live section state, seeded from the same keys the Live page uses.
   const [liveEndpointId, setLiveEndpointId] = useState<string>(
@@ -222,6 +225,23 @@ export function YouConfigDialog({
   );
   const [liveTranslationProvider, setLiveTranslationProvider] =
     useState<string>(() => loadStored(LIVE_TRANSLATION_PROVIDER_KEY) ?? "nllb");
+  const [liveQualityProfileId, setLiveQualityProfileId] =
+    useState<QualityProfileId>(loadQualityProfileId);
+  const [liveVadSensitivity, setLiveVadSensitivity] = useState<number>(() => {
+    const stored = loadStored(LIVE_VAD_SENSITIVITY_KEY);
+    const parsed = Number.parseInt(stored ?? "", 10);
+    return Number.isFinite(parsed) ? parsed : 50;
+  });
+  const [liveCaptionMode, setLiveCaptionMode] = useState<CaptionMode>(() => {
+    const stored = loadStored(LIVE_CAPTION_MODE_KEY);
+    return stored === "final-only" ? "final-only" : "streaming";
+  });
+  const [liveSegmentation, setLiveSegmentation] = useState<Segmentation>(() => {
+    const stored = loadStored(LIVE_SEGMENTATION_KEY);
+    return SEGMENTATIONS.includes(stored as Segmentation)
+      ? (stored as Segmentation)
+      : "balanced";
+  });
   // API credentials for the remote backends, persisted under the same keys
   // the Live page uses (so the separated session reuses them and the sidecar
   // env is pushed at start).
@@ -286,6 +306,13 @@ export function YouConfigDialog({
           LIVE_TRANSLATION_PROVIDER_KEY,
           liveTranslationProvider,
         );
+        window.localStorage.setItem(
+          LIVE_VAD_SENSITIVITY_KEY,
+          String(liveVadSensitivity),
+        );
+        window.localStorage.setItem(LIVE_CAPTION_MODE_KEY, liveCaptionMode);
+        window.localStorage.setItem(LIVE_SEGMENTATION_KEY, liveSegmentation);
+        saveQualityProfileId(liveQualityProfileId);
         window.localStorage.setItem(NVIDIA_API_KEY_KEY, nvidiaApiKey);
         window.localStorage.setItem(GROQ_API_KEY_KEY, groqApiKey);
         window.localStorage.setItem(LT_ENDPOINT_KEY, ltEndpoint);
@@ -473,6 +500,99 @@ export function YouConfigDialog({
             />
           </label>
 
+          <label className="field">
+            <span>{t("liveQuality")}</span>
+            <Select
+              id="live-quality"
+              label={t("liveQuality")}
+              value={liveQualityProfileId}
+              onChange={(value) => {
+                setLiveQualityProfileId(value as QualityProfileId);
+              }}
+              options={QUALITY_PROFILE_IDS.map((id) => ({
+                value: id,
+                label: t(("liveQuality" + id) as UIKey),
+              }))}
+            />
+          </label>
+
+          <label className="field">
+            <span>Microphone sensitivity: {liveVadSensitivity}</span>
+            <input
+              id="live-vad-sensitivity"
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={liveVadSensitivity}
+              aria-label="Microphone sensitivity"
+              onChange={(event) => {
+                setLiveVadSensitivity(
+                  Number.parseInt(event.currentTarget.value, 10),
+                );
+              }}
+            />
+          </label>
+
+          <label className="field">
+            <span>{t("liveCaptionMode")}</span>
+            <Select
+              id="live-caption-mode"
+              label={t("liveCaptionMode")}
+              value={liveCaptionMode}
+              options={[
+                {
+                  value: "streaming",
+                  label: t("liveCaptionModeStreaming"),
+                },
+                {
+                  value: "final-only",
+                  label: t("liveCaptionModeFinal"),
+                },
+              ]}
+              onChange={(value) => {
+                setLiveCaptionMode(value as CaptionMode);
+              }}
+            />
+            <small className="field-note">{t("liveCaptionModeNote")}</small>
+          </label>
+
+          <label className="field">
+            <span>{t("liveSegmentation")}</span>
+            <Select
+              id="live-segmentation"
+              label={t("liveSegmentation")}
+              value={liveSegmentation}
+              options={SEGMENTATIONS.map((id) => ({
+                value: id,
+                label: t(("liveSegmentation" + id) as UIKey),
+              }))}
+              onChange={(value) => {
+                setLiveSegmentation(value as Segmentation);
+              }}
+            />
+            <small className="field-note">
+              {t(("liveSegmentationNote" + liveSegmentation) as UIKey)}
+            </small>
+          </label>
+
+          {liveTranslationProvider === "opus-mt-en-zh" &&
+            (liveSourceMode !== "english" ||
+              liveTargetLanguage !== "zh") && (
+              <p className="diag-hint warn">
+                opus-mt (en→zh) needs the source set to English and the
+                output language set to Chinese.
+              </p>
+            )}
+          {liveTranslationProvider === "opus-mt-zh-en" &&
+            (liveSourceMode !== "chinese" ||
+              liveTargetLanguage !== "en") && (
+              <p className="diag-hint warn">
+                opus-mt (zh→en) needs the source set to Chinese and the
+                output language set to English.
+              </p>
+            )}
+
           {(liveAsrProvider.startsWith("nvidia-") ||
             liveTranslationProvider.startsWith("nvidia-")) && (
             <label className="field">
@@ -592,54 +712,6 @@ export function YouConfigDialog({
         </section>
 
         <p className="you-config-live-note">{t("chatConfigLiveNote")}</p>
-
-        <div className="you-config-separated">
-          <span className="you-config-separated-label">
-            {t("historySeparatedLive")}
-          </span>
-          {separatedState === "listening" ? (
-            <button
-              type="button"
-              className="button history-separated-stop"
-              disabled={separatedBusy}
-              onClick={() => {
-                setSeparatedBusy(true);
-                void onStopSeparatedLive().finally(() => {
-                  setSeparatedBusy(false);
-                });
-              }}
-            >
-              {t("historySeparatedStop")}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="button btn-shine history-separated-start"
-              disabled={separatedBusy || separatedState === "starting"}
-              onClick={() => {
-                setSeparatedBusy(true);
-                void onStartSeparatedLive()
-                  .then((error) => {
-                    if (error !== null) {
-                      setSeparatedLocalError(error);
-                    }
-                  })
-                  .finally(() => {
-                    setSeparatedBusy(false);
-                  });
-              }}
-            >
-              {separatedState === "starting"
-                ? t("historySeparatedStarting")
-                : t("historySeparatedStart")}
-            </button>
-          )}
-          {(separatedLocalError ?? separatedError) !== null && (
-            <span className="history-separated-error" role="alert">
-              {separatedLocalError ?? separatedError}
-            </span>
-          )}
-        </div>
 
         <div className="lst-modal-actions you-config-actions">
           <button type="button" className="button quiet" onClick={onClose}>

@@ -32,8 +32,6 @@ function renderDialog(overrides: {
       installedModelIds={new Set(["whisper-large-v3-turbo", "nllb-200-distilled-600M-ct2-int8"])}
       onClose={overrides.onClose ?? vi.fn()}
       onSaved={overrides.onSaved ?? vi.fn()}
-      onStartSeparatedLive={vi.fn()}
-      onStopSeparatedLive={vi.fn()}
     />,
   );
 }
@@ -76,58 +74,6 @@ describe("YouConfigDialog", () => {
     expect(
       screen.getByText(/only apply when you press/i),
     ).toBeInTheDocument();
-  });
-});
-
-describe("YouConfigDialog separated live controls", () => {
-  it("shows the separated-live start button and starts it", () => {
-    const onStart = vi.fn().mockResolvedValue(null);
-    render(
-      <YouConfigDialog
-        endpoints={[
-          {
-            id: "mic-1",
-            friendlyName: "Built-in Microphone",
-            kind: "capture",
-            state: "active",
-            defaultRoles: {
-              console: true,
-              multimedia: true,
-              communications: true,
-            },
-            nativeFormat: { sampleRate: 48000, channels: 1 },
-            isSynthetic: false,
-          },
-        ]}
-        installedModelIds={new Set()}
-        onClose={vi.fn()}
-        onSaved={vi.fn()}
-        separatedState="idle"
-        separatedError={null}
-        onStartSeparatedLive={onStart}
-        onStopSeparatedLive={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
-    expect(onStart).toHaveBeenCalled();
-  });
-
-  it("shows Stop while the separated live is listening", () => {
-    const onStop = vi.fn().mockResolvedValue(undefined);
-    render(
-      <YouConfigDialog
-        endpoints={[]}
-        installedModelIds={new Set()}
-        onClose={vi.fn()}
-        onSaved={vi.fn()}
-        separatedState="listening"
-        separatedError={null}
-        onStartSeparatedLive={vi.fn()}
-        onStopSeparatedLive={onStop}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: /^stop$/i }));
-    expect(onStop).toHaveBeenCalled();
   });
 });
 
@@ -184,5 +130,36 @@ describe("YouConfigDialog API credentials", () => {
     expect(
       screen.queryByLabelText(/auto \(reverse of the live pair\)/i),
     ).toBeNull();
+  });
+
+  it("no longer offers a start button inside the settings modal", () => {
+    renderDialog();
+    expect(screen.queryByRole("button", { name: /^start$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^stop$/i })).toBeNull();
+  });
+
+  it("shows the full live-page settings: quality, VAD, caption mode, segmentation", () => {
+    renderDialog();
+    expect(screen.getByLabelText(/microphone sensitivity/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/quality/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^translation mode$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/caption style/i)).toBeInTheDocument();
+  });
+
+  it("persists VAD, caption mode, segmentation and quality on the separate-save path", () => {
+    renderDialog();
+    const vad = screen.getByLabelText(/microphone sensitivity/i);
+    fireEvent.change(vad, { target: { value: "70" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: /save & use separate live config/i }),
+    );
+    expect(window.localStorage.getItem("lst.live.vad-sensitivity")).toBe("70");
+    expect(window.localStorage.getItem("lst.live.caption-mode")).toBe(
+      "streaming",
+    );
+    expect(window.localStorage.getItem("lst.live.segmentation")).toBe(
+      "balanced",
+    );
+    expect(window.localStorage.getItem("lst.qualityProfile")).not.toBeNull();
   });
 });

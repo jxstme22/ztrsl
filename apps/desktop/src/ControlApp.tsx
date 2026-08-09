@@ -120,6 +120,35 @@ const NAV_ICONS: Record<SectionId, LucideIcon> = {
   about: Info,
 };
 
+const SEPARATED_VAD_KEY = "lst.live.vad-sensitivity";
+const SEPARATED_SEGMENTATION_KEY = "lst.live.segmentation";
+
+/** VAD sensitivity for the separated session, from the same key the
+ * settings modal (and the Live page) writes; defaults to 50. */
+function readSeparatedVadSensitivity(): number {
+  try {
+    const parsed = Number.parseInt(
+      window.localStorage.getItem(SEPARATED_VAD_KEY) ?? "",
+      10,
+    );
+    return Number.isFinite(parsed) ? parsed : 50;
+  } catch {
+    return 50;
+  }
+}
+
+/** Segmentation for the separated session; defaults to "balanced". */
+function readSeparatedSegmentation(): "chunk" | "balanced" | "sentence" {
+  try {
+    const stored = window.localStorage.getItem(SEPARATED_SEGMENTATION_KEY);
+    return stored === "chunk" || stored === "sentence"
+      ? stored
+      : "balanced";
+  } catch {
+    return "balanced";
+  }
+}
+
 export function ControlApp() {
   const controller = useOverlayController();
   const audio = useAudioMeter();
@@ -497,8 +526,8 @@ export function ControlApp() {
       direction.targetLanguage,
       asrProvider,
       translationProvider,
-      50,
-      "balanced",
+      readSeparatedVadSensitivity(),
+      readSeparatedSegmentation(),
       [],
       youSource,
     );
@@ -854,10 +883,6 @@ export function ControlApp() {
           onClose={() => {
             setYouConfigOpen(false);
           }}
-          separatedState={separatedLive.state}
-          separatedError={separatedLive.error}
-          onStartSeparatedLive={startSeparatedLive}
-          onStopSeparatedLive={stopSeparatedLive}
         />
       )}
     </main>
