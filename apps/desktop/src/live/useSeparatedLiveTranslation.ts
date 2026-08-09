@@ -108,6 +108,7 @@ export function useSeparatedLiveTranslation(
       vadSensitivity = 50,
       segmentation: "chunk" | "balanced" | "sentence" = "balanced",
       sources: LiveSourceRequest[] = [],
+      micSource: LiveSourceRequest | null = null,
     ): Promise<string | null> => {
       setState("starting");
       setError(null);
@@ -126,6 +127,7 @@ export function useSeparatedLiveTranslation(
             vadSensitivity,
             segmentation,
             sources,
+            micSource,
           ),
         );
         return null;

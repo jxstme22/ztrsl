@@ -141,6 +141,22 @@ export async function setLiveMicEnabled(
   return await invoke("set_live_mic_enabled", { enabled, micSource });
 }
 
+/** Flip the mic capture on the SEPARATED (history) live session. The
+ * separated session owns the mic while it is listening, so the History
+ * page's mic button toggles THIS stream, not the main live's. */
+export async function setSeparatedLiveMicEnabled(
+  enabled: boolean,
+  micSource: LiveSourceRequest | null = null,
+): Promise<boolean> {
+  if (!isTauri()) {
+    return enabled;
+  }
+  return await invoke("set_separated_live_mic_enabled", {
+    enabled,
+    micSource,
+  });
+}
+
 /** Start the SEPARATED live session (a second, independent live translation
  * started from the history page). It shares the sidecar process — and its
  * loaded models — with the main live session, but has its own endpoint and
@@ -157,6 +173,7 @@ export async function startSeparatedLiveTranslation(
   vadSensitivity = 50,
   segmentation: "chunk" | "balanced" | "sentence" = "balanced",
   sources: LiveSourceRequest[] = [],
+  micSource: LiveSourceRequest | null = null,
 ): Promise<LiveSnapshot> {
   if (!isTauri()) {
     return {
@@ -184,6 +201,7 @@ export async function startSeparatedLiveTranslation(
         vadSensitivity,
         segmentation,
         sources,
+        micSource,
       },
     }),
   );

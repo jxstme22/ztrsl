@@ -398,9 +398,10 @@ export function HistoryPanel({
     }
   };
 
-  // The History page's live is the SEPARATED session: it captures the mic as
-  // a source automatically, so the mic toggle only applies to the main live
-  // (mirror) session. Keep it usable when either session is running.
+  // The History page's live is the SEPARATED session: it owns the mic while
+  // listening. The toggle flips the separated session's mic capture (gated by
+  // mic_enabled); when no separated session runs it falls back to the main
+  // live (mirror) session's mic toggle.
   const micDisabled = (!liveRunning && separatedState !== "listening") || micBusy;
   const micHint = !liveRunning && separatedState !== "listening"
     ? t("chatMicRequiresLive")
